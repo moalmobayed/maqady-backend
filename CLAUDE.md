@@ -120,8 +120,12 @@ multi-service platform whose platform-level docs live elsewhere.
 
 ## Stack
 
-TypeScript · Express · Knex · PostgreSQL · Redis · Docker. The stack is **locked** — never
-introduce another ORM, query builder, or framework.
+TypeScript · NestJS (on `@nestjs/platform-express`) · Knex · PostgreSQL · Redis · Docker,
+plus a WebSocket gateway on `@nestjs/platform-ws` (plain `ws`, not socket.io). NestJS replaces
+the pack's plain Express by recorded exception —
+[ADR 0002](docs/adr/0002-nestjs-instead-of-express.md). The stack is **locked**: never
+introduce an ORM (including Nest's TypeORM/Prisma/MikroORM integrations), a second query
+builder, or another framework.
 
 **Verification commands come from:** the `scripts` block of `package.json`.
 
@@ -133,18 +137,19 @@ that page is what it means.
 
 ## Build order
 
-Build one module end to end, in this order. Do not start the next artifact until the
-previous one compiles.
+Build one Nest feature module end to end, in this order. Do not start the next artifact until
+the previous one compiles.
 
-1. migration
-2. entity
-3. request DTOs
+1. migration (raw SQL)
+2. entity (row and domain types in the module's `types.ts`)
+3. request DTOs (classes with `class-validator` and `@nestjs/swagger` decorators)
 4. response DTOs
-5. repository
-6. service (register in the container)
-7. controller (register in the container)
-8. routes
-9. mount in the route index
+5. repository (`@Injectable`, Knex injected through the shared Knex provider)
+6. service (`@Injectable`, added to the module's `providers`)
+7. controller and/or gateway (added to the module's `controllers` / `providers`; routes are
+   the controller's decorators)
+8. module (`@Module` wiring its imports, providers, controllers and exports)
+9. import the module in `AppModule`
 
 ## Stack rules
 
@@ -156,15 +161,27 @@ previous one compiles.
 - **Database.** Raw SQL migrations only, append-only, each index commented with its query
   path. `TIMESTAMPTZ` everywhere (UTC). Every FK named and covered by an index; no
   defaults on critical columns; composite index order = equality then range. **No N+1** —
-  batch reads with `whereIn`; never one query per row inside a loop.
+  batch reads with `whereIn`; never one query per row inside a loop. Knex is reached only
+  through the one shared Knex provider, and only repositories inject it.
 - **Pagination.** Cursor-based, on every list endpoint.
-- **Idempotency.** Redis-backed middleware on all writes; `strict:true` on any write whose
-  duplicate submission must not double-apply (client-supplied `Idempotency-Key`).
-- **Security.** RBAC + ownership on every endpoint, deny-by-default; role comes from the
-  verified JWT, ownership resolved server-side. Return `404` (not `403`) for cross-owner
-  access to a sensitive resource. Rate-limit public endpoints. No PII in logs.
+- **Idempotency.** Redis-backed idempotency interceptor on all writes; `strict:true` on any
+  write whose duplicate submission must not double-apply (client-supplied
+  `Idempotency-Key`).
+- **Security.** RBAC + ownership on every endpoint and gateway connection, deny-by-default:
+  the authentication and roles guards are registered globally (`APP_GUARD`), and a route is
+  public only when explicitly marked `@Public()`. Role comes from the verified JWT,
+  ownership resolved server-side. Return `404` (not `403`) for cross-owner access to a
+  sensitive resource. Rate-limit public endpoints (`@nestjs/throttler`). No PII in logs.
+- **Validation.** One global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`,
+  `transform`) validates every request DTO; controllers never validate by hand.
+- **Errors.** Services throw `AppError`, never Nest's `HttpException`; one global exception
+  filter maps `AppError` to the HTTP response.
+- **No correctness rides on a background timer.** The host sleeps when idle, so anything
+  that expires (e.g. a seat hold) is judged from its stored timestamp at read and write
+  time. A cleanup job may tidy up; it is never what makes the state correct.
 - **Inline types are forbidden.** No `interface`/non-trivial `type` inside
-  service/controller/repo/client/handler/middleware files — it belongs in `types.ts`.
+  service/controller/repository/gateway/guard/interceptor/filter files — it belongs in the
+  module's `types.ts`. DTO classes live in the module's `dto/` folder.
 
 ## Anti-patterns
 
