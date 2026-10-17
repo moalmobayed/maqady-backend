@@ -1,0 +1,18 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "catalyst-core@catalyst-kit": true,
+    "catalyst-node-service@catalyst-kit": true,
+    "catalyst-nextjs-supabase@catalyst-kit": false
+  },
+  "extraKnownMarketplaces": {
+    "catalyst-kit": {
+      "source": {
+        "source": "github",
+        "repo": "Catalystsw/int-engineering-docs",
+        "ref": "ai-starter-kit"
+      }
+    }
+  }
+}

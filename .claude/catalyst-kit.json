@@ -1,0 +1,6 @@
+{
+  "kitVersion": "0.1.0",
+  "core": "1.0.0",
+  "pack": { "name": "catalyst-node-service", "version": "1.0.0" },
+  "initializedAt": "2026-10-18"
+}
