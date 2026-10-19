@@ -569,7 +569,7 @@ The React frontend talks to Maqady through one REST API and one WebSocket. It ne
 - **Sign-in.** Email and password return a short-lived access token, sent as `Authorization: Bearer`, and a refresh token that is exchanged for new tokens. A `SESSION_EXPIRED` error means refresh or sign in again.
 - **Guest holds.** Holding seats while signed out returns a hold code. The frontend keeps it for the browser session and sends it when the customer signs in, to claim the hold.
 - **Safe retries.** Every write sends an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
-- **Errors.** One shape: `{ "error": { "code", "message", "details", "correlationId" } }`. Codes are stable, for example `SEAT_TAKEN`, `HOLD_EXPIRED`, `PAYMENT_DECLINED`, `SESSION_EXPIRED`, `ACCOUNT_BLOCKED`, `RATE_LIMITED`, `NOT_FOUND`, `VALIDATION_FAILED`.
+- **Errors.** One shape: `{ "error": { "code", "message", "details", "correlationId" } }`. Codes are stable, for example `SEAT_TAKEN`, `HOLD_EXPIRED`, `ALREADY_PAID`, `SESSION_EXPIRED`, `ACCOUNT_BLOCKED`, `RATE_LIMITED`, `NOT_FOUND`, `VALIDATION_FAILED`.
 - **Lists.** Cursor pagination: `{ "items", "nextCursor", "total" }`.
 - **Money.** Whole piastres plus a currency, for example `{ "amount": 19000, "currency": "EGP" }`. The frontend formats it as "EGP 190".
 - **Time.** ISO 8601 timestamps with their offset. Showtimes also carry their cinema day (`2026-10-16`).
@@ -584,7 +584,7 @@ The React frontend talks to Maqady through one REST API and one WebSocket. It ne
 
 ### Simulated providers
 
-- **Payments.** A documented set of test cards and wallet outcomes decides each result: approve, decline, slow approval (Processing first) and wallet cancelled. The card form sends only the chosen test card's token, never a card number.
+- **Payments.** A documented set of test cards and wallet outcomes decides each result: approve, decline, slow approval (Processing first) and wallet cancelled. The card form sends only the chosen test card's token, never a card number. A decline is a normal result, not an error: the payment comes back with the status Declined.
 - **Email and SMS.** Messages are stored, not sent, and appear in the admin Message log. Their links open frontend routes: `/verify-email?token=`, `/reset-password?token=` and `/admin/set-password?token=`.
 
 ## Acceptance criteria

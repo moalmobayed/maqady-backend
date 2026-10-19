@@ -120,10 +120,12 @@ multi-service platform whose platform-level docs live elsewhere.
 
 ## Stack
 
-TypeScript · NestJS (on `@nestjs/platform-express`) · Knex · PostgreSQL · Redis · Docker,
+TypeScript · NestJS (on `@nestjs/platform-express`) · Knex · PostgreSQL · Docker,
 plus a WebSocket gateway on `@nestjs/platform-ws` (plain `ws`, not socket.io). NestJS replaces
 the pack's plain Express by recorded exception —
-[ADR 0002](docs/adr/0002-nestjs-instead-of-express.md). The stack is **locked**: never
+[ADR 0002](docs/adr/0002-nestjs-instead-of-express.md). The pack's Redis is not used:
+idempotency keys live in Postgres, by recorded exception —
+[ADR 0003](docs/adr/0003-idempotency-in-postgres.md). The stack is **locked**: never
 introduce an ORM (including Nest's TypeORM/Prisma/MikroORM integrations), a second query
 builder, or another framework.
 
@@ -164,9 +166,10 @@ the previous one compiles.
   batch reads with `whereIn`; never one query per row inside a loop. Knex is reached only
   through the one shared Knex provider, and only repositories inject it.
 - **Pagination.** Cursor-based, on every list endpoint.
-- **Idempotency.** Redis-backed idempotency interceptor on all writes; `strict:true` on any
-  write whose duplicate submission must not double-apply (client-supplied
-  `Idempotency-Key`).
+- **Idempotency.** Postgres-backed idempotency interceptor on all writes
+  ([ADR 0003](docs/adr/0003-idempotency-in-postgres.md)): the key is stored in the same
+  transaction as the write it protects. `strict:true` on any write whose duplicate submission
+  must not double-apply (client-supplied `Idempotency-Key`).
 - **Security.** RBAC + ownership on every endpoint and gateway connection, deny-by-default:
   the authentication and roles guards are registered globally (`APP_GUARD`), and a route is
   public only when explicitly marked `@Public()`. Role comes from the verified JWT,
@@ -219,6 +222,8 @@ the previous one compiles.
 
 ## Extra review dimensions
 
-- **Contract drift** — code and `spec.md` against `contracts/openapi.yaml`. Contracts win.
+- **Contract drift** — `contracts/openapi.yaml` is generated from the code (`@nestjs/swagger`)
+  and committed; CI fails when the committed copy is stale. Review the contract's diff against
+  the unit's `spec.md`. Contracts win: where they disagree after review, the spec is corrected.
 - **Service-to-service auth** — every internal endpoint verifies the service token; no
-  internal route is reachable with a user token alone.
+  internal route is reachable with a user token alone. (v1 has no internal endpoints.)
