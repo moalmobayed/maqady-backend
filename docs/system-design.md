@@ -23,9 +23,10 @@ WebSocket endpoint for the live seat map. It runs as a single instance on Render
 with Supabase providing Postgres and file storage.
 
 Postgres is the single source of truth for everything that must be correct: seat ownership,
-holds, payments, sessions and idempotency keys. A seat is claimed with one atomic upsert,
-so two buyers can never confirm the same seat. Anything that expires is judged from its stored
-timestamp whenever it is read, because the free host sleeps and no timer can be trusted.
+holds, payments, sessions and idempotency keys. Seats are claimed with one atomic upsert and
+locked in a fixed order while a payment runs, so two buyers can never confirm the same seat.
+Anything that expires is judged from its stored timestamp whenever it is read, because the free
+host sleeps and no timer can be trusted.
 
 Payments, email and SMS go through simulated providers that live inside the service, behind
 interfaces a real provider could replace later.
@@ -57,18 +58,18 @@ infrastructure, as a codebase worth learning NestJS from.
 - Let a background timer decide whether something is correct.
 - Trust the client for prices, seat availability, identity or payment results.
 - Use an ORM, or let the frontend reach Supabase's database or APIs directly.
-- Store card data, or put personal data in logs.
+- Store card data, keep a live secret in plain text, or put personal data in logs.
 
 ## 3. Constraints
 
 | Constraint | What it forces |
 |---|---|
-| Render free web service: one instance that sleeps when idle and has little memory | No correctness on timers (§7.3). Rate-limit counters and WebSocket fan-out stay in process memory. Image processing runs one job at a time. |
+| Render free web service: one instance that sleeps when idle and has little memory and CPU | No correctness on timers (§7.4). Rate-limit counters and WebSocket fan-out stay in process memory. Image processing runs one job at a time, outside database transactions. |
 | Supabase free: 500 MB database, 1 GB storage, 50 MB per file, 10 GB monthly egress, paused after 7 days of low activity | Photos only, stored in web sizes. Videos are YouTube links. An optional daily ping keeps the project active (§16). |
 | Locked stack: NestJS on Express, Knex with raw SQL migrations, PostgreSQL ([ADR 0002](adr/0002-nestjs-instead-of-express.md)); no Redis ([ADR 0003](adr/0003-idempotency-in-postgres.md)) | No ORM, no second query builder. Idempotency keys live in Postgres. |
 | Frontend contract: REST plus one WebSocket using the browser's built-in `WebSocket` | Plain `ws` through `@nestjs/platform-ws`, not socket.io |
 | Cairo time with summer-time changes | Every time calculation goes through shared time helpers (§8) |
-| Practice project | Simulated payment and messaging providers, behind interfaces (§7.4, §13.1) |
+| Practice project | Simulated payment and messaging providers, behind interfaces (§7.5, §13.1) |
 
 ## 4. Architecture at a glance
 
@@ -90,7 +91,7 @@ flowchart LR
   FE -- "WebSocket" --> API
   FE -- "loads image links" --> ST
   FE -- "embeds trailers" --> YT
-  API -- "Knex through the connection pooler" --> PG
+  API -- "Knex through the session pooler" --> PG
   API -- "service key, server side only" --> ST
   API --- SIM
 ```
@@ -99,8 +100,8 @@ flowchart LR
   the same process.
 - The browser talks only to the API, plus public image links and YouTube embeds. It never
   holds a Supabase key.
-- Every write runs in one database transaction, opened by the write interceptor (§14.1).
-  Events that leave the process, such as seat-map pushes, are sent only after that
+- Every write request runs in one database transaction, opened by the write interceptor
+  (§14.1). Events that leave the process, such as seat-map pushes, are sent only after that
   transaction commits.
 
 ## 5. Modules
@@ -111,10 +112,11 @@ a repository, a service, a controller or gateway, and the module file.
 
 | Module | Owns (tables) | Uses |
 |---|---|---|
-| `common/database` | Knex provider, transaction context, migrations runner | — |
+| `common/database` | Knex provider, `TransactionRepository`, transaction context, migrations runner, pg type parsers | — |
 | `common/idempotency` | `idempotency_keys`, the write interceptor | database |
 | `common/audit` | `audit_events` (write side) | database |
-| `common/auth` | Guards, `@Public()`, `@Roles()`, `@CurrentPrincipal()` | auth |
+| `common/auth` | Guards, the access decorators (§11), the boot-time route check | auth |
+| `common/crypto` | Envelope encryption for stored secrets, HMAC helpers | config |
 | `common/time`, `common/money`, `common/errors`, `common/pagination`, `common/logging`, `common/config` | Shared helpers, `AppError`, the global exception filter, cursor codec, pino setup, validated environment | — |
 | `auth` | `sessions`, `one_time_tokens` | customers, staff, messaging |
 | `customers` | `customers` | messaging, audit |
@@ -123,20 +125,23 @@ a repository, a service, a controller or gateway, and the module file.
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
 | `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters, seating |
 | `catalog` | `genres`, `movies`, `movie_genres`, `people`, `person_roles`, `movie_credits`, `movie_photos`, `movie_videos` | media |
-| `showtimes` | `showtimes` | catalog, halls, theaters, time, bookings (cancellation) |
-| `seating` | `seat_claims`; the seat-map gateway and in-process event bus | — |
-| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging, showtimes |
-| `payments` | `payments`; the payment-provider interface and the simulated provider | — |
-| `messaging` | `messages`; templates and the simulated email/SMS sender | — |
+| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, bookings (cancellation) |
+| `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
+| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging |
+| `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
+| `messaging` | `messages`; templates and the simulated email/SMS sender | crypto |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
 | `health` | Liveness and readiness | database |
 
 Rules:
 
-- Only repositories inject Knex. Modules talk to each other only through exported services,
-  never another module's repository.
-- Dependencies point one way. `seating`, `payments` and `messaging` depend on nothing else in
-  this table. `bookings` orchestrates them.
+- Only repositories inject Knex. Transactions are opened by `TransactionRepository.run()` in
+  `common/database`, so even the write interceptor reaches Knex through a repository.
+- Modules talk to each other only through exported services, never another module's
+  repository.
+- Dependencies point one way. `seating` and `messaging` depend on nothing else in this table.
+  `payments` uses `seating` to confirm claims when it settles a payment. `bookings`
+  orchestrates holds, payments and refunds.
 - The showtimes ↔ bookings cycle (cancelling a showtime refunds its bookings) is broken by
   `bookings` exporting a `ShowtimeCancellationService` that `showtimes` calls. `bookings` reads
   showtimes through its own SQL joins, not through the showtimes service.
@@ -154,11 +159,17 @@ Rules:
 - **Naming and types.** Follow `CLAUDE.md` and PostgreSQL Standards: plural `snake_case` tables;
   `id BIGSERIAL`; foreign keys named `fk_…` with a covering `idx_…`; enum-likes as
   `VARCHAR CHECK (…)` mirrored in the module's `enums.ts`; `TIMESTAMPTZ` everywhere.
-- **Money.** Whole piastres as `INT` plus `currency VARCHAR(3)` (always `EGP` in v1). The
-  one exception is a movie's optional budget, stored as `BIGINT` piastres because large
-  budgets overflow `INT`.
-- **Migrations.** Raw SQL, append-only, one Knex migration file per change. Every index
-  carries a comment naming the query it serves.
+- **Money.** Whole piastres as `INT` plus `currency VARCHAR(3)` (always `EGP` in v1). A movie's
+  budget is display text (`budget_label`, for example "EGP 48M"), not money: it is never added,
+  converted or charged.
+- **No defaults on critical columns.** Timestamps such as `created_at` are written by the
+  service from the `Clock` (§14.6), not by `DEFAULT now()`, so tests control time.
+- **Migrations.** Raw SQL, append-only, one Knex migration file per change. Every index carries
+  a comment naming the query it serves. A table that references one created by a later unit
+  gets that foreign key in the later unit's migration.
+- **Backward-compatible migrations.** Render may run the old and new release side by side
+  during a deploy, so a migration never breaks the previous release: expand first, contract in
+  a later release.
 
 ### 6.2 Tables
 
@@ -167,20 +178,21 @@ Rules:
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `customers` | Customer accounts | `email CITEXT`, unique among rows where `deleted_at IS NULL`; `password_hash`; `phone`; `email_verified_at`; `status` (`active`, `blocked`); `deleted_at`. An anonymised row has no email or phone (CHECK). |
-| `staff_users` | Staff accounts | `email CITEXT UNIQUE`; `role` (`admin`, `box_office`); `status` (`invited`, `active`, `deactivated`); `password_hash` is NULL until the invite is accepted; `last_sign_in_at` |
-| `sessions` | Refresh-token sessions | Exactly one of `customer_id`, `staff_user_id` (CHECK `num_nonnulls(…) = 1`); `family_id`; `token_hash` UNIQUE; `expires_at`; `revoked_at`; `replaced_by_id` |
-| `one_time_tokens` | Email verification, password reset, staff invite | `purpose` (`verify_email`, `reset_password`, `staff_invite`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
-| `idempotency_keys` | Stored results of writes | UNIQUE (`scope`, `key`); `request_hash`; `response_status`; `response_body JSONB`; `created_at`. A key older than 24 hours counts as absent. |
-| `audit_events` | Activity log | `actor_kind` (`staff`, `customer`, `system`) plus actor FKs; `action` (for example `booking.refunded`); `entity_type`, `entity_id`; `booking_id`; `summary`; `metadata JSONB`. No personal data in `summary` or `metadata`. |
-| `messages` | Simulated email and SMS: the outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`; `body`; FKs to the related customer, staff user or booking |
-| `staff_alert_reads` | Bell read state | PK `staff_user_id`; `last_seen_at` |
+| `staff_users` | Staff accounts | `email CITEXT UNIQUE`; `role` (`admin`, `box_office`); `status` (`invited`, `active`, `deactivated`); `password_hash` is NULL until a password is set; `last_sign_in_at` |
+| `sessions` | Refresh-token sessions | Exactly one of `customer_id`, `staff_user_id` (CHECK `num_nonnulls(…) = 1`); `family_id`; `token_hash` UNIQUE; `rotated_at`; `expires_at`; `revoked_at`; `replaced_by_id` |
+| `one_time_tokens` | Single-use links | `purpose` (`verify_email`, `customer_password_reset`, `staff_invite`, `staff_password_reset`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
+| `idempotency_keys` | Stored results of writes | UNIQUE (`scope`, `key`); `request_hash`; `response_status`; `response_ciphertext` (the response body, encrypted, §14.1); `created_at`. A key older than 24 hours counts as absent. |
+| `audit_events` | Activity log | `actor_kind` (`staff`, `customer`, `system`) plus actor FKs; `action` (for example `booking.refunded`); `entity_type`, `entity_id`; `booking_id`; `changed_fields TEXT[]`; `metadata JSONB`. Never personal data: names of changed fields, not their values. |
+| `messages` | Simulated email and SMS: the outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`; `body` with `{{link}}` placeholders; `secret_ciphertext` for any one-time token (§13.1); FKs to the related customer, staff user or booking |
+| `staff_alert_reads` | Bell read state | PK (`staff_user_id`, `alert_key`); `seen_at` |
+| `hold_refusals` | Seat conflicts, for the PRD's seat-conflict rate | `showtime_id`, `refused_at`, `seat_count`. Written in its own transaction after a refused hold rolls back. |
 
 **Catalog**
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `genres` | Fixed genre list, seeded by migration | `name` UNIQUE |
-| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes > 0`; `release_date DATE`; `featured_position` 1–5, UNIQUE where not NULL; `hero_video_id`; `poster_image_id`; `backdrop_photo_id`; optional `budget` and `filming_locations`; `updated_by_staff_id` |
+| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes > 0`; `release_date DATE`; `featured_position` 1–5, UNIQUE where not NULL; `hero_video_id`; `poster_image_id`; `backdrop_photo_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
 | `movie_genres` | Movie ↔ genre | PK (`movie_id`, `genre_id`) |
 | `people` | Actors and crew | `full_name`, `name_ar`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three social links |
 | `person_roles` | Roles shown on a person, even without credits | PK (`person_id`, `role`); `role` is one of the 7 credit roles |
@@ -208,10 +220,10 @@ Rules:
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `showtimes` | A movie in a hall at a time | Composite FK (`hall_id`, `theater_id`) → `halls`; `starts_at`, `ends_at`, `cleaning_ends_at` (`ends_at` + 20 minutes, written by the service); `cinema_date`; `price_front`, `_middle`, `_back` plus `currency`; `seat_capacity`; `status` (`scheduled`, `cancelled`); `cancel_reason`. **EXCLUDE USING gist (`hall_id` WITH =, `tstzrange(starts_at, cleaning_ends_at)` WITH &&) WHERE `status = 'scheduled'`.** |
-| `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`) |
+| `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `confirmed_at`; `refunded_at`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`) |
 | `booking_seats` | Seat and price snapshot | PK (`booking_id`, `seat_label`); `row_label`, `seat_number`, `zone`, `price`, `is_wheelchair` |
 | `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold) |
-| `payments` | Charges and refunds | `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
+| `payments` | Charges and refunds | `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `refund_of_payment_id` (a refund names the charge it returns); `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
 | `booking_notes` | Internal staff notes | `staff_user_id`, `body` (at most 1,000 characters) |
 
 ```mermaid
@@ -232,7 +244,7 @@ Each rule below is enforced by the database, not only by application code:
 
 | Rule | Enforced by |
 |---|---|
-| A seat belongs to at most one live booking per showtime | `seat_claims` primary key plus the claim upsert (§7.1) |
+| A seat belongs to at most one live booking per showtime | `seat_claims` primary key plus the claim upsert (§7.2) |
 | A claim always matches its booking's showtime | Composite FK (`booking_id`, `showtime_id`) |
 | A booking has at most one in-flight or successful sale charge | Partial unique index on `payments` |
 | Two showtimes in a hall are at least 20 minutes apart | Exclusion constraint on `showtimes` |
@@ -241,22 +253,42 @@ Each rule below is enforced by the database, not only by application code:
 | At most one movie per carousel position | Partial UNIQUE on `movies.featured_position` |
 | No customer email is shared by two live accounts | Partial UNIQUE on `customers.email` |
 
-Opening hours, the movie's status and the 8-seat limit are checked by services. Those checks
-need joins or time-zone logic that a constraint cannot express.
+Rules that need joins, row locks or time-zone logic are enforced by services, under the lock
+order in §7.1: opening hours, a payment racing a hold's expiry, a showtime changing during a
+payment, the 8-seat limit and the last-admin rule.
 
 ## 7. Booking core
 
-### 7.1 Seat claims
+### 7.1 Lock order
+
+Every operation that touches seats takes its locks in one fixed order, so two operations can
+wait for each other but never deadlock in a cycle:
+
+1. **Settle due payments first**, in their own short transaction (§7.5).
+2. **Showtime row.** `FOR SHARE` to read it as bookable (holds, payments, edits). `FOR UPDATE`
+   to change it (move, cancel, price change). With two showtimes (an edit), lock both in id
+   order.
+3. **Hall row.** `FOR SHARE` when validating seats against the layout. `FOR UPDATE` to save a
+   layout.
+4. **Principal row** (customer or staff member) `FOR UPDATE`, when enforcing "one live hold".
+5. **Booking rows** `FOR UPDATE`, in id order.
+6. **Seat claims**, in (`showtime_id`, `seat_label`) order, whether locked with `FOR UPDATE` or
+   written by the upsert. Seat labels are sorted before every statement.
+
+The write interceptor retries the whole request transaction once on a deadlock (`40P01`) or a
+serialization failure (`40001`). The idempotency key rolls back with it, so the retry is safe.
+
+### 7.2 Seat claims
 
 `seat_claims` is the only place that says who holds a seat right now. `booking_seats` keeps
 the history: which seats a booking had, and at what price.
 
-Claiming seats is one statement, inside the transaction that creates the hold:
+Claiming seats is one statement, with the labels sorted (§7.1):
 
 ```sql
 INSERT INTO seat_claims (showtime_id, seat_label, booking_id, claimed_until)
-SELECT :showtime_id, label, :booking_id, :hold_expires_at
-FROM unnest(:seat_labels::text[]) AS label
+SELECT :showtime_id, label, :booking_id, :claimed_until
+FROM unnest(:sorted_seat_labels::text[]) AS label
 ON CONFLICT (showtime_id, seat_label) DO UPDATE
   SET booking_id = EXCLUDED.booking_id,
       claimed_until = EXCLUDED.claimed_until
@@ -265,51 +297,59 @@ ON CONFLICT (showtime_id, seat_label) DO UPDATE
 RETURNING seat_label;
 ```
 
-- If fewer labels come back than were requested, a seat was taken. The transaction rolls back,
-  and the API answers `SEAT_TAKEN` listing the seats that failed.
-- Two concurrent requests for the same seat serialize on the row lock that `ON CONFLICT`
-  takes. The second one sees an unexpired claim and gets nothing back.
-- An expired hold's claim is simply overwritten. Nothing has to run to free a seat.
-- Confirming a booking sets `claimed_until` to NULL, so its claims can never be overwritten.
-- Refunding a booking deletes its claims.
-- `:now` comes from the application's clock (§14.6), never from SQL `now()`, so tests control
-  time.
+- **A seat taken.** If fewer labels come back than were requested, the transaction rolls back
+  and the API answers `SEAT_TAKEN` listing the seats that failed. A separate small transaction
+  then records the refusal in `hold_refusals`.
+- **Concurrent claims.** Two concurrent requests for the same seat serialize on the row lock
+  that `ON CONFLICT` takes. After the lock, Postgres re-evaluates the `WHERE` against the newest
+  row, so the second request sees the first one's claim and gets nothing back.
+- **Expired claims.** An expired hold's claim is simply overwritten. Nothing has to run to free
+  a seat.
+- **Confirmation.** Confirming a booking sets `claimed_until` to NULL, so its claims can never be
+  overwritten.
+- **Refunds.** Refunding a booking deletes its claims.
+- **Time.** `:now` comes from the application's `Clock` (§14.6), never from SQL `now()`, so tests
+  control time.
 
 A showtime's availability snapshot is its claims where `claimed_until IS NULL OR
 claimed_until > :now`.
 
-### 7.2 Holds
+### 7.3 Holds
 
-A hold is a booking with `status = 'held'`. Creating one checks, in order:
+A hold is a booking with `status = 'held'`. Creating one runs, under the lock order:
 
-1. The showtime is `scheduled` and hasn't started, its movie is `now_showing`, its theater is
-   `active` and its hall is `active`.
-2. There are 1 to 8 distinct seats, and each exists in the hall's layout (not a `no_seat`).
-3. The caller has no other live hold for this purpose. A browser presenting a previous hold
-   code, a signed-in customer, or a staff member making a counter sale: the earlier hold is
-   released first (`hold_expires_at = :now` and its claims deleted).
+1. Settle due payments for the showtime.
+2. Lock the showtime `FOR SHARE`. It must be `scheduled` and not yet started, its movie
+   `now_showing` and its theater `active`.
+3. Lock the hall `FOR SHARE`. It must be `active`, and every seat must exist in its layout (not a
+   `no_seat`). There must be 1 to 8 distinct seats.
+4. Lock the signed-in customer, or the staff member for a counter hold, `FOR UPDATE`. Then
+   release that principal's previous live hold. For a guest, release the hold whose code the
+   browser presents.
+   - Releasing sets `hold_expires_at = :now`, deletes the claims and publishes `seat.released`.
+   - A hold whose payment is still processing is never released: the request fails with
+     `PAYMENT_IN_PROGRESS`, so PRD Seats rule 5 holds.
+5. Insert the booking with a new reference (§7.9), the seat snapshot priced from the showtime's
+   current zone prices, and the total.
+   - `hold_expires_at` is the earlier of `:now + 5 minutes` and the showtime's `starts_at`, so no
+     hold outlives the moment the showtime starts.
+6. Claim the seats (§7.2) with `claimed_until = hold_expires_at`.
+7. For a guest, generate a 32-byte random **hold code**, store only its SHA-256 hash, and return
+   the code once.
+8. After commit, publish `seat.held` to the seat map (§12).
 
-The hold then:
+**Claiming a guest hold.** `POST /holds/{ref}/claims` carries the hold code in an `X-Hold-Token`
+header and a customer access token. It locks the customer, then the booking. The hold must be
+live and unowned, and the code's hash must match.
 
-- inserts the booking with a new reference, `hold_expires_at = :now + 5 minutes`, the seat
-  snapshot priced from the showtime's current zone prices, and the total;
-- claims the seats (§7.1);
-- for a guest, generates a 32-byte random **hold code**, stores its SHA-256 hash and returns the
-  code once;
-- after commit, publishes `seat.held` to the seat map (§12).
+The customer's other live hold is released as in step 4, publishing `seat.released`. The
+booking gets the `customer_id`, and its `hold_token_hash` is cleared, so the code is useless
+from then on.
 
-**Claiming a guest hold.** `POST /holds/{reference}/claim` carries the hold code in an
-`X-Hold-Token` header and a customer access token. The hold must be live and unowned, and the
-code's hash must match. The customer's other live hold, if any, is released. The booking gets
-the `customer_id`, and its `hold_token_hash` is cleared, so the code is useless from then on.
+**Releasing.** `DELETE /holds/{ref}` (owner or code holder) releases as in step 4. The booking
+then reads as Abandoned, or Failed if it had a declined payment.
 
-**Releasing.** `DELETE /holds/{reference}` (owner or code holder) sets `hold_expires_at =
-:now` and deletes the claims. The booking then reads as Abandoned, or Failed if it had a
-declined payment.
-
-**Rate limits.** Holds are limited per IP address, and per customer when signed in (§10.6).
-
-### 7.3 Statuses decided by the clock
+### 7.4 Statuses decided by the clock
 
 Only `held`, `confirmed` and `refunded` are stored. The three other PRD statuses follow from
 stored timestamps the moment they are read, so no job ever has to run:
@@ -332,7 +372,7 @@ The same approach covers every other time-based state: a showtime that has start
 theater's open state, an expired one-time token, an expired idempotency key and the ticket
 scan window.
 
-### 7.4 Online payment and settlement
+### 7.5 Online payment and settlement
 
 ```mermaid
 sequenceDiagram
@@ -341,12 +381,12 @@ sequenceDiagram
   participant D as Postgres
   participant P as Simulated provider
   B->>A: POST /showtimes/{id}/holds (seats, Idempotency-Key)
-  A->>D: insert held booking, claim seats
+  A->>D: lock showtime and hall, insert held booking, claim seats
   A-->>B: 201 reference, hold code (guest only), expiresAt, total
   A--)B: WebSocket seat.held to every viewer
-  B->>A: POST /holds/{ref}/claim (after sign-in, guests only)
+  B->>A: POST /holds/{ref}/claims (after sign-in, guests only)
   B->>A: POST /bookings/{ref}/payments (method, test token, Idempotency-Key)
-  A->>D: lock booking, check the hold, insert charge (processing)
+  A->>D: lock showtime, booking, then its claims; check all live
   A->>P: charge (amount, token, idempotency key)
   P-->>A: succeeded, declined, cancelled or processing
   A->>D: record the result; on success confirm, make claims permanent, queue tickets
@@ -354,22 +394,50 @@ sequenceDiagram
   A--)B: WebSocket seat.booked
 ```
 
-- **Preconditions.** The caller owns the booking. It is live (`hold_expires_at > :now`), and no
-  sale charge is processing or succeeded (also enforced by the partial unique index).
-- **Outcomes.** A decline is a normal result, not an error. The response is `201` with
-  `payment.status = "declined"`, and the booking is marked `has_declined_payment`. Its seats
-  stay held until the timer ends, so the customer can retry with a new Idempotency-Key.
-- **Success.** In the same transaction: the charge becomes `succeeded`, the booking `confirmed`,
-  `confirmed_at` is set, claims get `claimed_until = NULL`, `qr_version = 1`, the tickets message
-  is written (§13.1) and an audit event is recorded. After commit, `seat.booked` is published.
-- **Processing.** The slow test token returns `processing` with a `settles_at` time. The hold
-  and its claims are extended to `settles_at` plus 30 seconds, which keeps the PRD promise
-  that seats stay theirs until the payment answers. There is no callback and no timer: every
-  read of the booking asks the provider for the payment's state and settles it on the spot.
-  The simulated provider answers from `settles_at`.
-- **Guard for real providers.** If a payment ever succeeds after its claims were lost (only
-  possible with a slow real provider), settlement refunds it at once, and the booking ends
-  Refunded.
+A payment runs in one transaction:
+
+1. Settle the booking's due payments (below).
+2. Lock the showtime `FOR SHARE` and re-check it as in §7.3 step 2. A cancelled, moved-past or
+   started showtime fails with `SHOWTIME_NOT_BOOKABLE`.
+3. Lock the booking `FOR UPDATE`. The caller must own it, it must be `held` and live, and no
+   sale charge may be processing or succeeded (`PAYMENT_IN_PROGRESS`, `ALREADY_PAID`). The
+   partial unique index backs that last rule.
+4. Lock the booking's claims `FOR UPDATE`, in seat order. All `seat_count` claims must still
+   belong to the booking and be live, or the payment fails with `HOLD_EXPIRED`.
+   - From here, no rival hold can overwrite them: a rival's upsert waits on these row locks,
+     then sees the confirmed claims and gets `SEAT_TAKEN`.
+   - This is what keeps PRD Seats rule 5 true even if the timer reaches 0:00 during the
+     provider call.
+5. Insert the charge as `processing` and call the provider with our idempotency key.
+6. Record the result:
+   - **Succeeded.** Set the charge to `succeeded` and the booking to `confirmed` with
+     `confirmed_at`. Set the claims' `claimed_until` to NULL, checking with `RETURNING` that all
+     `seat_count` rows changed. Set `qr_version = 1`, write the tickets message (§13.1) and an
+     audit event. After commit, publish `seat.booked`.
+   - **Declined or cancelled.** Declined sets the booking's `has_declined_payment`; a wallet the
+     customer closed is `cancelled` and doesn't count as a decline. Either way the response is
+     `201` with the payment's status: a decline is a normal result, not an error, so it
+     commits. The seats stay held until the timer ends, and the customer retries with a new
+     Idempotency-Key.
+   - **Processing.** Extend the hold and its claims to `settles_at + 30 seconds`, and after
+     commit publish `seat.held` with the new end time.
+
+**Settlement.** `SettlementService.settleDue(scope)` finishes every processing charge whose
+provider result is ready. It runs in its own short transaction:
+
+1. `UPDATE payments SET status = … WHERE id = ANY(:due) AND status = 'processing' RETURNING …`.
+   Only the request that wins this update goes on, so two polling tabs settle a payment exactly
+   once.
+2. Apply the outcome in a batch: confirm bookings and claims, or set `has_declined_payment`.
+3. Publish seat events after commit.
+
+It is called before booking reads, before a payment or hold on the same showtime, and in a
+batch before admin lists, the Payments screen and analytics. That way no screen sees a stale
+Pending.
+
+The simulated provider decides "ready" from `settles_at`, so there is no callback and no timer.
+If a payment ever succeeds after its claims were lost, settlement refunds it at once and the
+booking ends Refunded. Only a slow real provider could cause that.
 
 **Provider interface.** `PaymentProvider` has `charge`, `retrieve` and `refund`. Each call
 carries our idempotency key, as a real gateway would require. The simulated provider is
@@ -384,70 +452,102 @@ stateless and decides each result from the test token:
 | `sim_wallet_apple_pay`, `sim_wallet_google_pay` | Approved |
 | `sim_wallet_cancelled` | Cancelled by the customer (not a decline) |
 
-### 7.5 Counter sales
+### 7.6 Counter sales
 
 1. A staff member picks seats on the live map. `POST /admin/counter-holds` creates a
-   `counter`-channel hold owned by that staff member, with the same claims and 5-minute timer
-   as online. A staff member has at most one live counter hold.
-2. `POST /admin/bookings/{ref}/counter-payment` records `cash` or `card_terminal` with the
+   `counter`-channel hold owned by that staff member, through the same steps as §7.3. A staff
+   member has at most one live counter hold.
+2. `POST /admin/bookings/{ref}/counter-payments` records `cash` or `card_terminal` with the
    terminal's receipt reference, and the customer: walk-in, an existing customer, or typed
-   contact details. The booking is confirmed in the same transaction, `collected_by_staff_id`
-   comes from the signed-in staff member, and tickets go to any email or phone given.
+   contact details.
+   - It takes the locks of §7.5 steps 2–4 and confirms in the same transaction.
+     `collected_by_staff_id` comes from the signed-in staff member.
+   - Tickets go to any email or phone given. Staff can always download the PDF for a walk-in
+     (§7.9).
 3. A counter hold that lapses becomes Abandoned, like any other.
 
-### 7.6 Cancelling, refunding and paying out
+### 7.7 Cancelling, refunding and paying out
 
-- **Cancel & refund (admin only).** The booking must be Confirmed with its showtime not ended.
-  One transaction records a refund for the full amount and sets the booking to `refunded`,
-  deleting its claims. An online charge is refunded through the provider (`succeeded`). A
-  cash or terminal sale gets a `pending` refund. Then the refund message and an audit event.
-  After commit, `seat.released` is published.
-- **Paying out a counter refund.** `POST /admin/refunds/{id}/paid-out` moves a `pending` refund
-  to `succeeded` and records who paid it out and when.
-- **Cancelling a showtime.** One transaction sets the showtime to `cancelled`, refunds every
-  Confirmed booking as above, releases every live hold, and writes the email and SMS rows for
-  every ticket holder. Everything is batched (`whereIn`, multi-row inserts), never one query
-  per booking.
+Refunds are computed **per charge**, because one booking can be paid on more than one rail: an
+online sale plus cash collected during an edit. A charge's refundable amount is its `amount`
+minus the refunds that already name it in `refund_of_payment_id`.
 
-### 7.7 Booking edits (admin only)
+- **Cancel & refund (admin only).** `POST /admin/bookings/{ref}/refunds`. The booking must be
+  Confirmed, with its showtime not yet ended.
+  - Under the lock order, each succeeded charge gets a refund for its remaining amount, on its
+    own rail. Online charges are refunded through the provider (`succeeded`); cash and terminal
+    charges get a `pending` refund to pay out at the counter.
+  - The booking becomes `refunded` with `refunded_at`, its claims are deleted, and the refund
+    message and an audit event are written. After commit, `seat.released` is published.
+- **Paying out a counter refund.** `POST /admin/refunds/{id}/payouts` moves a `pending` refund to
+  `succeeded` and records who paid it out and when.
+- **Cancelling a showtime.** `PATCH /admin/showtimes/{id}` with `status: cancelled` and a reason.
+  It is allowed until the showtime ends: a projector can fail mid-screening.
+  - One transaction locks the showtime `FOR UPDATE`. Any in-flight payment has already
+    committed, and any later one waits and then sees the cancellation.
+  - It then refunds every Confirmed booking as above, releases every live hold, and writes the
+    email and SMS rows for every ticket holder. Everything is batched (`whereIn`, multi-row
+    inserts), never one query per booking.
+- **Cancellation preview.** `GET /admin/showtimes/{id}/cancellation-preview` returns the PRD's
+  impact figures: bookings and seats affected, the total refunded online and the total owed back
+  at the counter, computed per charge as above.
+
+### 7.8 Booking edits (admin only)
 
 An edit can change the showtime (same movie), the seats, or the contact details, with a
-required reason. `POST /admin/bookings/{ref}/edit/preview` returns the new total and the
-difference without saving. `POST /admin/bookings/{ref}/edit` applies it in one transaction:
+required reason. `POST /admin/bookings/{ref}/edit-previews` returns the new total and the
+difference without saving. `POST /admin/bookings/{ref}/edits` applies it in one transaction:
 
-1. Claim the new seats first. A conflict fails the whole edit with `SEAT_TAKEN`.
-2. Release the claims the edit gives up, and rebuild `booking_seats`. Seats kept on the same
-   showtime keep the price they were sold at; new seats take the target showtime's current
-   prices.
-3. Settle the difference. A lower total is refunded to the original method (online through
-   the provider, counter as a `pending` payout). A higher total must arrive in the same request
-   as a counter payment (`cash` or `card_terminal`), recorded as an `edit_difference` charge.
-4. Increment `qr_version`, so the old QR code stops working. Write an audit event with the
-   before and after, and send new tickets if the admin asked to notify.
+1. Lock the current and target showtimes `FOR SHARE` in id order, and re-check the target as
+   bookable (§7.3 step 2). Then lock the booking `FOR UPDATE` and its current claims in seat
+   order.
+2. Delete the booking's current claims. That frees the composite FK, so the booking's
+   `showtime_id` can change, and it frees the kept seats for re-insertion.
+3. Update the booking's showtime and contact details.
+4. Claim every target seat with the §7.2 upsert and `claimed_until = NULL` (sold). If any comes
+   back missing, the whole transaction rolls back with `SEAT_TAKEN`, restoring the old claims.
+5. Rebuild `booking_seats`. Seats kept on the same showtime keep the price they were sold at;
+   new seats take the target showtime's current prices.
+6. Settle the difference:
+   - A lower total is refunded across the succeeded charges, newest first, each on its own rail
+     (§7.7).
+   - A higher total must arrive in the same request as a counter payment (`cash` or
+     `card_terminal`), recorded as an `edit_difference` charge.
+7. Increment `qr_version`, so the old QR code stops working. Write an audit event with the names
+   of the changed fields (never their values), and send new tickets if the admin asked to notify.
+   After commit, publish the seat changes for both showtimes.
 
-Completed, Refunded, Failed and Abandoned bookings can't be edited.
+Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT_EDITABLE`).
 
-### 7.8 References, tickets and scanning
+### 7.9 References, tickets and scanning
 
-- **Reference.** `MQ-` plus 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no 0, O, 1, I
-  or L), drawn with `crypto.randomInt`. The UNIQUE constraint backs it, with up to 5 retries on
-  a collision. API paths identify bookings by reference; internal ids never leave the API.
-- **QR payload.** `MQ1.<reference>.<qr_version>.<signature>`, where the signature is
-  HMAC-SHA256 under `QR_SIGNING_KEY`, truncated to 16 bytes and base64url-encoded. The API
-  returns the payload string; the frontend draws the code.
-- **Downloads.** `GET /bookings/{ref}/ticket.pdf` builds the PDF on demand (pdfkit and
-  qrcode). `GET /bookings/{ref}/calendar.ics` returns the showtime and the theater's address.
-- **Scanning.** `POST /admin/scans` takes `{ theaterId, code }`. The code is a QR payload, or a
-  typed reference as a staff-only fallback. Results:
+- **Reference.** `MQ-` plus 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no 0, O, 1, I or
+  L), drawn with `crypto.randomInt`.
+  - The insert uses `ON CONFLICT (reference) DO NOTHING RETURNING id`, drawing a new reference up
+    to 5 times. A unique violation would abort the transaction (§14.1).
+  - API paths identify bookings by reference; internal ids never leave the API.
+- **QR payload.** `MQ1.<reference>.<qr_version>.<signature>`, where the signature is HMAC-SHA256
+  under `QR_SIGNING_KEY`, truncated to 16 bytes and base64url-encoded. The API returns the
+  payload string; the frontend draws the code.
+- **Downloads.** `GET /bookings/{ref}/ticket.pdf` (owner), `GET /admin/bookings/{ref}/ticket.pdf`
+  (staff) and `GET /bookings/{ref}/calendar.ics` (owner) are built on demand with pdfkit and
+  qrcode. The frontend fetches them with its `Authorization` header and saves the file. No token
+  ever goes in a URL.
+- **Scanning.** `POST /admin/scans` takes `{ theaterId, code }`, where `code` is a QR payload.
+  Results:
   - `VALID` with the seat count, recording `checked_in_at` atomically (`WHERE checked_in_at IS
     NULL`);
   - `ALREADY_USED` with the first scan's time;
-  - `WRONG_SHOWTIME`: another theater, or outside the window that opens 60 minutes before
-    the start and closes when the showtime ends;
+  - `WRONG_SHOWTIME`: another theater, a cancelled showtime, or outside the window that opens 60
+    minutes before the start and closes when the showtime ends;
   - `NOT_VALID`: refunded, or an old QR version;
   - `NOT_FOUND`.
+- **Typed references.** When the camera fails, staff can send `{ theaterId, reference }`
+  instead. That answers `CONFIRM_REQUIRED` with the booking's showtime, seats and contact
+  name. Only a second request with `confirm: true` checks the booking in, so the reference
+  alone admits nobody (PRD "Tickets and QR codes").
 
-### 7.9 Prices
+### 7.10 Prices
 
 - A new showtime copies the theater's three default zone prices. An admin can change a
   showtime's prices later, and the change applies to new holds only.
@@ -461,58 +561,77 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited.
 - **One time zone.** `Africa/Cairo`, a constant in `common/time`. Timestamps are stored as
   `TIMESTAMPTZ`. The API writes them in Cairo time with their offset, for example
   `2026-10-16T19:30:00+03:00`.
-- **Cinema day.** A cinema day runs from 06:00 to 06:00. `cinemaDateOf(instant)` is the Cairo
-  wall-clock date of `instant − 6 hours`. `showtimes.cinema_date` is written by the service
-  when the showtime is created or moved.
+- **Cinema day, by the wall clock.** A cinema day runs from 06:00 to 06:00 local time.
+  `cinemaDateOf(instant)` converts the instant to Cairo wall-clock time first. Before 06:00, the
+  cinema date is the previous calendar date; otherwise it is the same date.
+  - Subtracting six hours from the instant would be wrong on summer-time days. On Friday
+    24 April 2026, 06:30 summer time minus six hours lands at 23:30 Thursday winter time.
+  - `showtimes.cinema_date` is written by the service when a showtime is created or moved.
 - **Shared helpers only.** `common/time` wraps a time-zone-aware library (Luxon). It is the only
   place that converts between wall-clock times and instants. Inline offset or millisecond
   arithmetic is forbidden, as `CLAUDE.md` says.
-- **Summer-time changes.** Converting a wall-clock time that doesn't exist that night is
-  refused (`TIME_DOES_NOT_EXIST`). A time that occurs twice resolves to its first occurrence.
+- **Summer-time changes.** These rules apply when an admin enters a wall-clock time:
+  - A showtime start that doesn't exist that night is refused (`TIME_DOES_NOT_EXIST`).
+  - A time that occurs twice resolves to its first occurrence.
+  - Stored opening hours that fall into a skipped hour are shifted forward to the next valid
+    time, never refused, because they were valid when entered.
 - **Opening hours.** The hours for a cinema date are the special date's, if one exists, else
   the weekday's. They become instants by adding the stored minutes to the date's wall clock
   through the helpers.
 - **Showtime checks.**
   - The hours check, a service rule: the showtime starts and ends inside that window.
   - The 20-minute cleaning gap, the exclusion constraint. A violation becomes
-    `SHOWTIME_CONFLICT`, naming the showtime it overlaps.
+    `SHOWTIME_CONFLICT`, and a follow-up query names the overlapping showtime.
   - Only `now_showing` movies and `active` halls can be scheduled.
-- **Dry run.** `POST /admin/showtimes/check` runs every check for each requested date
-  without writing, and suggests free start times on a 5-minute grid. `POST /admin/showtimes`
-  creates the dates that pass and, if asked, skips the ones that don't.
-- **Moving.** Changing the start re-runs every check, recomputes `ends_at`,
-  `cleaning_ends_at` and `cinema_date`, and messages every ticket holder.
+- **Dry run and batch create.**
+  - `POST /admin/showtime-checks` runs every check for each requested date without writing, and
+    suggests free start times on a 5-minute grid.
+  - `POST /admin/showtimes` creates the dates that pass. Each date's insert runs in its own
+    savepoint, so "skip the dates that don't fit" can continue past a constraint violation
+    without aborting the transaction.
+- **Moving.** Allowed only before the showtime starts. The move locks the showtime `FOR UPDATE`,
+  re-runs every check, recomputes `ends_at`, `cleaning_ends_at` and `cinema_date`, and messages
+  every ticket holder.
 - **Capacity.** `showtimes.seat_capacity` is the hall's seat count when the showtime is
   created. A layout save refreshes it for that hall's future showtimes, so past occupancy
   never changes.
 
 ## 9. Theaters, halls, catalog and media
 
-- **Theater lifecycle.** A theater is created as `draft`. `POST /admin/theaters/{id}/publish`
-  requires zone prices, at least one active hall and opening hours, then sets `active`.
-  `PATCH /admin/theaters/{id}/selling` toggles `active` and `sales_paused`. Customers see only
-  `active` theaters and their showtimes. Only an empty draft can be deleted.
-- **Hall layouts.** `PUT /admin/halls/{id}/layout` replaces the whole layout (row count, seats
-  per row, row zones and seat marks) in one transaction. It is refused with `HALL_IN_USE`,
-  listing the blocking showtimes, if any showtime in the hall that hasn't ended has a live
-  claim. Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`,
-  deduplicated. A hall that ever had a showtime can only be retired, which requires no future
-  scheduled showtimes.
-- **Catalog.** Movies, people, credits and genres follow PRD §A2–A3. A movie that ever had a
-  booking can't be deleted. Deleting a person removes their credits. Featured positions are
-  unique, and a featured movie must have a hero video.
+- **Theater lifecycle.**
+  - A theater is created as `draft`. `PATCH /admin/theaters/{id}` changes its `status`.
+    Publishing (`draft` → `active`) requires zone prices, at least one active hall and opening
+    hours. `active` ↔ `sales_paused` is the selling toggle.
+  - Customers see only `active` theaters and their showtimes.
+  - Only a draft with no showtimes can be deleted.
+- **Hall layouts.**
+  - `PUT /admin/halls/{id}/layout` replaces the whole layout (row count, seats per row, row
+    zones and seat marks) in one transaction.
+  - It locks the hall `FOR UPDATE`, so it waits for in-flight holds that hold it `FOR SHARE`.
+    It is then refused with `HALL_IN_USE`, listing the blocking showtimes, if any showtime in
+    the hall that hasn't ended has a live claim.
+  - Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`, deduplicated.
+  - A hall that ever had a showtime can only be retired (`PATCH` with `status: retired`), which
+    requires no future scheduled showtimes.
+- **Catalog.**
+  - Movies, people, credits and genres follow PRD §A2–A3. A movie that ever had a booking
+    can't be deleted, and deleting a person removes their credits.
+  - Featured positions are unique, and a featured movie must have a hero video.
+  - The budget is a free-text label.
 - **YouTube.** The API accepts watch, youtu.be, shorts and embed URLs, and stores only the
   11-character video id. Thumbnails and the privacy-enhanced embed URL are derived from the id.
   Titles and optional durations are typed by the admin, so there is no YouTube API key.
-- **Image pipeline.**
-  1. Multer receives the file in memory, at most 10 MB.
+- **Image pipeline.** Upload routes opt out of the request transaction (§14.1), so slow image
+  work never holds a database connection.
+  1. Multer receives one file in memory, at most 10 MB.
   2. The pipeline checks the file's magic bytes (JPG or PNG only) and refuses images above 40
      megapixels.
-  3. sharp, running one job at a time, rotates by EXIF, strips metadata and writes WebP
-     variants per use: posters 2:3, backdrops 16:9, people photos square and at least
+  3. sharp, with `concurrency(1)` and its cache off, rotates by EXIF, strips metadata and writes
+     WebP variants per use: posters 2:3, backdrops 16:9, people photos square and at least
      600 × 600, galleries.
-  4. The variants are uploaded under one storage prefix, and an `images` row is inserted.
-  - If the transaction rolls back, the uploaded files are deleted. Replacing or deleting an image
+  4. The variants are uploaded under one storage prefix.
+  5. Only then does a short transaction insert the `images` row and link it.
+  - If that insert fails, the uploaded files are deleted. Replacing or deleting an image
     deletes its files after commit.
   - A maintenance script lists and removes any orphaned storage paths. It only tidies up.
 - **Image links.** The `media` bucket is public-read. The API returns full public URLs for
@@ -525,118 +644,204 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited.
 - Customers and staff are separate tables with separate sign-in routes and token audiences.
   A customer token never opens `/admin` routes, and a staff token never acts as a customer.
 - Passwords need at least 8 characters including a digit. They are hashed with Node's built-in
-  scrypt using OWASP's `N = 2^15, r = 8, p = 3` profile, with a per-password salt.
+  scrypt, using OWASP's `N = 2^14, r = 8, p = 5` profile and a per-password salt, with `maxmem`
+  set to 64 MiB. That profile needs 16 MiB per hash. A heavier profile exceeds Node's default
+  memory cap and costs seconds on Render's small CPU.
 - The first admin is created by a command run against the deployed database:
   `npm run admin:create`, with the email and a one-time password from environment variables.
   After that, admins invite staff.
+- **Staff password reset.** Staff use "Forgot password" on the staff sign-in page. It emails a
+  `staff_password_reset` link (1 hour) leading to `/admin/set-password`, the same page an invite
+  uses.
+- **Last admin.** Demoting or deactivating an admin first locks every active admin row
+  `FOR UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
+  demotions therefore can't both succeed.
 
 ### 10.2 Tokens and sessions
 
 - **Access token.** A JWT (HS256) valid for 15 minutes, carrying `sub`, `aud` (`customer` or
-  `staff`), `role` for staff, and `sid`. Separate secrets per audience.
+  `staff`) and `sid`, the session id. Separate secrets per audience. The token carries no
+  role; the guard reads the role from the database (§10.3).
 - **Refresh token.** An opaque 32-byte random value. Only its SHA-256 hash is stored, in
   `sessions`. It lasts 30 days for customers and 12 hours for staff.
-- **Rotation.** Every refresh issues a new refresh token in the same family. Presenting an
-  already-rotated token revokes the whole family (`SESSION_REVOKED`).
-- **Sign-out** revokes the family. Blocking a customer, or deactivating or demoting a staff
-  member, revokes all their sessions.
+- **Rotation.** Every refresh issues a new refresh token in the same family.
+  - Presenting the previous token again within 30 seconds of its rotation answers
+    `REFRESH_CONFLICT`, without revoking anything. A second tab or a retry then re-reads the
+    token already stored.
+  - After 30 seconds, presenting an already-rotated token revokes the whole family
+    (`SESSION_REVOKED`).
+- **Revocation.**
+  - Sign-out revokes the family.
+  - Blocking a customer, or deactivating a staff member, revokes all their sessions.
+  - Because the guard checks the session on every request, revocation takes effect immediately,
+    not when the access token expires.
 - **Transport.** Tokens travel in JSON bodies and the `Authorization` header, not cookies. The
   frontend and API sit on different sites on free hosting, where browsers increasingly block
   third-party cookies. The frontend keeps the access token in memory and the refresh token in
-  storage. Rotation with reuse detection limits what a stolen refresh token is worth. See §20
-  for the trade-off.
+  storage. See §20 for the trade-off.
+- **No idempotency storage for auth.** Sign-up, sign-in, refresh and password routes run inside
+  the write interceptor's transaction, but their responses are never stored, because they carry
+  credentials (§14.1).
+  - A repeated sign-up answers `EMAIL_TAKEN`.
+  - A repeated sign-in simply opens a second session.
+  - A repeated refresh meets the 30-second grace above.
 
 ### 10.3 Guards
 
-- `JwtAuthGuard` and `RolesGuard` are registered globally (`APP_GUARD`). A route is public only
-  with `@Public()`. Staff routes declare `@Roles('admin')` or `@Roles('admin', 'box_office')`.
-- On every authenticated request, the guard loads the principal's current status with one
-  indexed query. A blocked customer gets `ACCOUNT_BLOCKED`; a deactivated staff member
-  `UNAUTHENTICATED`. Blocking takes effect immediately, not when the token expires.
+- `JwtAuthGuard`, then `ThrottlerGuard`, then `AccessGuard` are registered globally
+  (`APP_GUARD`), in that order, so per-customer rate limits know the customer.
+- Each guard handles HTTP only and passes WebSocket contexts straight through
+  (`context.getType()`). The gateway enforces its own rules (§12).
+- **Access is declared on every route** with exactly one decorator: `@Public()`, `@Guest()`,
+  `@Customer()`, `@Staff()` or `@Admin()`. A boot-time check refuses to start the service if any
+  route has none. A missing declaration can never quietly mean "open".
+- **Per-request check.** On every authenticated request, the guard runs one indexed query on
+  the principal and the `sid` session. It requires the session to be unrevoked and the account
+  to be live, and it takes the staff role from the database.
+  - A blocked customer gets `ACCOUNT_BLOCKED`.
+  - A deactivated staff member gets `ACCOUNT_DEACTIVATED`.
+  - A demotion takes effect on the next request.
 
 ### 10.4 Ownership
 
 - A customer reaches only their own bookings. Anyone else's reference answers `NOT_FOUND`, as
   `CLAUDE.md` requires for sensitive resources.
 - A guest reaches a live, unclaimed hold only with its hold code.
-- Box office staff can read every booking and customer, but write only counter sales, scans,
-  resends and notes.
+- Box office staff can read every booking and customer. They can write only counter holds and
+  sales, scans, ticket resends and notes (§11).
 
 ### 10.5 One-time tokens
 
-Email verification (24 hours), password reset (1 hour) and staff invite (72 hours) each use a
-32-byte random token, stored as a hash and usable once. Requesting a new one invalidates the
-previous token of the same purpose. "Forgot password" always answers `202`, whether or not the
-email exists.
-
-Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
-registering is useless without the password, so the usability gain outweighs the small
-enumeration risk. See §20.
+- Email verification (24 hours), customer password reset (1 hour), staff invite (72 hours) and
+  staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
+  usable once.
+- Requesting a new token invalidates the previous one of the same purpose.
+- Both "Forgot password" routes always answer `202`, whether or not the email exists.
+- Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
+  registering is useless without the password, so the usability gain outweighs the small
+  enumeration risk. See §20.
+- Registration detects that duplicate with `INSERT … ON CONFLICT (email) WHERE deleted_at IS
+  NULL DO NOTHING RETURNING id`, so a taken email never raises an error inside the transaction
+  (§14.1).
 
 ### 10.6 Rate limits
 
-`@nestjs/throttler` with in-memory storage. The service trusts one proxy hop, so it sees the
-client's address behind Render.
+`@nestjs/throttler` with in-memory storage. Limits come from configuration, so tests can raise
+them. The service trusts one proxy hop to read the client's address behind Render, and the
+first deploy verifies that against Render's real `X-Forwarded-For` header (§16).
 
 | Route | Limit | Keyed by |
 |---|---|---|
-| Customer and staff sign-in | 5 per minute | IP address plus email |
+| Customer and staff sign-in | 5 per minute per email, and 20 per minute per IP address | IP address plus email; IP address |
 | Registration | 5 per hour | IP address |
-| Forgot password, resend verification | 3 per hour | Email (plus 20 per hour per IP address) |
-| Create a hold | 10 per 10 minutes | Customer when signed in, else IP address |
+| Both forgot-password routes, resend verification | 3 per hour per email, and 20 per hour per IP address | Email; IP address |
+| Create a hold | 30 per 10 minutes per IP address, and 10 per 10 minutes per signed-in customer | IP address; customer |
 | Pay | 10 per 5 minutes | Booking |
 | Customer "Email again" | 3 per hour | Booking |
 | Search | 60 per minute | IP address |
 | WebSocket | 20 connections, 3 subscriptions each | IP address and connection |
 | Every other route | 300 per minute | IP address |
 
+The per-IP hold limit is looser than the per-customer one because mobile carriers in Egypt put
+many customers behind one shared address.
+
 ### 10.7 Transport security
 
 - Helmet's default headers.
 - CORS restricted to the configured frontend origins.
-- JSON bodies up to 1 MB; multipart only on upload routes, up to 10 MB.
+  - Allowed request headers: `Authorization`, `Content-Type`, `Idempotency-Key`,
+    `X-Hold-Token` and `X-Request-Id`.
+  - Exposed response headers: `Idempotent-Replayed`, `X-Request-Id` and `Content-Disposition`.
+- JSON bodies up to 1 MB; multipart only on upload routes, one file, up to 10 MB.
 - HTTPS is terminated by Render.
 
 ## 11. API conventions and surface
 
 **Conventions**
 
-- Base path `/api/v1`, JSON with camelCase fields.
-- Money is `{ "amount": 19000, "currency": "EGP" }`. Times are ISO 8601 with offset, and
-  showtimes also carry `cinemaDate`.
-- Lists are cursor-paginated and return `{ "items", "nextCursor", "total" }`. The default page
+- **Base path and format.** `/api/v1`, JSON with camelCase fields.
+- **Routes.** Routes are plural nouns, auth included, and partial updates use `PATCH`, as
+  `CLAUDE.md` requires. Actions are modelled as resources: a refund, a payout, an edit, a
+  claim.
+- **Money and time.** Money is `{ "amount": 19000, "currency": "EGP" }`. Times are ISO 8601 with
+  offset, and showtimes also carry `cinemaDate`.
+- **Lists.** Cursor-paginated, returning `{ "items", "nextCursor", "total" }`. The default page
   size is 20, the maximum 100. The cursor is an opaque base64url encoding of the last row's sort
   key and id.
-- Every non-GET request accepts `Idempotency-Key`. The ones marked **strict** below require it.
-- Errors always look like `{ "error": { "code", "message", "details", "correlationId" } }` (§14.3).
-- Request DTOs are classes validated by the global `ValidationPipe`. Responses are response
-  DTOs, never entities.
+- **Idempotency.** Every write accepts `Idempotency-Key`. Routes marked **S** below are strict:
+  the key is required. The rule is that every `POST` that creates or changes something is
+  strict, with three exceptions:
+  - auth routes, whose responses are never stored (§10.2);
+  - scans, which are naturally idempotent;
+  - read-like checks and previews.
+- **Errors.** Errors always look like `{ "error": { "code", "message", "details",
+  "correlationId" } }` (§14.3).
+- **DTOs.** Request DTOs are classes validated by the global `ValidationPipe`. Responses are
+  response DTOs, never entities.
+
+**Access** (one per route, §10.3):
+
+- **Public**: anyone.
+- **Guest**: anyone, with a hold code when acting on a guest hold.
+- **Customer**: a signed-in customer.
+- **Owner**: the customer who owns the booking.
+- **Staff**: either staff role.
+- **Admin**: admins only.
 
 **Public and customer routes**
 
-| Area | Routes |
-|---|---|
-| Discovery | `GET /home` (carousel, ticker, rows, cinemas) · `GET /genres` · `GET /movies` (status, q, genres, cast, date, cursor) · `GET /movies/{id}` · `GET /movies/{id}/showtimes` · `GET /movies/{id}/similar` · `GET /people` (cast filter options) |
-| Theaters | `GET /theaters` (open now, parking) · `GET /theaters/{id}` · `GET /theaters/{id}/showtimes?date=` |
-| Seats and holds | `GET /showtimes/{id}` (header, layout, prices) · `GET /showtimes/{id}/seats` (snapshot) · `POST /showtimes/{id}/holds` **strict** · `POST /holds/{ref}/claim` **strict** · `DELETE /holds/{ref}` |
-| Bookings | `GET /bookings/{ref}` · `POST /bookings/{ref}/payments` **strict** · `GET /bookings/{ref}/ticket.pdf` · `GET /bookings/{ref}/calendar.ics` · `POST /bookings/{ref}/resend` **strict** · `GET /me/bookings?tab=upcoming\|past` |
-| Account | `POST /auth/register` · `POST /auth/login` · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/verify-email` · `POST /auth/verify-email/resend` · `POST /auth/forgot-password` · `POST /auth/reset-password` · `GET /me` · `PATCH /me` · `POST /me/password` |
-| Search | `GET /search?q=` |
-| Health | `GET /health` · `GET /health/ready` |
+| Route | Access | S |
+|---|---|---|
+| `GET /home`, `/genres`, `/movies`, `/movies/{id}`, `/movies/{id}/showtimes`, `/movies/{id}/similar`, `/people` | Public | |
+| `GET /theaters`, `/theaters/{id}`, `/theaters/{id}/showtimes?date=` | Public | |
+| `GET /showtimes/{id}` (header, layout, prices), `/showtimes/{id}/seats` (snapshot) | Public | |
+| `GET /search?q=` | Public | |
+| `GET /health`, `/health/ready` | Public | |
+| `POST /showtimes/{id}/holds` | Guest or Customer | S |
+| `POST /holds/{ref}/claims` | Customer, with the hold code | S |
+| `DELETE /holds/{ref}` | Owner, or Guest with the hold code | |
+| `GET /bookings/{ref}` | Owner, or Guest with the hold code while held | |
+| `POST /bookings/{ref}/payments` | Owner | S |
+| `GET /bookings/{ref}/ticket.pdf`, `/bookings/{ref}/calendar.ics` | Owner | |
+| `POST /bookings/{ref}/ticket-deliveries` ("Email again") | Owner | S |
+| `GET /me/bookings?tab=upcoming\|past` | Customer | |
+| `POST /auth/registrations` (sign up) · `POST /auth/sessions` (sign in) · `POST /auth/tokens` (refresh) | Public | |
+| `DELETE /auth/sessions/current` (sign out) | Customer | |
+| `POST /auth/email-verifications` (with the emailed token) · `POST /auth/password-reset-requests` · `POST /auth/password-resets` (with the emailed token) | Public | |
+| `POST /auth/email-verification-requests` (resend) | Customer | |
+| `GET /me` · `PATCH /me` · `PUT /me/password` | Customer | |
 
-**Admin routes** (`/api/v1/admin`, staff token; role in brackets)
+**Admin routes** (`/api/v1/admin`)
 
-| Area | Routes |
-|---|---|
-| Auth and staff | `POST /admin/auth/login`, `/refresh`, `/logout`, `/set-password` · `GET`, `POST /admin/staff` [admin] · `PATCH /admin/staff/{id}` (role, status) [admin] · `POST /admin/staff/{id}/resend-invite` [admin] |
-| Catalog [admin] | `/admin/movies` CRUD · `POST /admin/movies/archive` (bulk) · `/admin/movies/{id}/photos`, `/videos`, `/credits` · `/admin/people` CRUD · `/admin/people/{id}/photo` |
-| Theaters and halls [admin] | `/admin/theaters` CRUD · `POST /admin/theaters/{id}/publish` · `PATCH /admin/theaters/{id}/selling` · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `/admin/theaters/{id}/special-dates`, `/photos`, `/halls` · `PUT /admin/halls/{id}/layout` · `POST /admin/halls/{id}/retire` |
-| Showtimes [admin] | `GET /admin/showtimes?theaterId&date` · `POST /admin/showtimes/check` · `POST /admin/showtimes` **strict** · `PATCH /admin/showtimes/{id}` (move, prices) **strict** · `POST /admin/showtimes/{id}/cancel` **strict** |
-| Bookings | `GET /admin/bookings` · `GET /admin/bookings/{ref}` · `POST /admin/counter-holds` **strict** · `POST /admin/bookings/{ref}/counter-payment` **strict** · `POST /admin/bookings/{ref}/resend` **strict** · `POST /admin/bookings/{ref}/notes` · `POST /admin/scans` [both roles] · `POST /admin/bookings/{ref}/cancel-refund` **strict** · `POST /admin/bookings/{ref}/edit/preview` · `POST /admin/bookings/{ref}/edit` **strict** [admin] |
-| Customers | `GET /admin/customers` · `GET /admin/customers/{id}` [both roles] · `PATCH /admin/customers/{id}` · `POST /admin/customers/{id}/block`, `/unblock`, `/password-reset` · `DELETE /admin/customers/{id}` [admin] |
-| Payments [admin] | `GET /admin/payments` (transactions) · `GET /admin/payments/summary` (KPIs, reconciliation) · `POST /admin/refunds/{id}/paid-out` **strict** |
-| Insights | `GET /admin/overview` [admin] · `GET /admin/alerts` · `POST /admin/alerts/seen` [both roles] · `GET /admin/activity` · `GET /admin/messages` · `GET /admin/messages/{id}` [admin] · `GET /admin/search` [both roles, results filtered by role] · `GET /admin/exports/{overview,bookings,customers,payments}.csv` [admin] |
+| Route | Access | S |
+|---|---|---|
+| `POST /admin/auth/sessions` · `POST /admin/auth/tokens` · `POST /admin/auth/password-reset-requests` · `POST /admin/auth/password-setups` (with an invite or reset token) | Public | |
+| `DELETE /admin/auth/sessions/current` · `GET /admin/me` (name and role for the shell) | Staff | |
+| `GET /admin/staff` · `PATCH /admin/staff/{id}` (role, status) | Admin | |
+| `POST /admin/staff` (invite) · `POST /admin/staff/{id}/invitations` (resend) | Admin | S |
+| `GET`, `PATCH`, `DELETE /admin/movies/{id}` · `GET /admin/movies` · `PATCH /admin/movies` (bulk archive) · `PUT /admin/movies/{id}/credits` · `PATCH`, `DELETE` a movie's photos and videos | Admin | |
+| `POST /admin/movies` · `POST /admin/movies/{id}/photos` (upload) · `POST /admin/movies/{id}/videos` | Admin | S |
+| `GET /admin/people` · `GET`, `PATCH`, `DELETE /admin/people/{id}` · `PUT`, `DELETE /admin/people/{id}/photo` (upload) | Admin | |
+| `POST /admin/people` | Admin | S |
+| `GET /admin/theaters` · `GET`, `PATCH`, `DELETE /admin/theaters/{id}` (`PATCH` covers publish and selling) · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `PATCH`, `DELETE` a special date or photo | Admin | |
+| `POST /admin/theaters` · `POST /admin/theaters/{id}/special-dates` · `POST /admin/theaters/{id}/photos` (upload) · `POST /admin/theaters/{id}/halls` | Admin | S |
+| `PATCH`, `DELETE /admin/halls/{id}` (`PATCH` covers retire) · `GET`, `PUT /admin/halls/{id}/layout` | Admin | |
+| `GET /admin/showtimes?theaterId&date` · `GET /admin/showtimes/{id}` (manage panel) · `GET /admin/showtimes/{id}/cancellation-preview` · `POST /admin/showtime-checks` (dry run) | Admin | |
+| `POST /admin/showtimes` (batch) · `PATCH /admin/showtimes/{id}` (move, prices, cancel) | Admin | S |
+| `GET /admin/bookings` · `GET /admin/bookings/summary` (the four cards) · `GET /admin/bookings/{ref}` · `GET /admin/bookings/{ref}/ticket.pdf` | Staff | |
+| `POST /admin/counter-holds` · `POST /admin/bookings/{ref}/counter-payments` · `POST /admin/bookings/{ref}/ticket-deliveries` · `POST /admin/bookings/{ref}/notes` | Staff | S |
+| `DELETE /admin/counter-holds/{ref}` (own hold) · `POST /admin/scans` | Staff | |
+| `POST /admin/bookings/{ref}/edit-previews` | Admin | |
+| `POST /admin/bookings/{ref}/refunds` (cancel & refund) · `POST /admin/bookings/{ref}/edits` | Admin | S |
+| `GET /admin/customers` · `GET /admin/customers/{id}` | Staff | |
+| `PATCH /admin/customers/{id}` (details, block, unblock) · `DELETE /admin/customers/{id}` (anonymise) | Admin | |
+| `POST /admin/customers/{id}/password-reset-requests` | Admin | S |
+| `GET /admin/payments` (transactions) · `GET /admin/payments/summary` (KPIs, reconciliation) | Admin | |
+| `POST /admin/refunds/{id}/payouts` | Admin | S |
+| `GET /admin/overview` · `GET /admin/activity` · `GET /admin/messages` · `GET /admin/messages/{id}` · `GET /admin/exports/{overview,bookings,customers,payments}.csv` | Admin | |
+| `GET /admin/alerts` · `POST /admin/alert-reads` · `GET /admin/search` (results filtered by role) | Staff | |
 
+An integration test sends a box-office token to every Admin route and expects `FORBIDDEN`.
 Exact request and response shapes are defined in each unit's spec and published in the
 generated contract (§19).
 
@@ -644,15 +849,18 @@ generated contract (§19).
 
 - **Endpoint.** `/ws`, served by `@nestjs/platform-ws` (`WsAdapter`). Messages are JSON in
   Nest's `{ "event", "data" }` shape.
-- **Public.** No sign-in: the data is public and carries seat labels only. The gateway checks
-  the `Origin` header against the CORS allowlist and enforces the per-IP limits in §10.6.
+- **Public.** The gateway is marked `@Public()`; the global guards pass WebSocket contexts
+  through (§10.3). No sign-in is needed: the data is public and carries seat labels only.
+- **Limits.** The gateway checks the `Origin` header against the CORS allowlist and enforces the
+  per-IP limits in §10.6. Inbound messages are capped at 4 KB (`maxPayload`). Outbound
+  snapshots can be larger: a 300-seat hall's is about 10 KB.
 
 | Direction | Event | Data |
 |---|---|---|
 | Client → server | `subscribe` | `{ showtimeId }` |
 | Client → server | `unsubscribe` | `{ showtimeId }` |
 | Server → client | `snapshot` | `{ showtimeId, serverTime, seats: [{ label, state: "held" \| "booked", heldUntil? }] }` |
-| Server → client | `seat.held` | `{ showtimeId, labels, heldUntil }` |
+| Server → client | `seat.held` | `{ showtimeId, labels, heldUntil }`, also sent when a hold is extended |
 | Server → client | `seat.released` | `{ showtimeId, labels }` |
 | Server → client | `seat.booked` | `{ showtimeId, labels }` |
 | Server → client | `error` | `{ code }` |
@@ -663,7 +871,6 @@ generated contract (§19).
   event bus. A subscriber may miss an event during a reconnect, so every new subscription
   starts with a fresh snapshot.
 - **Liveness.** The server pings every 30 seconds and drops connections that don't answer.
-  A message is at most 4 KB.
 - **Scaling note.** Fan-out is in-process because there is one instance. A second instance would
   need Postgres `LISTEN/NOTIFY` over a session-mode connection (§20).
 
@@ -671,14 +878,22 @@ generated contract (§19).
 
 ### 13.1 Messaging
 
-- `MessageSender` is an interface; the simulated sender inserts the rendered message into
-  `messages`, in the same transaction as the change that caused it. That row *is* the send.
-- Templates are plain-text TypeScript functions in `messaging/templates/`, one per PRD trigger
+- **Sending.** `MessageSender` is an interface. The simulated sender inserts the rendered message
+  into `messages`, in the same transaction as the change that caused it. That row *is* the send.
+- **Templates.** Plain-text TypeScript functions in `messaging/templates/`, one per PRD trigger
   (PRD "Email and SMS"). Links are built from `FRONTEND_BASE_URL`.
-- The Message log API redacts one-time tokens in links unless `MESSAGE_LOG_REVEAL_SECRETS=true`.
-  The practice deployment sets it, because no real email exists to receive the links (PRD veto
-  call 16).
-- Deleting a customer deletes their messages, along with nulling their personal data.
+- **Secrets.** A one-time token is never stored in `body`. The body keeps a `{{link}}`
+  placeholder, and the token is stored encrypted in `secret_ciphertext` (§14.1).
+- **The Message log.**
+  - The log shows bodies with the placeholder, unless `MESSAGE_LOG_REVEAL_SECRETS=true`. Then
+    the link is rendered at read time, and each reveal writes an audit event naming the admin.
+  - The practice deployment turns reveal on, because no real email exists to receive the links
+    (PRD veto call 16). That includes staff invites and resets; without them, no new staff
+    member could be onboarded.
+  - The cost: while reveal is on, an admin could open a pending invite and act as that person.
+    The audit trail records every reveal. A real deployment turns reveal off and plugs in a real
+    email provider (§20).
+- **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
 
@@ -691,32 +906,48 @@ generated contract (§19).
 
 ### 13.3 Analytics and alerts
 
-- Every number on the Overview, Payments and bell is computed on read with SQL aggregates,
-  following the PRD "Dashboard numbers" definitions. No rollup tables, because refreshing
-  them would need a timer.
-- Revenue, tickets and occupancy group by `showtimes.cinema_date`. "Collected" figures group by
-  the cinema date of the money movement: `payments.created_at` for charges, the payout or refund
-  time for refunds.
-- The Payments screen's "Refunds (% of revenue)" is refunds ÷ money collected in the same
-  period. That keeps the whole screen on the money-moved basis.
-- Heatmap slots group showtimes by local start time: 12–15, 15–18, 18–21, 21–24 and 00–06.
-- Alerts are computed on read:
-  - failed online payments today;
-  - showtimes later today under 35% sold;
-  - active halls with no showtimes on a cinema day in the next 7.
+- **Computed on read.** Every number on the Overview, Payments and bell is computed with SQL
+  aggregates, after a batched `settleDue`, following the PRD "Dashboard numbers" definitions. No
+  rollup tables, because refreshing them would need a timer.
+- **Grouping by day.** Revenue, tickets and occupancy group by `showtimes.cinema_date`.
+  "Collected" figures group by the cinema date of the money movement: `payments.created_at` for
+  charges, the payout or refund time for refunds.
+- **Refunds KPI.** The Payments screen's refunds figure is refunds ÷ money collected in the same
+  period, so the whole screen stays on the money-moved basis. The PRD states it the same way.
+- **Heatmap slots.** Showtimes group by local start time: before 15:00 (morning shows
+  included), 15–18, 18–21, 21–24 and after midnight.
+- **Transaction statuses on the Payments screen.**
 
-  The bell's unread count compares each alert's latest underlying event with the staff
-  member's `last_seen_at`.
+  | Row | Shown as |
+  |---|---|
+  | Charge `processing` | Pending |
+  | Charge `succeeded` | Succeeded, or Refunded once fully refunded |
+  | Charge `declined`, or `cancelled` by the customer | Failed, with the reason |
+  | Refund `pending` | Pending |
+  | Refund `succeeded` | Succeeded, with a negative amount |
+- **Alerts.** Computed on read, each with a stable key:
+  - failed online payments today (`failed-payments:<date>:<count>`);
+  - showtimes later today under 35% sold (`low-sales:<showtimeId>`);
+  - active halls with no showtimes on a cinema day in the next 7 (`hall-gap:<hallId>:<date>`).
+
+  The unread count is the number of current alert keys the staff member hasn't seen in
+  `staff_alert_reads`. `POST /admin/alert-reads` marks the current keys seen. A new failed
+  payment changes the count in the key, so the alert shows as unread again.
 
 ### 13.4 Exports
 
 - CSV streamed from a Knex stream through `csv-stringify`, with the same filters as the screen.
-- Admins only. Each export writes an audit event, because exports contain personal data.
+- Any cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so
+  spreadsheets don't run it as a formula.
+- Admins only. Each export writes an audit event in its own short transaction, because exports
+  contain personal data.
 
 ### 13.5 Activity log
 
 - `AuditService.record()` runs inside the transaction of every staff write, and of customer
   booking events.
+- Events carry the names of changed fields, never their values, so the log holds no personal
+  data.
 - The admin Activity log filters by staff member, entity type and date.
 - A customer's booking History is the customer-visible subset of that booking's events,
   mapped to friendly labels.
@@ -725,26 +956,49 @@ generated contract (§19).
 
 ### 14.1 Transactions and idempotency
 
-One global `WriteInterceptor` wraps every non-GET request:
+One global `WriteInterceptor` wraps every non-GET HTTP request. It ignores WebSocket contexts.
 
-1. Open a Knex transaction and store it in an `AsyncLocalStorage` context. Repositories pick
-   up the current transaction from there.
-2. If an `Idempotency-Key` is present, or the route is marked **strict** (which makes it
-   required), insert the `idempotency_keys` row.
-   - Scope: the principal, or `anonymous`.
-   - A concurrent duplicate waits on the unique index until the first commits, then replays
-     its stored response.
-   - A stored key with a different `request_hash` fails with `IDEMPOTENCY_KEY_REUSED`.
-3. Run the handler. Store the response in the key row. Commit.
+1. Open a transaction through `TransactionRepository.run()` and store it in an
+   `AsyncLocalStorage` context. Repositories pick up the current transaction from there.
+2. If an `Idempotency-Key` is present, or the route is strict (which makes it required), claim
+   the key without ever raising a unique violation. In Postgres, an error aborts the whole
+   transaction, so a raised violation could never be followed by a replay.
+   - The claim is `INSERT … ON CONFLICT (scope, key) DO UPDATE … WHERE idempotency_keys.created_at
+     < :now − 24 hours RETURNING id`. It takes over an expired key, or returns nothing.
+   - If nothing came back, a live key exists, so `SELECT` it. If its first request is still in
+     flight, the insert has already waited for it to commit, so the select sees the finished
+     result.
+   - The scope is the principal, or `anonymous` for guests.
+   - `request_hash` is the SHA-256 of the method, the route template, the path parameters and
+     the canonical JSON body. A live key with a different hash fails with
+     `IDEMPOTENCY_KEY_REUSED`.
+3. Run the handler. Store the response status and the encrypted response body in the key row.
+   Commit.
 4. Run the post-commit hooks: seat-map events, and deleting replaced storage files.
 5. If the handler throws, the transaction rolls back, key included, so a retry re-executes.
+   - On `40P01` or `40001`, the interceptor retries the whole transaction once (§7.1).
 
 Replays return the stored status and body with an `Idempotent-Replayed: true` header.
-Business results that must persist, such as a declined payment, are successful responses, not
-errors. That way they commit and replay correctly.
 
-Expired keys are ignored on read. Writes opportunistically delete a small batch of expired
-rows, which only tidies up (ADR 0003).
+Three carve-outs:
+
+- **Auth routes** run in the transaction, but their responses are never stored, because they
+  carry credentials (§10.2).
+- **Upload routes** opt out of the request transaction, and their services open short
+  transactions after the image work (§9).
+- **Business results that must persist**, such as a declined payment, are successful responses,
+  not errors, so they commit and replay correctly.
+
+GET requests run without a request transaction. The few GET paths that write open their own
+short transactions explicitly: settlement and export audit rows.
+
+**Encryption at rest.** Stored response bodies can contain a guest's hold code, and message
+secrets are one-time tokens. Both are encrypted with AES-256-GCM under `DATA_ENCRYPTION_KEY`,
+using a random nonce and a key-id prefix so the key can be rotated.
+
+**Cleanup.** Writes opportunistically purge a few expired keys with `DELETE … WHERE id IN
+(SELECT id … WHERE created_at < :cutoff LIMIT 50 FOR UPDATE SKIP LOCKED)`. Postgres `DELETE`
+has no `LIMIT`, hence the sub-select. This only tidies up (ADR 0003).
 
 ### 14.2 Database access
 
@@ -752,54 +1006,69 @@ rows, which only tidies up (ADR 0003).
   (Supavisor) in session mode, port 5432. On the free plan, Supabase's direct connection is
   IPv6-only and Render connects over IPv4 only
   ([Supabase: connecting](https://supabase.com/docs/guides/database/connecting-to-postgres)).
-- The pool holds at most 5 connections, with `statement_timeout` at 10 seconds.
+- The pool holds at most 5 connections. `statement_timeout` is 10 seconds and
+  `idle_in_transaction_session_timeout` 15 seconds.
+- node-pg returns `BIGINT` and `NUMERIC` as strings, which covers ids, `COUNT`, `SUM` and
+  coordinates. `common/database` installs type parsers that turn `BIGINT` into a JavaScript
+  number (every value is far below 2^53) and `NUMERIC` into a float.
 
 ### 14.3 Errors
 
-- Services throw `AppError(code, status, message, details)`, never `HttpException`.
-- One global filter maps `AppError` to the error shape, and maps Nest's own validation, guard
-  and throttling exceptions to `VALIDATION_FAILED`, `UNAUTHENTICATED`, `FORBIDDEN` and
+- **AppError only.** Services throw `AppError(code, status, message, details)`, never
+  `HttpException`.
+- **One global filter** maps `AppError` to the error shape. It also maps Nest's own exceptions:
+  validation to `VALIDATION_FAILED`, guards to `UNAUTHENTICATED` or `FORBIDDEN`, throttling to
   `RATE_LIMITED`.
-- Unknown errors become `INTERNAL` (500), logged with their stack. A database outage becomes
-  `SERVICE_UNAVAILABLE` (503).
-- The initial catalogue:
+- **Constraint violations nobody handled** (`23505`, `23P01`) become `CONFLICT` (409). The
+  details carry the constraint name, never the values.
+- **Unknown errors** become `INTERNAL` (500), logged with their stack. A database outage
+  becomes `SERVICE_UNAVAILABLE` (503).
+
+The initial catalogue:
 
 | Code | HTTP | Code | HTTP |
 |---|---|---|---|
 | `VALIDATION_FAILED` | 400 | `SEAT_TAKEN` | 409 |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | `HOLD_EXPIRED` | 409 |
-| `UNAUTHENTICATED` | 401 | `HOLD_ALREADY_CLAIMED` | 409 |
-| `SESSION_EXPIRED` | 401 | `ALREADY_PAID` | 409 |
-| `SESSION_REVOKED` | 401 | `PAYMENT_IN_PROGRESS` | 409 |
-| `ACCOUNT_BLOCKED` | 403 | `SHOWTIME_NOT_BOOKABLE` | 409 |
-| `FORBIDDEN` | 403 | `SHOWTIME_CONFLICT` | 409 |
-| `NOT_FOUND` | 404 | `HALL_IN_USE` | 409 |
-| `EMAIL_TAKEN` | 409 | `OUTSIDE_OPENING_HOURS` | 422 |
-| `IDEMPOTENCY_KEY_REUSED` | 422 | `TIME_DOES_NOT_EXIST` | 422 |
-| `RATE_LIMITED` | 429 | `INVALID_TOKEN` | 400 |
+| `INVALID_TOKEN` | 400 | `HOLD_ALREADY_CLAIMED` | 409 |
+| `INVALID_CREDENTIALS` | 401 | `ALREADY_PAID` | 409 |
+| `UNAUTHENTICATED` | 401 | `PAYMENT_IN_PROGRESS` | 409 |
+| `SESSION_EXPIRED` | 401 | `SHOWTIME_NOT_BOOKABLE` | 409 |
+| `SESSION_REVOKED` | 401 | `SHOWTIME_CONFLICT` | 409 |
+| `ACCOUNT_BLOCKED` | 403 | `HALL_IN_USE` | 409 |
+| `ACCOUNT_DEACTIVATED` | 403 | `BOOKING_NOT_EDITABLE` | 409 |
+| `FORBIDDEN` | 403 | `LAST_ADMIN` | 409 |
+| `NOT_FOUND` | 404 | `EMAIL_TAKEN` | 409 |
+| `REFRESH_CONFLICT` | 409 | `CONFLICT` | 409 |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | `OUTSIDE_OPENING_HOURS` | 422 |
+| `TIME_DOES_NOT_EXIST` | 422 | `RATE_LIMITED` | 429 |
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
 
 ### 14.4 Logging and observability
 
-- `nestjs-pino` writes structured JSON with a `correlationId` on every line. The id comes from
-  `X-Request-Id` when the format is valid, else a new UUID, and is echoed in responses and
-  error bodies.
-- One line per request: method, route template, status, duration, principal kind and id.
-- Redacted: `authorization`, `x-hold-token` and cookies. Bodies are never logged. No email,
-  phone or name appears in any log line.
-- Render keeps the logs. `GET /health` reports liveness, and `GET /health/ready` checks the
-  database.
+- **Correlation.** `nestjs-pino` writes structured JSON with a `correlationId` on every line. The
+  id comes from `X-Request-Id` when the format is valid, else a new UUID, and is echoed in
+  responses and error bodies.
+- **Request lines.** One per request: method, route template, status, duration, principal kind
+  and id.
+- **No personal data.**
+  - `authorization`, `x-hold-token` and cookies are redacted, and bodies are never logged.
+  - Database errors are logged by SQLSTATE code and constraint name only. Postgres's error
+    detail can contain values, such as `Key (email)=(…)`, so it is dropped.
+  - No email, phone or name appears in any log line.
+- **Health.** Render keeps the logs. `GET /health` reports liveness, and `GET /health/ready`
+  checks the database.
 
 ### 14.5 Configuration
 
-Environment variables are validated at boot, and a missing or malformed value stops the start.
+Environment variables are validated at boot, and a missing or malformed value stops the start:
 
-- `DATABASE_URL`, `DB_SCHEMA` (`maqady`)
-- `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET`
-- `FRONTEND_BASE_URL`, `CORS_ORIGINS`
-- `MESSAGE_LOG_REVEAL_SECRETS`
-- `LOG_LEVEL`, `PORT`
+- `DATABASE_URL`, `DB_SCHEMA` (`maqady`);
+- `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`;
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET`;
+- `FRONTEND_BASE_URL`, `CORS_ORIGINS`, `MESSAGE_LOG_REVEAL_SECRETS`;
+- the rate limits;
+- `LOG_LEVEL`, `PORT`.
 
 `.env.example` lists every variable without values.
 
@@ -821,20 +1090,37 @@ The testing policy in `CLAUDE.md` binds this section.
   - Our own simulated providers are real code and are never mocked.
   - Only Supabase Storage is replaced, at the adapter boundary, because it is genuinely
     external.
+  - Rate limits are raised by test configuration, so concurrency tests aren't throttled.
 - **Must-pass scenarios.** These are the acceptance gate for the units that own them:
-  - 20 parallel holds on the same seat produce exactly 1 success and 19 `SEAT_TAKEN`.
-  - Two concurrent payments with the same Idempotency-Key produce 1 charge and 1 replay.
-  - Two different keys paying one booking: the second gets `PAYMENT_IN_PROGRESS` or
-    `ALREADY_PAID`.
-  - An expired hold's seats can be claimed by someone else without any job running. The old
-    booking reads Abandoned, or Failed after a decline.
-  - Overlapping showtimes, including the 20-minute gap, are refused by the database.
-  - A booking at 00:30 belongs to the previous cinema day. Summer-time edge times behave as
-    in §8.
-  - A customer can't read another customer's booking (`NOT_FOUND`). Box office can't call
-    admin-only routes (`FORBIDDEN`).
-  - A layout edit is refused while a live claim exists.
-  - Every dashboard number matches a hand-computed fixture.
+  - **Holds.**
+    - 20 parallel holds on the same seat produce exactly 1 success and 19 `SEAT_TAKEN`.
+    - Holds on overlapping seat sets listed in opposite orders never deadlock into a 500.
+    - An expired hold's seats can be claimed by someone else without any job running. The old
+      booking reads Abandoned, or Failed after a decline.
+  - **Payments.**
+    - A payment whose hold expires while the provider call runs still confirms, and a rival
+      hold on those seats gets `SEAT_TAKEN`. The seat is never sold twice.
+    - A payment racing a showtime cancellation either commits first and is refunded by the
+      cancellation, or waits and fails with `SHOWTIME_NOT_BOOKABLE`.
+    - Two concurrent payments with the same Idempotency-Key produce 1 charge and 1 replay.
+    - Two different keys paying one booking: the second gets `PAYMENT_IN_PROGRESS` or
+      `ALREADY_PAID`.
+    - Two concurrent reads of a booking with a due processing payment settle it exactly once:
+      one tickets message, one confirmation.
+  - **Refunds and edits.**
+    - An edit that moves a booking to another showtime succeeds, and fails cleanly with
+      `SEAT_TAKEN` when a target seat is held.
+    - Cancel & refund of a booking paid online plus cash returns each part on its own rail.
+  - **Scheduling and time.**
+    - Overlapping showtimes, including the 20-minute gap, are refused by the database.
+    - A batch create skips the conflicting dates and creates the rest.
+    - A show at 00:30 belongs to the previous cinema day. 06:30 on the summer-time start date
+      belongs to that same date.
+  - **Access and layouts.**
+    - A customer can't read another customer's booking (`NOT_FOUND`).
+    - Every Admin route refuses a box-office token (`FORBIDDEN`).
+    - A layout edit is refused while a live claim exists.
+  - **Dashboards.** Every dashboard number matches a hand-computed fixture.
 - **Infrastructure failures.** "The datastore is down → 503" is a unit test of the handler,
   where mocking is allowed. No global infrastructure mock exists in shared setup.
 
@@ -854,32 +1140,34 @@ The testing policy in `CLAUDE.md` binds this section.
      app without a database or a listener.
 - **Deployment.** Render builds the Dockerfile from `main`.
   - On boot the service runs `knex migrate:latest` before listening. Knex's migration lock
-    makes that safe, and there is one instance.
+    makes that safe, and migrations stay backward-compatible (§6.1).
   - The health check path is `/health`.
   - Secrets live in Render's environment settings.
+  - The first deploy confirms how Render fills `X-Forwarded-For`, so the proxy-trust setting
+    (§10.6) reads the real client address.
 - **Supabase setup.**
   - A project in the region nearest Egypt.
   - The `maqady` schema, left out of the Data API's exposed schemas (or the Data API turned off).
   - A public `media` bucket.
-  - The pooler connection string in `DATABASE_URL`.
+  - The session-pooler connection string in `DATABASE_URL`.
 - **Keep-alive (optional).** A daily scheduled GitHub Actions job calls `/health/ready`, so
   the Supabase project shows activity and isn't paused. It affects availability only.
 - **Bootstrap.** After the first deploy, run `npm run admin:create` once against the
-  production database.
+  production database, through the session pooler.
 
 ## 17. How the design closes the inventory gaps
 
 | Gap | Resolution |
 |---|---|
-| G1 Pricing models | Zone prices only: theater defaults copied to each showtime, which can override them (§7.9) |
+| G1 Pricing models | Zone prices only: theater defaults copied to each showtime, which can override them (§7.10) |
 | G2 Single seat map | Per-hall layouts in `hall_rows` and `hall_seat_marks`, locked while in use (§9) |
-| G3 Booking before payment, no ids | A hold is a `held` booking with a reference; guest hold code and claim; live map over WebSocket (§7.2, §12) |
-| G4 Refund and cancel policy | Admin cancel always refunds in full; counter refunds pay out at the counter; customers can't cancel (§7.6) |
+| G3 Booking before payment, no ids | A hold is a `held` booking with a reference; guest hold code and claim; live map over WebSocket (§7.3, §12) |
+| G4 Refund and cancel policy | Admin cancel always refunds in full, per charge and rail; counter refunds pay out at the counter; customers can't cancel (§7.7) |
 | G5 No admin identity | Staff accounts, two roles, audit on every staff write (§10, §13.5) |
-| G6 Fields without admin input | Optional budget and filming locations, photo kinds and captions, theater photos; scores and the free tag chip dropped |
+| G6 Fields without admin input | Optional budget label and filming locations, photo kinds and captions, theater photos; scores and the free tag chip dropped |
 | G7 Hero video source | Every video is YouTube, so any video can be the hero (§9) |
-| G8 Hold and decline behaviour | A decline keeps the hold; the clock decides Failed or Abandoned; processing extends the hold (§7.3, §7.4) |
-| G9 Booking reference | `MQ-` plus 6 random characters from an unambiguous alphabet (§7.8) |
+| G8 Hold and decline behaviour | A decline keeps the hold; the clock decides Failed or Abandoned; processing extends the hold; claims are locked during payment (§7.4, §7.5) |
+| G9 Booking reference | `MQ-` plus 6 random characters from an unambiguous alphabet (§7.9) |
 | G10 Draft and publish | Theater draft → publish → selling or paused; movie statuses; showtimes on sale on creation; sales window dropped |
 | G11 Unwired stubs | Exports, downloads, calendar file, forgot password, search, bell, hall retire and delete rules, sign-out. Help, Terms and Privacy are static frontend pages. |
 | G12 Synthetic analytics | Real SQL on PRD definitions (§13.3) |
@@ -887,10 +1175,10 @@ The testing policy in `CLAUDE.md` binds this section.
 | G14 Date filter | Computed from showtimes per cinema day; the weekend is Friday and Saturday |
 | G15 KPI definitions | PRD "Dashboard numbers"; revenue on the show's cinema day (§13.3) |
 | G16 Role and format lists | One 7-role credit list; formats removed; facilities list includes street parking |
-| G17 Status vocabulary | Held, Confirmed, Completed, Refunded, Failed, Abandoned (§7.3) |
+| G17 Status vocabulary | Held, Confirmed, Completed, Refunded, Failed, Abandoned (§7.4) |
 | G18 Missing screens | All in scope except person pages (dropped) and end-of-day cash report entry (unneeded: every counter payment is recorded) |
-| G19 Concurrency and integrity | Seat-claim upsert, idempotency in the write transaction, exclusion constraint, no timers, server-side 8-seat limit, layout lock, notifications in the same transaction |
-| G20 Time handling | Cairo zone, cinema day ending 06:00, shared helpers, summer-time rules (§8) |
+| G19 Concurrency and integrity | Seat-claim upsert, the lock order, idempotency in the write transaction, the exclusion constraint, no timers, the server-side 8-seat limit, the layout lock, notifications in the same transaction |
+| G20 Time handling | Cairo zone, a wall-clock cinema day ending 06:00, shared helpers, summer-time rules (§8) |
 | G21 Pagination | Cursor pagination with totals on every list; date ranges on Bookings and Payments |
 | G22 Prototype truncations | Ignored |
 
@@ -906,15 +1194,20 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-06 | Idempotency keys in Postgres; no Redis | Locked ([ADR 0003](adr/0003-idempotency-in-postgres.md)) |
 | D-07 | PRD v2.0 product rules: scope, zone pricing, seat maps, holds, statuses, roles, refunds, time, analytics | Locked (`docs/reference/prd-v2.md`) |
 | D-08 | PRD "Calls open for veto" | Stand unless the owner vetoes |
-| D-09 | `seat_claims` upsert as the single seat-ownership mechanism | Builder |
+| D-09 | `seat_claims` upsert plus the lock order (§7.1) as the seat-ownership mechanism | Builder |
 | D-10 | Statuses decided by the clock; only `held`, `confirmed`, `refunded` stored | Builder |
-| D-11 | Stateless simulated provider with test tokens; settlement on read | Builder |
-| D-12 | Tokens in body and header, not cookies | Builder (see §20) |
+| D-11 | Stateless simulated provider with test tokens; `SettlementService` on read | Builder |
+| D-12 | Tokens in body and header, not cookies; a 30-second refresh grace | Builder (see §20) |
 | D-13 | scrypt for passwords; Luxon for time; pino for logs; sharp for images; pdfkit and qrcode for tickets | Builder |
-| D-14 | `maqady` schema, row-level security as a backstop, the pooler connection | Builder |
-| D-15 | Migrations at boot; the optional keep-alive workflow | Builder |
+| D-14 | `maqady` schema, row-level security as a backstop, the session pooler | Builder |
+| D-15 | Migrations at boot, kept backward-compatible; the optional keep-alive workflow | Builder |
 | D-16 | API identifies bookings by reference, never internal id | Builder |
 | D-17 | Contract generated and committed; CI drift check | Builder (§19) |
+| D-18 | Noun routes, including auth; one access decorator per route, checked at boot | Builder (§11) |
+| D-19 | Refunds per charge, on each charge's own rail | Builder (§7.7) |
+| D-20 | Stored responses and message secrets encrypted at rest; reveals audited | Builder (§13.1, §14.1) |
+| D-21 | Budget stored as a display label, not money | Builder (§6.1) |
+| D-22 | A showtime can be cancelled until it ends, but moved only before it starts | Builder (§7.7, §8) |
 
 ## 19. Kit and process reconciliations
 
@@ -925,6 +1218,9 @@ The testing policy in `CLAUDE.md` binds this section.
   spec is corrected. `CLAUDE.md` now says this.
 - **Redis.** Removed from the stack by ADR 0003. `CLAUDE.md`'s Stack and Idempotency rules now
   say Postgres.
+- **"Only repositories inject Knex."** Kept without exception: transactions open through
+  `TransactionRepository` (§5).
+- **"Plural nouns, PATCH for partial updates."** Kept everywhere, auth included (§11).
 - **Test location.** Tests live under `test/`, not beside the source as Nest's generator
   places them.
 - **Service-to-service auth.** v1 has no internal endpoints, so the review dimension has
@@ -936,13 +1232,15 @@ The testing policy in `CLAUDE.md` binds this section.
 
 | Risk or question | Mitigation or next step |
 |---|---|
-| A refresh token kept in browser storage can be stolen by XSS | Short access tokens, rotation with reuse detection, staff sessions of 12 hours. If frontend and API later share one site, move the refresh token to an `HttpOnly` cookie. |
+| A refresh token kept in browser storage can be stolen by XSS | Short access tokens, rotation with reuse detection, session checks on every request, staff sessions of 12 hours. If frontend and API later share one site, move the refresh token to an `HttpOnly` cookie. |
+| While message-log reveal is on, an admin can use a pending staff invite or reset link | Practice deployment only, and every reveal is audited. A real deployment turns reveal off and uses real email. |
 | Registration reveals that an email is in use | Rate-limited; revisit if abuse appears |
-| A real payment provider would settle through webhooks and must not be called inside a database transaction | The interface already carries idempotency keys and has `retrieve`. A real provider unit adds a webhook route and moves the call outside the transaction. |
+| A real payment provider would settle through webhooks and must not be called inside a database transaction | The interface already carries idempotency keys and has `retrieve`. A real-provider unit adds a webhook route and moves the call outside the transaction. |
 | One instance: rate limits and seat-map fan-out live in memory | Acceptable on the free tier. Scaling out needs shared counters and `LISTEN/NOTIFY`. |
+| Shared mobile IP addresses could trip per-IP limits | The per-IP hold limit is three times the per-customer one; all limits are configurable |
 | Render cold starts slow the first request | The frontend shows the PRD's "waking up" state |
 | Supabase pauses idle free projects | The optional keep-alive; restoring takes one click |
-| `idempotency_keys` and `messages` grow without bound | Opportunistic deletion of expired keys; message retention can be added if the 500 MB budget is ever at risk |
+| `idempotency_keys`, `messages` and `hold_refusals` grow without bound | Opportunistic deletion of expired keys; retention can be added if the 500 MB budget is ever at risk |
 | CI on `main` is red until the scaffold adds `package.json` | Unit U0 fixes it first |
 
 ## 21. Delivery plan
@@ -952,23 +1250,31 @@ the frontend early: a deployed API with real reads comes before the booking flow
 
 | Unit | Delivers | Depends on |
 |---|---|---|
-| U0 Scaffold and deploy | Nest app, scripts (`typecheck`, `lint`, `test`, `build`, `contract`), Docker Compose, CI (Postgres, contract check, no Redis), config, logging, error filter, health, Knex provider and migrations runner, Dockerfile, a first Render deploy | — |
-| U1 Foundations | Write interceptor with idempotency, transaction context, audit service, `Clock`, time and money helpers, cursor pagination, rate-limit setup, the error catalogue | U0 |
-| U2 Staff access | `staff_users`, sessions, admin bootstrap command, staff sign-in and refresh, invites and set-password, roles guard, staff management | U1 |
-| U3 Messaging | `messages`, templates, simulated sender, Message log API | U1 |
+| U0 Scaffold and deploy | Nest app, scripts (`typecheck`, `lint`, `test`, `build`, `contract`), Docker Compose, CI (Postgres, contract check, no Redis), config, logging, error filter, health, Knex provider with type parsers and the migrations runner, Dockerfile, a first Render deploy (including the `X-Forwarded-For` check) | — |
+| U1 Foundations | `TransactionRepository`, the write interceptor with idempotency and encryption, audit service, `Clock`, time and money helpers, cursor pagination, rate-limit setup, access decorators and the boot-time route check, the error catalogue | U0 |
+| U2 Staff access | `staff_users`, sessions, admin bootstrap command, staff sign-in, refresh with grace, sign-out, `GET /admin/me`, invites, forgot password and set-password, the last-admin rule, staff management | U1 |
+| U3 Messaging | `messages`, templates, encrypted secrets, simulated sender, Message log API with audited reveal | U1 |
 | U4 Media and theaters | Image pipeline, storage adapter, theaters with hours, special dates, phones, facilities, photos, prices, publish and selling | U2 |
-| U5 Halls | Hall CRUD, layout editor API, lock rule, retire and delete | U4 |
+| U5 Halls | Hall CRUD, layout editor API, the hall lock and in-use rule, retire and delete | U4 |
 | U6 Catalog | Genres, movies, people, credits, photos, YouTube videos, publishing, featured carousel | U4 |
-| U7 Showtimes | Scheduling with hours and overlap checks, dry run, batch create, move, prices, admin timeline and list | U5, U6 |
+| U7 Showtimes | Scheduling with hours and overlap checks, dry run, batch create with savepoints, move with notifications, prices, admin timeline and list | U3, U5, U6 |
 | U8 Discovery reads | Home, movies list with filters, movie details, showtimes by movie and theater, theaters list and details, similar movies | U7 |
-| U9 Customer accounts | Register, sign-in, refresh, verify email, forgot and reset, profile, password change, block checks | U3 |
-| U10 Holds and live map | Seat claims, holds, claim and release, availability snapshot, WebSocket gateway | U7, U9 |
-| U11 Checkout | Payment provider interface, simulated provider, payments, settlement on read, confirmation, tickets message, QR, PDF and calendar | U10 |
+| U9 Customer accounts | Register, sign-in, refresh, sign-out, verify email, forgot and reset, profile, password change, block checks | U2, U3 |
+| U10 Holds and live map | Seat claims with the lock order, holds, claims and release, availability snapshot, `hold_refusals`, WebSocket gateway | U7, U9 |
+| U11 Checkout | Payment provider interface, simulated provider, payments under claim locks, `SettlementService`, confirmation, tickets message, QR, PDF and calendar | U10 |
 | U12 Customer bookings | My Bookings, booking details and history, Email again | U11 |
-| U13 Box office | Counter holds and sales, ticket scanning | U11 |
-| U14 Admin bookings | List, search and filters, detail, notes, cancel & refund, refund payout, edits with preview, staff resend, showtime cancellation fan-out | U13 |
-| U15 Admin customers | List, edit, block and unblock, anonymise, reset email, no-shows | U14 |
-| U16 Payments screen | Transactions, KPIs, reconciliation | U14 |
-| U17 Overview and bell | Overview analytics, alerts, unread state | U16 |
+| U13 Box office | Counter holds and sales, staff ticket download, ticket scanning with typed-reference confirmation | U11 |
+| U14 Admin bookings | List, search and filters, summary cards, detail, notes, cancel & refund per charge, refund payouts, edits with preview, staff resend, showtime cancellation with preview and fan-out | U13 |
+| U15 Admin customers | List, edit, block and unblock, anonymisation, reset email, no-shows | U14 |
+| U16 Payments screen | Transactions with status mapping, KPIs, reconciliation | U14 |
+| U17 Overview and bell | Overview analytics, alerts with keys, unread state | U16 |
 | U18 Search | Customer and admin search | U15 |
-| U19 Exports and activity | CSV exports, Activity log API | U17 |
+| U19 Exports and activity | CSV exports with formula escaping, Activity log API | U17 |
+
+**Anonymisation, defined once for U15.** Deleting a customer:
+
+- nulls their name, email, phone and password hash, and sets `deleted_at`;
+- nulls the contact fields on their bookings;
+- deletes their sessions, one-time tokens, idempotency rows and messages, and the internal notes
+  on their bookings;
+- keeps the bookings and payments themselves for accounting.

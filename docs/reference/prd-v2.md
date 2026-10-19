@@ -400,7 +400,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 
 ### A8 Payments `/admin/payments` (Admin)
 
-- Period picker (default last 7 days). KPIs: Collected online, Collected at counters (cash and terminal), Refunds (% of revenue), Failed today. Outstanding is removed.
+- Period picker (default last 7 days). KPIs: Collected online, Collected at counters (cash and terminal), Refunds (as a share of money collected in the period), Failed today. Outstanding is removed.
 - Reconciliation by theater: Online, Cash, Terminal, Refunds, Net.
 - Transactions: one row per payment or refund, with status Succeeded, Pending, Failed or Refunded. Filters by method, status and date range.
 - Drawer actions: open the booking, and Mark refund paid out for a pending counter refund.
