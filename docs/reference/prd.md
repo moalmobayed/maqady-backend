@@ -2,12 +2,15 @@
 title: PRD text — Movie Reservation System (machine extract)
 owner: Mohamed Tarek
 status: Reference
-last_verified: 2026-10-18
+last_verified: 2026-10-19
 tags: [reference, prd, requirements]
 ---
 
 # PRD text — Movie Reservation System (machine extract)
 
+> **Superseded by PRD v2.0** (`docs/reference/prd-v2.md`), which lists every change from
+> this version. Kept for reference.
+>
 > Text extracted from the owner's PRD PDF (Arabic/English, version 1.0) with `pdftotext
 > -layout`, so cloud sessions can read it. Bidirectional text and some table columns come out
 > in machine order; the PDF is the original. Where this project departs from the PRD (for
