@@ -77,6 +77,8 @@ $ curl -i -X POST -H 'Content-Type: application/json' \
 HTTP/1.1 400 Bad Request
 X-Request-Id: 3d594650-3436-4a88-9e6c-1d4c0f5a0b2e
 {"error":{"code":"VALIDATION_FAILED","message":"Unexpected end of JSON input","details":null,"correlationId":"3d594650-3436-4a88-9e6c-1d4c0f5a0b2e"}}
+# Review finding R1 (review.md): the parser's message leaked through. After the fix:
+{"error":{"code":"VALIDATION_FAILED","message":"The request body could not be read.","details":null,"correlationId":"3d594650-3436-4a88-9e6c-1d4c0f5a0b2e"}}
 
 $ curl -i -X POST -H 'Content-Type: application/json' --data-binary @big.json http://localhost:3000/api/v1/health   # 1.1 MB
 HTTP/1.1 413 Payload Too Large
