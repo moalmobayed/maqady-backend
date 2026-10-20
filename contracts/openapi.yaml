@@ -1631,7 +1631,8 @@ paths:
 
         - The same token again within 30 seconds of its use answers `REFRESH_CONFLICT` and revokes nothing: another tab or a retry already refreshed, so read the tokens it stored.
         - After 30 seconds, an already-used token is treated as stolen: the whole session is revoked (`SESSION_REVOKED`) and the customer signs in again.
-        - `SESSION_EXPIRED` 30 days after sign-in; `ACCOUNT_BLOCKED` once the customer was blocked; `UNAUTHENTICATED` for a token nobody issued, including a staff refresh token.
+        - `SESSION_EXPIRED` 30 days after sign-in; `UNAUTHENTICATED` for a token nobody issued, including a staff refresh token.
+        - Blocking a customer ends all their sessions, so their refresh answers `SESSION_REVOKED`, not `ACCOUNT_BLOCKED`: send them to sign in, where the right password answers `ACCOUNT_BLOCKED`. Their access token, while it lasts, answers `ACCOUNT_BLOCKED` on every customer route.
         - Responses carry credentials, so `Idempotency-Key` is ignored and nothing is stored.
       operationId: refreshCustomerTokens
       parameters: []
