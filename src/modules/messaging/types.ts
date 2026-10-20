@@ -187,3 +187,68 @@ export interface DeliveryRecord {
   readonly errorCode: string | null;
   readonly attempts: number;
 }
+
+/** `GET /admin/messages` filters; `from` is inclusive, `to` exclusive. */
+export interface MessageLogFilter {
+  readonly channel?: MessageChannel;
+  readonly status?: MessageStatus;
+  readonly from?: Date;
+  readonly to?: Date;
+}
+
+/** A `messages` row as the Message log lists it. Never the encrypted parameters. */
+export interface MessageLogRow {
+  readonly id: number;
+  readonly channel: MessageChannel;
+  readonly template: string;
+  readonly recipient: string;
+  readonly subject: string | null;
+  readonly status: MessageStatus;
+  readonly attempts: number;
+  readonly last_error_code: string | null;
+  readonly next_attempt_at: Date | null;
+  readonly sent_at: Date | null;
+  readonly related_customer_id: number | null;
+  readonly related_staff_user_id: number | null;
+  readonly related_booking_id: number | null;
+  readonly created_at: Date;
+}
+
+/** A `messages` row as the Message log opens it: the list columns plus the redacted bodies. */
+export interface MessageLogDetailRow extends MessageLogRow {
+  readonly body_text: string;
+  readonly body_html: string | null;
+  readonly provider_message_id: string | null;
+  readonly updated_at: Date;
+}
+
+/** One line of the Message log. */
+export interface MessageLogEntry {
+  readonly id: number;
+  readonly channel: MessageChannel;
+  readonly template: string;
+  readonly recipient: string;
+  readonly subject: string | null;
+  readonly status: MessageStatus;
+  readonly attempts: number;
+  readonly lastErrorCode: string | null;
+  readonly nextAttemptAt: Date | null;
+  readonly sentAt: Date | null;
+  readonly related: RelatedRecordIds;
+  readonly createdAt: Date;
+}
+
+/** One message opened from the Message log, with its stored (redacted) bodies. */
+export interface MessageLogDetail extends MessageLogEntry {
+  readonly bodyText: string;
+  readonly bodyHtml: string | null;
+  readonly providerMessageId: string | null;
+  readonly updatedAt: Date;
+}
+
+/** The records a logged message relates to, each null when it relates to none. */
+export interface RelatedRecordIds {
+  readonly customerId: number | null;
+  readonly staffUserId: number | null;
+  readonly bookingId: number | null;
+}
