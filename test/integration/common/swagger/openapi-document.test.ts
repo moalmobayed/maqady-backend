@@ -77,7 +77,7 @@ describe('OpenAPI document and Swagger UI (integration)', () => {
       expect.objectContaining({ title: 'Maqady API', version: PACKAGE_VERSION }),
     );
     expect(served.info).not.toHaveProperty('contact');
-    expect(Object.keys(served.paths)).toEqual(['/health', '/health/ready']);
+    expect(Object.keys(served.paths)).toEqual(expect.arrayContaining(['/health', '/health/ready']));
     expect(served.servers?.map((server) => server.url)).toEqual([
       '/api/v1',
       'http://localhost:3000/api/v1',
@@ -112,17 +112,27 @@ describe('OpenAPI document and Swagger UI (integration)', () => {
     });
   });
 
+  /** Every operation of the document, whatever its method. */
+  const operations = (): { responses: Record<string, unknown> }[] =>
+    Object.values(served.paths).flatMap((item) =>
+      Object.values(item as Record<string, unknown>).filter(
+        (value): value is { responses: Record<string, unknown> } =>
+          typeof value === 'object' && value !== null && 'responses' in value,
+      ),
+    );
+
   it('documents 500 INTERNAL on every operation, with the shared error schema', () => {
-    for (const item of Object.values(served.paths)) {
-      expect(responseSchemaRef(served, item.get!.responses['500'])).toBe(
+    expect(operations().length).toBeGreaterThan(2);
+    for (const operation of operations()) {
+      expect(responseSchemaRef(served, operation.responses['500'])).toBe(
         '#/components/schemas/ErrorResponse',
       );
     }
   });
 
   it('documents 429 RATE_LIMITED with Retry-After on every operation', () => {
-    for (const item of Object.values(served.paths)) {
-      const limited = item.get!.responses['429'] as { headers?: Record<string, unknown> };
+    for (const operation of operations()) {
+      const limited = operation.responses['429'] as { headers?: Record<string, unknown> };
       expect(responseSchemaRef(served, limited)).toBe('#/components/schemas/ErrorResponse');
       expect(limited.headers).toHaveProperty('Retry-After');
     }

@@ -19,6 +19,7 @@
     "test:integration": "jest --selectProjects integration --runInBand",
     "migrate": "nest build && node --enable-source-maps dist/cli/migrate.js",
     "contract": "nest build && node --enable-source-maps dist/cli/contract.js",
+    "admin:create": "nest build && node --enable-source-maps dist/cli/admin-create.js",
     "db:local": "bash scripts/db-local.sh"
   },
   "dependencies": {

@@ -2,6 +2,7 @@ import { AccessTokenService } from '../../../../src/common/auth/access-token.ser
 import {
   AccessProbeModule,
   TestPrincipalResolvers,
+  REAL_RESOLVERS_OFF,
   TestPrincipalResolversModule,
 } from '../../../support/foundations-probe.module';
 import { createLogCapture } from '../../../support/log-capture';
@@ -57,6 +58,7 @@ describe('Request logging (integration)', () => {
       config: buildTestConfig({ logLevel: 'info' }),
       logDestination: capture.stream,
       imports: [ProbeModule, AccessProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
     });
     await createProbeTable(testApp.knex, testApp.config.database.schema);
   });

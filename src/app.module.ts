@@ -19,6 +19,7 @@ import { TimeModule } from './common/time/time.module';
 import { HealthModule } from './modules/health/health.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
+import { StaffModule } from './modules/staff/staff.module';
 
 /**
  * The root module. It takes the validated configuration as a value, so `main.ts`, the CLIs and
@@ -55,6 +56,7 @@ export class AppModule {
         IdempotencyModule,
         MessagingModule,
         HealthModule,
+        StaffModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },

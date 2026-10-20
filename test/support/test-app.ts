@@ -14,7 +14,8 @@ import type { TestApp, TestAppOptions } from './types';
  * Boots the real app (every module, the global pipe, filter, guards and interceptor,
  * `configureApp()`) against the test database, for supertest. Nothing of ours is mocked: the
  * `Clock` can be replaced, so a test can move time, and `overrides` replace genuinely external
- * services at their adapter boundary (the email sender). Data is truncated on start and on `close()`.
+ * services at their adapter boundary (the email sender) or switch a real provider off for the U1
+ * suites that stand in their own (`REAL_RESOLVERS_OFF`). Data is truncated on start and on `close()`.
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const config = options.config ?? buildTestConfig();

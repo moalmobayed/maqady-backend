@@ -3,6 +3,7 @@ import { TransactionRepository } from '../../../../src/common/database/transacti
 import { AppError } from '../../../../src/common/errors/app-error';
 import { TestClock } from '../../../support/clock';
 import { FoundationsProbeModule } from '../../../support/foundations-probe.module';
+import { createStaffMember } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { TestApp } from '../../../support/types';
 
@@ -66,10 +67,13 @@ describe('AuditService (integration)', () => {
   });
 
   it('records staff and customer actors in their own columns, inside a service transaction', async () => {
+    // The staff actor column references staff_users (U2a), so the actor is a real member.
+    const staff = await createStaffMember(testApp, { role: 'admin' });
+    await testApp.knex('audit_events').truncate();
     const audit = testApp.app.get(AuditService);
     await testApp.app.get(TransactionRepository).run(async () => {
       await audit.record({
-        actor: { kind: 'staff', id: 3 },
+        actor: { kind: 'staff', id: staff.id },
         action: 'booking.refunded',
         entity: { type: 'booking', id: 12 },
         bookingId: 12,
@@ -86,7 +90,12 @@ describe('AuditService (integration)', () => {
       .select('actor_kind', 'actor_staff_user_id', 'actor_customer_id', 'booking_id')
       .orderBy('id');
     expect(rows).toEqual([
-      { actor_kind: 'staff', actor_staff_user_id: 3, actor_customer_id: null, booking_id: 12 },
+      {
+        actor_kind: 'staff',
+        actor_staff_user_id: staff.id,
+        actor_customer_id: null,
+        booking_id: 12,
+      },
       { actor_kind: 'customer', actor_staff_user_id: null, actor_customer_id: 9, booking_id: 12 },
     ]);
   });

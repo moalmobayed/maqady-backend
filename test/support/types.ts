@@ -3,7 +3,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Knex } from 'knex';
 import type { DestinationStream } from 'pino';
 import type request from 'supertest';
-import type { Principal } from '../../src/common/auth/types';
+import type { AccessLevel, Principal, StaffRole } from '../../src/common/auth/types';
 import type { AppConfig } from '../../src/common/config/types';
 import type { AppError } from '../../src/common/errors/app-error';
 import type { Clock } from '../../src/common/time/clock';
@@ -21,8 +21,9 @@ export interface TestAppOptions {
   /** Replaces the app's `Clock`, for tests that move time. */
   readonly clock?: Clock;
   /**
-   * Replaces providers by token, for genuinely external services only (the email sender at its
-   * adapter boundary). Never a service, repository or datastore of ours.
+   * Replaces providers by token: a genuinely external service at its adapter boundary (the email
+   * sender), or a real provider switched off, such as `REAL_RESOLVERS_OFF`. Never a service,
+   * repository or datastore of ours standing in for real behaviour.
    */
   readonly overrides?: readonly ProviderOverride[];
 }
@@ -68,6 +69,45 @@ export interface StoredMessage {
   readonly related_booking_id: number | null;
   readonly created_at: Date;
   readonly updated_at: Date;
+}
+
+/** A staff member `createStaffMember()` made, with the password it set. */
+export interface CreatedStaffMember {
+  readonly id: number;
+  readonly email: string;
+  readonly password: string;
+  readonly role: StaffRole;
+}
+
+/** What `createStaffMember()` takes; everything but the role has a unique default. */
+export interface StaffMemberFixture {
+  readonly role: StaffRole;
+  readonly email?: string;
+  readonly fullName?: string;
+  readonly password?: string;
+}
+
+/** A signed-in staff member: real tokens from the real sign-in. */
+export interface StaffSession {
+  readonly staffUserId: number;
+  readonly sessionId: number;
+  readonly email: string;
+  readonly password: string;
+  readonly accessToken: string;
+  readonly refreshToken: string;
+  /** `Bearer <accessToken>`, for `.set('Authorization', …)`. */
+  readonly authorization: string;
+}
+
+/** One HTTP route of the app, as the Nest router knows it. */
+export interface HttpRoute {
+  /** `GET`, `POST`, … */
+  readonly method: string;
+  /** With the global prefix and `:param` placeholders: `/api/v1/admin/staff/:id`. */
+  readonly path: string;
+  readonly access: AccessLevel | undefined;
+  /** `StaffController.listStaff`. */
+  readonly handler: string;
 }
 
 export interface TestApp {

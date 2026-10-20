@@ -12,7 +12,14 @@ export const SECURITY_SCHEMES = {
 } as const;
 
 /** Tags in display order. Each unit adds the tags of the routes it introduces. */
-export const API_TAGS = [{ name: 'Health', description: 'Liveness and readiness' }] as const;
+export const API_TAGS = [
+  { name: 'Health', description: 'Liveness and readiness' },
+  {
+    name: 'Admin: auth',
+    description: 'Staff sign-in, token refresh, sign-out and the signed-in member',
+  },
+  { name: 'Admin: staff', description: 'Staff accounts: list, roles and status (admins only)' },
+] as const;
 
 /** Relative first, so Swagger UI's "Try it out" calls whichever host serves the docs. */
 export const API_SERVERS = [

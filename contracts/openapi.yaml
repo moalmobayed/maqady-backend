@@ -158,6 +158,1155 @@ paths:
       tags:
         - Health
       security: []
+  /admin/auth/sessions:
+    post:
+      description: |-
+        Public: the staff sign-in page (`/admin/login`) calls it with an email and password, and gets a token pair plus who signed in.
+
+        - A wrong password, an unknown email and an invited member who has not set a password all answer `INVALID_CREDENTIALS`; the answer never says which.
+        - A deactivated member with the right password gets `ACCOUNT_DEACTIVATED`.
+        - The access token lasts 15 minutes; the refresh token rotates on every refresh, and the session ends 12 hours after sign-in however often it is refreshed.
+        - Limited to 5 attempts per minute per address and email, and 20 per minute per address (`RATE_LIMITED`).
+        - Responses carry credentials, so `Idempotency-Key` is ignored; a repeated sign-in opens a second session.
+      operationId: signIn
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffSignInRequest'
+      responses:
+        '201':
+          description: Signed in
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffSessionResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: '`INVALID_CREDENTIALS`: Sign-in failed. The answer never says which of the two was wrong.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_CREDENTIALS:
+                  summary: INVALID_CREDENTIALS
+                  value:
+                    error:
+                      code: INVALID_CREDENTIALS
+                      message: The email or password is incorrect.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Staff sign-in
+      tags:
+        - 'Admin: auth'
+      security: []
+  /admin/auth/tokens:
+    post:
+      description: |-
+        Public: exchange the refresh token for a new pair. Every refresh token works once; store the new pair in place of the old.
+
+        - The same token again within 30 seconds of its use answers `REFRESH_CONFLICT` and revokes nothing: another tab or a retry already refreshed, so read the tokens it stored.
+        - After 30 seconds, an already-used token is treated as stolen: the whole session is revoked (`SESSION_REVOKED`) and the member must sign in again.
+        - `SESSION_EXPIRED` 12 hours after sign-in; `ACCOUNT_DEACTIVATED` once an admin deactivated the member; `UNAUTHENTICATED` for a token nobody issued.
+        - Responses carry credentials, so `Idempotency-Key` is ignored.
+      operationId: refresh
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokensRequest'
+      responses:
+        '201':
+          description: The new token pair
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokensResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`REFRESH_CONFLICT`: The refresh token was rotated less than 30 seconds ago, typically by another tab. Read the tokens already stored and use those.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                REFRESH_CONFLICT:
+                  summary: REFRESH_CONFLICT
+                  value:
+                    error:
+                      code: REFRESH_CONFLICT
+                      message: These tokens were just refreshed elsewhere.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Refresh the staff tokens
+      tags:
+        - 'Admin: auth'
+      security: []
+  /admin/auth/sessions/current:
+    delete:
+      description: 'Staff (either role): ends the session the access token belongs to. Its access token and every refresh token of the session stop working at once; other sessions of the member (other browsers) stay signed in.'
+      operationId: signOut
+      parameters: []
+      responses:
+        '204':
+          description: Signed out
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Staff sign-out
+      tags:
+        - 'Admin: auth'
+      security:
+        - staff: []
+  /admin/me:
+    get:
+      description: 'Staff (either role): name, email and role for the dashboard shell, which shows only the screens the role may use. The role is read from the database on every request, so a role change shows on the next call.'
+      operationId: getStaffProfile
+      parameters: []
+      responses:
+        '200':
+          description: The signed-in member
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffProfileResponse'
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: The signed-in staff member
+      tags:
+        - 'Admin: auth'
+      security:
+        - staff: []
+  /admin/staff:
+    get:
+      description: 'Admin only: the Staff screen. Every member with name, email, role, status and last sign-in, ordered by name, optionally filtered by role and status. Cursor-paginated: pass `nextCursor` back as `cursor`.'
+      operationId: listStaff
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: role
+          required: false
+          in: query
+          description: Only members of this role.
+          schema:
+            $ref: '#/components/schemas/StaffRole'
+        - name: status
+          required: false
+          in: query
+          description: Only members in this status.
+          schema:
+            $ref: '#/components/schemas/StaffStatus'
+      responses:
+        '200':
+          description: One page of staff members
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffMemberResponsePage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: List staff members
+      tags:
+        - 'Admin: staff'
+      security:
+        - staff: []
+  /admin/staff/{id}:
+    patch:
+      description: |-
+        Admin only: change role, deactivate, or reactivate. Changes take effect on the member's next request.
+
+        - There is always at least one active admin: demoting or deactivating the only one is `LAST_ADMIN`, also when two admins change each other at the same moment. Admins may change themselves within that rule.
+        - Deactivating signs the member out everywhere and voids their unused invite and reset links. Demoting an admin signs them out, so they sign in again as box office.
+        - Reactivating a member who never set a password returns them to `invited`.
+        - A change to the values the member already has answers `200` and changes nothing.
+        - Recorded in the activity log with the names of the changed fields.
+      operationId: updateStaffMember
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Staff member id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStaffMemberRequest'
+      responses:
+        '200':
+          description: The member after the change
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffMemberResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`LAST_ADMIN`: Demoting or deactivating this admin would leave no active admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                LAST_ADMIN:
+                  summary: LAST_ADMIN
+                  value:
+                    error:
+                      code: LAST_ADMIN
+                      message: At least one active admin must remain.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Change a staff member's role or status
+      tags:
+        - 'Admin: staff'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -178,6 +1327,10 @@ info:
 tags:
   - name: Health
     description: Liveness and readiness
+  - name: 'Admin: auth'
+    description: Staff sign-in, token refresh, sign-out and the signed-in member
+  - name: 'Admin: staff'
+    description: 'Staff accounts: list, roles and status (admins only)'
 servers:
   - url: /api/v1
     description: The server hosting these docs
@@ -208,6 +1361,240 @@ components:
           description: Always `ok`. A failed check answers with an error response instead.
       required:
         - status
+    StaffSignInRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          nullable: false
+          maxLength: 320
+          example: mona.adel@maqady.example
+          description: The staff email. Letter case does not matter.
+        password:
+          type: string
+          format: password
+          nullable: false
+          minLength: 1
+          maxLength: 128
+          example: Cinema2026
+          description: The password as typed. The password policy is not checked here.
+      required:
+        - email
+        - password
+    StaffRole:
+      type: string
+      enum:
+        - admin
+        - box_office
+      description: '`admin` sees every screen; `box_office` sees Bookings, Customers and Scan tickets. Read from the database on every request.'
+    StaffProfileResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 3
+          description: Staff member id.
+        fullName:
+          type: string
+          nullable: false
+          example: Mona Adel
+          description: Full name.
+        email:
+          type: string
+          format: email
+          nullable: false
+          example: mona.adel@maqady.example
+          description: Staff email.
+        role:
+          nullable: false
+          example: admin
+          description: '`admin` sees every screen; `box_office` sees Bookings, Customers and Scan tickets. Read from the database on every request.'
+          allOf:
+            - $ref: '#/components/schemas/StaffRole'
+      required:
+        - id
+        - fullName
+        - email
+        - role
+    StaffSessionResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          nullable: false
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl
+          description: 'Send as `Authorization: Bearer <accessToken>`. Valid 15 minutes; keep it in memory only.'
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-20T19:45:00+03:00'
+          description: When the access token stops working. Refresh shortly before.
+        refreshToken:
+          type: string
+          nullable: false
+          example: q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc
+          description: Opaque, single use. Exchange it at the refresh route for a new pair, and store the new one in place of this one.
+        refreshTokenExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-21T07:30:00+03:00'
+          description: 'When the session ends: 12 hours after sign-in for staff, 30 days for customers. Refreshing never extends it; sign in again after.'
+        staff:
+          nullable: false
+          description: Who signed in, for the dashboard shell.
+          allOf:
+            - $ref: '#/components/schemas/StaffProfileResponse'
+      required:
+        - accessToken
+        - accessTokenExpiresAt
+        - refreshToken
+        - refreshTokenExpiresAt
+        - staff
+    RefreshTokensRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          nullable: false
+          pattern: ^[A-Za-z0-9_-]{43}$
+          minLength: 43
+          maxLength: 43
+          example: q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc
+          description: 'The refresh token from the last sign-in or refresh. Each one works once: replace both stored tokens with the pair this call returns.'
+      required:
+        - refreshToken
+    SessionTokensResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          nullable: false
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl
+          description: 'Send as `Authorization: Bearer <accessToken>`. Valid 15 minutes; keep it in memory only.'
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-20T19:45:00+03:00'
+          description: When the access token stops working. Refresh shortly before.
+        refreshToken:
+          type: string
+          nullable: false
+          example: q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc
+          description: Opaque, single use. Exchange it at the refresh route for a new pair, and store the new one in place of this one.
+        refreshTokenExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-21T07:30:00+03:00'
+          description: 'When the session ends: 12 hours after sign-in for staff, 30 days for customers. Refreshing never extends it; sign in again after.'
+      required:
+        - accessToken
+        - accessTokenExpiresAt
+        - refreshToken
+        - refreshTokenExpiresAt
+    StaffStatus:
+      type: string
+      enum:
+        - invited
+        - active
+        - deactivated
+    StaffMemberResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 3
+          description: Staff member id.
+        fullName:
+          type: string
+          nullable: false
+          example: Mona Adel
+          description: Full name.
+        email:
+          type: string
+          format: email
+          nullable: false
+          example: mona.adel@maqady.example
+          description: Staff email; unique among staff.
+        role:
+          nullable: false
+          example: box_office
+          description: '`admin` or `box_office`.'
+          allOf:
+            - $ref: '#/components/schemas/StaffRole'
+        status:
+          nullable: false
+          example: active
+          description: '`invited`: has not set a password yet. `active`: may sign in. `deactivated`: switched off by an admin; can be reactivated.'
+          allOf:
+            - $ref: '#/components/schemas/StaffStatus'
+        lastSignInAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-20T09:12:00+03:00'
+          description: The last successful sign-in; null if the member never signed in.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-01T10:00:00+03:00'
+          description: When the member was created (invited, or created by the setup command).
+      required:
+        - id
+        - fullName
+        - email
+        - role
+        - status
+        - lastSignInAt
+        - createdAt
+    StaffMemberResponsePage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, in list order. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/StaffMemberResponse'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 42
+          description: How many items the whole list has, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
+    UpdateStaffMemberRequest:
+      type: object
+      properties:
+        role:
+          nullable: false
+          example: box_office
+          description: The new role. Demoting an admin signs them out everywhere; they sign in again as box office. Refused with `LAST_ADMIN` for the only active admin.
+          allOf:
+            - $ref: '#/components/schemas/StaffRole'
+        status:
+          type: string
+          enum:
+            - active
+            - deactivated
+          nullable: false
+          example: deactivated
+          description: '`deactivated` signs the member out everywhere and voids their unused invite or reset links; refused with `LAST_ADMIN` for the only active admin. `active` reactivates a deactivated member; one who never set a password returns to `invited` instead, so the invite can be resent. `active` on an invited member is `VALIDATION_FAILED`: they become active by setting their password.'
     ErrorResponse:
       type: object
       properties:
