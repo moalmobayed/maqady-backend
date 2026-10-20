@@ -230,6 +230,16 @@ describe('SessionService', () => {
         NOW,
         'account_deactivated',
       );
+      expect(sessions.familyOf).not.toHaveBeenCalled();
+    });
+
+    it('leaves the family of the excepted session out of an owner revocation', async () => {
+      const owner = { audience: 'customer', id: 7 } as const;
+      await service.revokeAllFor(owner, 'password_changed', { exceptSessionId: 40 });
+      expect(sessions.familyOf).toHaveBeenCalledWith(40);
+      const scope = { kind: 'owner', owner, exceptFamilyId: FAMILY };
+      expect(sessions.lockLiveHeads).toHaveBeenCalledWith(scope);
+      expect(sessions.revoke).toHaveBeenCalledWith(scope, NOW, 'password_changed');
     });
   });
 });
