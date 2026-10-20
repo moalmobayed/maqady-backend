@@ -172,6 +172,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `createPublishedMovie(testApp, admin, { status, genres, featuredPosition })`,
   `createDraftMovie()`, `createPerson()` and `genreId('drama')` (genres are seeded by migration
   and survive the per-suite reset).
+- `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
+  the admin routes; `test/support/theaters-probe.module.ts` stands in for the publish requirement
+  and the deletion blocker that halls and showtimes register (`TheaterLifecycleRegistry`).
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
 - `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`

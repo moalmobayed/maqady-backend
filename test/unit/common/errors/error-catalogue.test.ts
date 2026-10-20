@@ -37,8 +37,8 @@ const DESIGN_CATALOGUE: Record<string, number> = {
 };
 
 /**
- * The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`; U6:
- * `docs/gh-7-catalog/spec.md`).
+ * The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`; U4b:
+ * `docs/gh-5-theaters/spec.md`; U6: `docs/gh-7-catalog/spec.md`).
  */
 const UNIT_CODES: Record<string, number> = {
   IMAGE_TOO_LARGE: 413,
@@ -46,6 +46,8 @@ const UNIT_CODES: Record<string, number> = {
   IMAGE_TOO_MANY_PIXELS: 422,
   IMAGE_WRONG_SHAPE: 422,
   STORAGE_UNAVAILABLE: 503,
+  THEATER_NOT_PUBLISHABLE: 409,
+  THEATER_NOT_DELETABLE: 409,
   MOVIE_NOT_PUBLISHABLE: 409,
   MOVIE_NOT_FEATURABLE: 409,
   FEATURED_POSITION_TAKEN: 409,

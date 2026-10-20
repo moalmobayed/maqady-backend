@@ -43,7 +43,7 @@ describe('npm run media:orphans (integration, local storage)', () => {
     });
 
     // One image with its row, one prefix whose row never committed, and a stray file.
-    const { authorization } = mediaAdmin(testApp);
+    const { authorization } = await mediaAdmin(testApp);
     const uploaded = await testApp
       .http()
       .post('/api/v1/test-media/posters')
