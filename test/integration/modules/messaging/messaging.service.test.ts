@@ -12,7 +12,7 @@ import {
   recordedProviderId,
   RecordingEmailSender,
 } from '../../../support/messaging/recording-email-sender';
-import { oneTimeLinkTemplate } from '../../../support/messaging/test-templates';
+import { oneTimeLinkTemplate, smsNoticeTemplate } from '../../../support/messaging/test-templates';
 import { registerCustomer } from '../../../support/customer-auth';
 import { createTestApp } from '../../../support/test-app';
 import { TEST_FRONTEND_BASE_URL } from '../../../support/test-config';
@@ -191,5 +191,87 @@ describe('MessagingService.queue (integration)', () => {
     expect(response.body.error.code).toBe('INTERNAL');
     expect(JSON.stringify(response.body)).not.toContain('not-an-email');
     expect(await readMessages(testApp.knex)).toEqual([]);
+  });
+
+  describe('queueMany', () => {
+    it('queues every message in input order, with consecutive ids, and sends them after the commit', async () => {
+      const transactions = testApp.app.get(TransactionRepository);
+      const messaging = testApp.app.get(MessagingService);
+      const recipients = ['a@example.com', 'b@example.com', 'c@example.com'];
+      let ids: number[] = [];
+      await transactions.run(async () => {
+        ids = (
+          await messaging.queueMany(
+            recipients.map((recipient, index) => ({
+              template: smsNoticeTemplate,
+              recipient: `+2010012345${index}0`,
+              params: { text: `Notice for ${recipient}` },
+              ...(index === 0 ? { related: { customerId } } : {}),
+            })),
+          )
+        ).map(({ id }) => id);
+        expect(await testApp.knex('messages').count({ n: 'id' }).first()).toEqual({ n: 0 });
+      });
+      await drain.whenIdle();
+
+      expect(ids).toHaveLength(3);
+      expect(ids).toEqual([...ids].sort((a, b) => a - b));
+      const rows = await readMessages(testApp.knex);
+      expect(rows.map((row) => [row.id, row.recipient, row.body_text, row.status])).toEqual(
+        recipients.map((recipient, index) => [
+          ids[index],
+          `+2010012345${index}0`,
+          `Notice for ${recipient}`,
+          'sent',
+        ]),
+      );
+      expect(rows[0]!.related_customer_id).toBe(customerId);
+      expect(rows[1]!.related_customer_id).toBeNull();
+    });
+
+    it('writes all the messages in one insert statement', async () => {
+      const transactions = testApp.app.get(TransactionRepository);
+      const messaging = testApp.app.get(MessagingService);
+      const statements: string[] = [];
+      const listener = (query: { sql: string }): void => {
+        statements.push(query.sql);
+      };
+      testApp.knex.on('query', listener);
+      try {
+        await transactions.run(() =>
+          messaging.queueMany(
+            [1, 2, 3, 4].map((index) => ({
+              template: smsNoticeTemplate,
+              recipient: `+20100123456${index}`,
+              params: { text: `Notice ${index}` },
+            })),
+          ),
+        );
+      } finally {
+        testApp.knex.off('query', listener);
+      }
+      expect(statements.filter((sql) => /^insert into "messages"/i.test(sql))).toHaveLength(1);
+      expect(statements.filter((sql) => sql.includes('nextval'))).toHaveLength(1);
+      expect(await readMessages(testApp.knex)).toHaveLength(4);
+    });
+
+    it('checks every input before writing: one bad recipient queues none', async () => {
+      const messaging = testApp.app.get(MessagingService);
+      const transactions = testApp.app.get(TransactionRepository);
+      const attempt = transactions.run(() =>
+        messaging.queueMany([
+          { template: smsNoticeTemplate, recipient: '+201001234567', params: { text: 'Fine' } },
+          { template: smsNoticeTemplate, recipient: 'not-a-phone', params: { text: 'Bad' } },
+        ]),
+      );
+      await expect(attempt).rejects.toMatchObject({ code: 'INTERNAL' });
+      expect(await readMessages(testApp.knex)).toEqual([]);
+    });
+
+    it('writes nothing and asks for no drain for an empty list', async () => {
+      const messaging = testApp.app.get(MessagingService);
+      expect(await messaging.queueMany([])).toEqual([]);
+      expect(await readMessages(testApp.knex)).toEqual([]);
+    });
   });
 });

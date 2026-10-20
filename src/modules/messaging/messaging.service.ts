@@ -19,6 +19,8 @@ import { escapeHtml } from './simple-html';
 import type {
   MessageChannel,
   MessageTemplate,
+  NewMessageRow,
+  PreparedMessage,
   QueuedMessage,
   QueueMessageInput,
   RenderedMessage,
@@ -48,6 +50,42 @@ export class MessagingService {
    * validate, or a stored render that would leak a secret parameter.
    */
   async queue<P extends TemplateParams<P>>(input: QueueMessageInput<P>): Promise<QueuedMessage> {
+    const prepared = this.prepare(input);
+    return this.transactions.run(async () => {
+      const id = await this.messages.nextId();
+      await this.messages.insert(this.rowOf(prepared, id, this.clock.now()));
+      await this.transactions.afterCommit(() => this.drain.requestDrain('batch'));
+      return { id };
+    });
+  }
+
+  /**
+   * Queues several messages at once, with the same checks as `queue()`: one query reserves their
+   * ids, one multi-row insert writes them, and one drain is asked for after the commit (design
+   * §7.7 "never one query per booking"). Every input is checked before anything is written, so a
+   * bad one queues none. Returns the ids in input order; nothing is written for an empty list.
+   */
+  async queueMany<P extends TemplateParams<P>>(
+    inputs: readonly QueueMessageInput<P>[],
+  ): Promise<readonly QueuedMessage[]> {
+    const prepared = inputs.map((input) => this.prepare(input));
+    if (prepared.length === 0) return [];
+    return this.transactions.run(async () => {
+      const ids = await this.messages.nextIds(prepared.length);
+      const now = this.clock.now();
+      await this.messages.insertMany(
+        prepared.map((message, index) => this.rowOf(message, ids[index]!, now)),
+      );
+      await this.transactions.afterCommit(() => this.drain.requestDrain('batch'));
+      return ids.map((id) => ({ id }));
+    });
+  }
+
+  /**
+   * Checks one input and renders its stored copy. Every problem here is a programming error,
+   * `INTERNAL`.
+   */
+  private prepare<P extends TemplateParams<P>>(input: QueueMessageInput<P>): PreparedMessage {
     const { template, recipient, params, related } = input;
     if (!this.registry.isRegistered(template)) {
       throw new AppError('INTERNAL', `Message template "${template.name}" is not registered.`);
@@ -56,35 +94,38 @@ export class MessagingService {
     const stored = template.render(params, storageLinks(this.config.frontendBaseUrl));
     checkRendered(template, stored);
     checkNoSecretLeaks(template, params, stored);
-    const payload = JSON.stringify(params);
+    return {
+      channel: template.channel,
+      template: template.name,
+      recipient,
+      stored,
+      payload: JSON.stringify(params),
+      related: related ?? {},
+    };
+  }
 
-    return this.transactions.run(async () => {
-      const id = await this.messages.nextId();
-      const now = this.clock.now();
-      await this.messages.insert({
-        id,
-        channel: template.channel,
-        template: template.name,
-        recipient,
-        subject: stored.subject ?? null,
-        body_text: stored.text,
-        body_html: stored.html ?? null,
-        status: 'queued',
-        attempts: 0,
-        last_error_code: null,
-        next_attempt_at: now,
-        payload_ciphertext: this.encryption.encrypt(payload, payloadAad(id)),
-        provider_message_id: null,
-        sent_at: null,
-        related_customer_id: related?.customerId ?? null,
-        related_staff_user_id: related?.staffUserId ?? null,
-        related_booking_id: related?.bookingId ?? null,
-        created_at: now,
-        updated_at: now,
-      });
-      await this.transactions.afterCommit(() => this.drain.requestDrain('batch'));
-      return { id };
-    });
+  private rowOf(message: PreparedMessage, id: number, now: Date): NewMessageRow {
+    return {
+      id,
+      channel: message.channel,
+      template: message.template,
+      recipient: message.recipient,
+      subject: message.stored.subject ?? null,
+      body_text: message.stored.text,
+      body_html: message.stored.html ?? null,
+      status: 'queued',
+      attempts: 0,
+      last_error_code: null,
+      next_attempt_at: now,
+      payload_ciphertext: this.encryption.encrypt(message.payload, payloadAad(id)),
+      provider_message_id: null,
+      sent_at: null,
+      related_customer_id: message.related.customerId ?? null,
+      related_staff_user_id: message.related.staffUserId ?? null,
+      related_booking_id: message.related.bookingId ?? null,
+      created_at: now,
+      updated_at: now,
+    };
   }
 }
 
