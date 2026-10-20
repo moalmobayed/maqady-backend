@@ -1,7 +1,7 @@
 ---
 title: U4a — Media - images, storage adapter and image pipeline
 owner: Mohamed Tarek
-status: In progress
+status: Done
 last_verified: 2026-10-20
 tags: [media, images, storage, supabase-storage, sharp, multer, uploads, webp]
 ---
