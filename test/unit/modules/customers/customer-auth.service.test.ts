@@ -169,7 +169,7 @@ describe('CustomerAuthService', () => {
       const result = await service.signIn(input);
       expect(customers.findLiveByEmail).toHaveBeenCalledWith('layla@example.com');
       expect(passwords.verify).toHaveBeenCalledWith('Cinema2026', HASH);
-      expect(customers.recordSignIn).toHaveBeenCalledWith(7, NOW);
+      expect(customers.recordSignIn).toHaveBeenCalledWith(7, HASH, NOW);
       expect(sessions.open).toHaveBeenCalledWith({
         owner: { audience: 'customer', id: 7 },
         lifetimeSeconds: 2_592_000,
@@ -196,7 +196,19 @@ describe('CustomerAuthService', () => {
 
     it('answers ACCOUNT_BLOCKED and opens nothing when a block lands before the sign-in is recorded', async () => {
       customers.recordSignIn.mockResolvedValue(undefined);
+      customers.findById.mockResolvedValue(customer({ status: 'blocked' }));
       await expect(service.signIn(input)).rejects.toMatchObject({ code: 'ACCOUNT_BLOCKED' });
+      expect(sessions.open).not.toHaveBeenCalled();
+    });
+
+    it('answers INVALID_CREDENTIALS and opens nothing when a password change or reset lands before the sign-in is recorded', async () => {
+      customers.recordSignIn.mockResolvedValue(undefined);
+      customers.findById.mockResolvedValue(
+        customer({ password_hash: NEW_HASH, status: 'blocked' }),
+      );
+      await expect(service.signIn(input)).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+      customers.findById.mockResolvedValue(undefined);
+      await expect(service.signIn(input)).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
       expect(sessions.open).not.toHaveBeenCalled();
     });
   });

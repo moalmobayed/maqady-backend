@@ -1,4 +1,6 @@
 import type { Response } from 'supertest';
+import { TransactionRepository } from '../../../../src/common/database/transaction.repository';
+import { CustomerAuthService } from '../../../../src/modules/customers/customer-auth.service';
 import { REDACTED_LINK } from '../../../../src/modules/messaging/messaging.constants';
 import { OutboxDrainService } from '../../../../src/modules/messaging/outbox-drain.service';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
@@ -518,6 +520,44 @@ describe('Customer auth routes (integration)', () => {
 
       expectError(await reset(token, 'weakpassword'), 400, 'VALIDATION_FAILED');
       expect((await reset(token, 'NewCinema2026')).status).toBe(204);
+    });
+
+    it('refuses a sign-in with the old password that raced the reset, so no session outlives it', async () => {
+      const customer = await registerCustomer(testApp);
+      await forgot(customer.email);
+      const token = await resetLink(customer.email);
+
+      // The reset runs and holds its row lock, uncommitted, until the sign-in is waiting on it.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let applied!: () => void;
+      const resetApplied = new Promise<void>((resolve) => (applied = resolve));
+      const resetCommitted = testApp.app.get(TransactionRepository).run(async () => {
+        await testApp.app
+          .get(CustomerAuthService)
+          .resetPassword({ token, password: 'NewCinema2026' });
+        applied();
+        await gate;
+      });
+      await resetApplied;
+
+      // The sign-in reads the old hash (still committed), checks it, then waits for the reset.
+      const pendingSignIn = signIn(customer.email, DEFAULT_CUSTOMER_PASSWORD).then((r) => r);
+      for (let waited = 0; ; waited += 1) {
+        const { rows } = await testApp.knex.raw<{ rows: { n: number }[] }>(
+          "SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE '%last_sign_in_at%'",
+        );
+        if (rows[0]!.n > 0) break;
+        if (waited > 400) throw new Error('The sign-in never waited for the reset');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      release();
+      await resetCommitted;
+
+      expectError(await pendingSignIn, 401, 'INVALID_CREDENTIALS');
+      const rows = await sessionRows(customer.customerId);
+      expect(rows.map((row) => row.revoked_reason)).toEqual(['password_changed']);
+      expect((await signIn(customer.email, 'NewCinema2026')).status).toBe(201);
     });
 
     it('answers ACCOUNT_BLOCKED to a customer blocked after the request, leaving the link unused', async () => {

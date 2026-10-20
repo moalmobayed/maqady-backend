@@ -78,18 +78,23 @@ export class CustomerAuthService {
    *   after the same scrypt work, so neither the answer nor its timing tells whether the email
    *   has an account.
    * - A blocked customer gets `ACCOUNT_BLOCKED`, but only once the password matched.
-   * - The sign-in is recorded first, by an update that matches only a live, active customer, so
-   *   it waits for a block in flight and is refused by it.
+   * - The sign-in is recorded first, by an update that matches only a live, active customer
+   *   whose hash is still the one checked, so it waits for a block, password change or reset in
+   *   flight and is refused by it: no session opens beside their revocation and outlives it.
    */
   async signIn(input: CustomerSignInInput): Promise<CustomerSession> {
     return this.transactions.run(async () => {
       const row = await this.customers.findLiveByEmail(input.email);
       const matches = await this.passwords.verify(input.password, row?.password_hash ?? null);
-      if (!row || !matches) throw new AppError('INVALID_CREDENTIALS');
+      if (!row || !row.password_hash || !matches) throw new AppError('INVALID_CREDENTIALS');
       if (row.status !== 'active') throw new AppError('ACCOUNT_BLOCKED');
 
-      const signedIn = await this.customers.recordSignIn(row.id, this.clock.now());
-      if (!signedIn) throw new AppError('ACCOUNT_BLOCKED');
+      const signedIn = await this.customers.recordSignIn(
+        row.id,
+        row.password_hash,
+        this.clock.now(),
+      );
+      if (!signedIn) throw await this.signInRefusal(row);
       return { customer: toCustomer(signedIn), tokens: await this.openSession(row.id) };
     });
   }
@@ -207,6 +212,20 @@ export class CustomerAuthService {
       lifetimeSeconds: SESSION_LIFETIME_SECONDS.customer,
     });
     return this.tokensFor(customerId, session.sessionId, session.refreshToken, session.expiresAt);
+  }
+
+  /**
+   * Why a checked sign-in found the row changed: a new password (a change or reset) is
+   * `INVALID_CREDENTIALS`, as the old password now is; a block alone is `ACCOUNT_BLOCKED`.
+   */
+  private async signInRefusal(checked: CustomerRow): Promise<AppError> {
+    const current = await this.customers.findById(checked.id);
+    const blockedOnly =
+      current !== undefined &&
+      current.deleted_at === null &&
+      current.password_hash === checked.password_hash &&
+      current.status !== 'active';
+    return new AppError(blockedOnly ? 'ACCOUNT_BLOCKED' : 'INVALID_CREDENTIALS');
   }
 
   private async assertLive(customerId: number): Promise<void> {

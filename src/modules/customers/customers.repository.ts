@@ -92,14 +92,19 @@ export class CustomersRepository {
   }
 
   /**
-   * Records a sign-in of a live, active customer and returns the row as it now is; undefined when
-   * the customer is no longer either. The update waits for a block in flight and re-checks the
-   * status against its result, so no session opens beside a block and escapes its revocation.
+   * Records a sign-in of a live, active customer whose hash is still the one the password was
+   * checked against, and returns the row as it now is; undefined otherwise. The update waits for a
+   * block, password change or reset in flight and re-checks its result, so no session opens beside
+   * one of them and escapes its revocation.
    */
-  async recordSignIn(id: number, signedInAt: Date): Promise<CustomerRow | undefined> {
+  async recordSignIn(
+    id: number,
+    checkedPasswordHash: string,
+    signedInAt: Date,
+  ): Promise<CustomerRow | undefined> {
     const [row] = await this.customers()
       .update({ last_sign_in_at: signedInAt })
-      .where({ id, status: 'active' })
+      .where({ id, status: 'active', password_hash: checkedPasswordHash })
       .whereNull('deleted_at')
       .returning<CustomerRow[]>(CUSTOMER_COLUMNS);
     return row;
