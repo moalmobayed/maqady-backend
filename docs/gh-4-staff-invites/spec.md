@@ -85,6 +85,7 @@ with its delivery status, and never see a usable one-time link there.
 | Date filter: `from` (inclusive) and `to` (exclusive), ISO 8601 instants with an offset; `from < to`, else `VALIDATION_FAILED` on `to` | The admin picks Cairo days and the frontend sends their 06:00 or midnight instants. Instants avoid wall-clock conversion (and its summer-time gap) on the server. |
 | Order `created_at DESC, id DESC`; the cursor's sort key is `created_at.toISOString()` (kind `instant`) | U3's `idx_messages_created_at` serves it. `formatCairoIso` drops milliseconds, so it cannot be the cursor key. |
 | No new index for the `channel` / `status` filters | Around 100 messages a day; a filtered walk of `idx_messages_created_at` is enough. Add `(status, created_at DESC, id DESC)` if the log grows. |
+| The Message log is its own `MessageLogModule`, imported after `StaffModule`, not part of the global `MessagingModule` | `MessagingModule` is imported before the feature modules because they all queue through it; routes on it would come first in the generated contract and reorder every path. Its own module keeps `messaging` route-free and the contract diff additive. |
 | `bodyHtml` is returned as stored | U3 escapes every value in `renderSimpleHtml`, and the stored copy has no link. The description tells the frontend to show it in a sandboxed `iframe`. |
 | Audit actor for a reset request is `system`; for a password setup it is the member (`staff`, own id) | The requester is not signed in; the setup proves control of the mailbox. |
 
@@ -107,7 +108,7 @@ with its delivery status, and never see a usable one-time link there.
 | `dto/staff-invitation.response.ts` | `StaffInvitationResponse` |
 | `staff.module.ts` | adds `StaffOnboardingService` |
 
-**`src/modules/messaging/`** (U3's `MessagingModule`; additions)
+**`src/modules/messaging/`** (U3's folder; a new `MessageLogModule` beside `MessagingModule`)
 
 | File | Holds |
 |---|---|
@@ -117,16 +118,18 @@ with its delivery status, and never see a usable one-time link there.
 | `message-log.controller.ts` | `@Controller('admin/messages')`, `@ApiTags('Admin: messages')` |
 | `dto/message-log.query.ts`, `dto/message.params.ts` | query and path DTOs |
 | `dto/message-summary.response.ts`, `dto/message-detail.response.ts`, `dto/message-related.response.ts`, `dto/message-summary-page.response.ts` | response DTOs |
-| `messaging.module.ts` | adds the repository, service and controller |
+| `message-log.module.ts` | `MessageLogModule`: the controller, repository and service, imported by `AppModule` after `StaffModule` |
 
 **Elsewhere**
 
 | File | Change |
 |---|---|
 | `src/migrations/0045_01_add_messages_staff_fk.ts` | the foreign key |
+| `src/migrations/0045_02_comment_one_time_tokens_lookup.ts` | the token-hash index's comment names the `findLive` lookup |
 | `src/modules/auth/one-time-token.service.ts`, `one-time-tokens.repository.ts`, `types.ts` | `findLive()` |
 | `src/common/errors/error-catalogue.ts` | `NOT_INVITED` |
 | `src/common/time/iso-instant.validator.ts` | `IsIsoInstant()` for query DTOs |
+| `src/app.module.ts` | imports `MessageLogModule` after `StaffModule` |
 | `src/common/swagger/swagger.constants.ts` | tag `Admin: messages`; `Admin: staff` and `Admin: auth` descriptions mention invites and password setup |
 | `test/support/messaging/one-time-link.ts` | `oneTimeTokenFrom()` |
 
@@ -141,8 +144,11 @@ ALTER TABLE messages
 ```
 
 Covered by U3's `idx_messages_related_staff_user_id (related_staff_user_id)`, whose comment
-already names this key. No other schema change: invites and resets use U2a's `staff_users` and
-`one_time_tokens` as they are. `down` drops the constraint.
+already names this key. `down` drops the constraint.
+
+**`0045_02_comment_one_time_tokens_lookup`**: `COMMENT ON INDEX uq_one_time_tokens_token_hash`
+now names both queries it serves, `consume` and `findLive`. No other schema change: invites and
+resets use U2a's `staff_users` and `one_time_tokens` as they are.
 
 ## Behaviour
 
@@ -291,6 +297,10 @@ Test support: `oneTimeTokenFrom(text: string, path: string): string` in
 - `ERROR_CATALOGUE` gains `NOT_INVITED`; `test/unit/common/errors/error-catalogue.test.ts`'s
   list and design §14.3's table gain it.
 - `API_TAGS`: `Admin: messages` added; the staff and auth descriptions widened.
+- `AppModule` imports `MessageLogModule`; `StaffService`'s and `StaffModule`'s comments no longer
+  say U2b adds invites to them.
+- Migration `0045_02` only rewrites the comment of U2a's `uq_one_time_tokens_token_hash` to name
+  the `findLive` lookup it now also serves (an earlier migration is never edited).
 - `staff.controller.test.ts`'s enumerated box-office test also asserts the four new Admin routes
   are listed.
 

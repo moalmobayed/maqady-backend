@@ -663,6 +663,20 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Staff password reset.** Staff use "Forgot password" on the staff sign-in page. It emails a
   `staff_password_reset` link (1 hour) leading to `/admin/set-password`, the same page an invite
   uses.
+  - Only an `active` member receives one. An invited member gets nothing (the admin resends the
+    invite, so the 72-hour limit keeps its meaning), nor does a deactivated one; the answer is the
+    same `202` either way (U2b).
+- **Staff invites** (U2b). An admin invites by name, email and role: the member is created
+  `invited` with no password and emailed a `staff_invite` link (72 hours). "Resend invite" works
+  only for an `invited` member (`NOT_INVITED` otherwise) and voids the previous link.
+  - `POST /admin/auth/password-setups` takes the token and the new password, whichever link it
+    came from. An invite turns the member `active`; a reset replaces the password and revokes
+    every session. Either way no session opens: the member signs in next.
+  - **Lock order.** The setup reads the live token without locking it
+    (`OneTimeTokenService.findLive()`), locks the member row, then consumes the token. Every staff
+    change locks the member before their tokens (a deactivation deletes them after locking the
+    row), so a setup racing a deactivation waits for it instead of deadlocking, then finds its
+    link gone.
 - **Last admin.** Demoting or deactivating an admin first locks every active admin row
   `FOR NO KEY UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
   demotions therefore can't both succeed.
@@ -755,6 +769,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
   usable once.
 - Requesting a new token invalidates the previous one of the same purpose.
+- A token is checked by its hash only: anything that matches no live token of the right kind,
+  malformed ones included, is `INVALID_TOKEN`, never `VALIDATION_FAILED`, so a mangled link reads
+  like an expired one (U2b).
 - Both "Forgot password" routes always answer `202`, whether or not the email exists.
 - Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
   registering is useless without the password, so the usability gain outweighs the small
@@ -774,6 +791,7 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 | Customer and staff sign-in | 5 per minute per email, and 20 per minute per IP address | IP address plus email; IP address |
 | Registration | 5 per hour | IP address |
 | Both forgot-password routes, resend verification | 3 per hour per email, and 20 per hour per IP address | Email; IP address |
+| Staff password setup (from an invite or reset link) | 20 per minute, shared with sign-in (U2b) | IP address |
 | Create a hold | 30 per 10 minutes per IP address, and 10 per 10 minutes per signed-in customer | IP address; customer |
 | Pay | 10 per 5 minutes | Booking |
 | Customer "Email again" | 3 per hour | Booking |
@@ -969,6 +987,15 @@ generated contract (§19).
 - **SMS.** A simulated SMS goes through the same outbox and is recorded as `sent` on its first
   attempt, right after commit.
 - **The Message log** lists every email and SMS with its delivery status (U2b).
+  - `GET /admin/messages`, newest first (`created_at DESC, id DESC`, served by
+    `idx_messages_created_at`), cursor-paginated, filtered by `channel`, `status` and a time range
+    (`from` inclusive, `to` exclusive, as ISO instants with offset). `GET /admin/messages/{id}`
+    opens one message with its stored subject and bodies.
+  - It reads the stored copies only, never `payload_ciphertext`, so a one-time link can't appear.
+    Related records are returned as ids (`customerId`, `staffUserId`, `bookingId`); showing a
+    booking reference or customer name is left to the units that own those tables.
+  - It is served by its own `MessageLogModule`, imported with the admin feature modules, so the
+    global `MessagingModule` stays free of routes.
 - **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
@@ -1140,6 +1167,12 @@ The initial catalogue:
 | `TIME_DOES_NOT_EXIST` | 422 | `RATE_LIMITED` | 429 |
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
 | `PAYLOAD_TOO_LARGE` | 413 | | |
+
+Codes added by later units:
+
+| Code | HTTP | Added by |
+|---|---|---|
+| `NOT_INVITED` | 409 | U2b: "Resend invite" for a member who is not `invited` |
 
 ### 14.4 Logging and observability
 
