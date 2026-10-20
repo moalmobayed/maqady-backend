@@ -1,5 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDefined, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  Matches,
+  ValidateBy,
+  ValidateIf,
+  type ValidationArguments,
+} from 'class-validator';
 import {
   ACCEPTED_PHONE_PATTERN_SOURCE,
   CUSTOMER_FULL_NAME_MAX_LENGTH,
@@ -21,15 +27,8 @@ export class UpdateProfileRequest {
     example: 'Layla Hassan',
     description: 'Full name, required on the profile: it can be changed, never emptied.',
   })
-  // Validated when sent, and when `phone` is missing too, so an empty body names a field.
-  @ValidateIf(
-    (body: UpdateProfileRequest) => body.fullName !== undefined || body.phone === undefined,
-  )
-  @IsDefined({ message: NOTHING_TO_CHANGE })
   @TrimString()
-  @IsString()
-  @MinLength(1, { message: 'fullName must not be empty' })
-  @MaxLength(CUSTOMER_FULL_NAME_MAX_LENGTH)
+  @IsProfileName()
   fullName?: string;
 
   @ApiPropertyOptional({
@@ -45,4 +44,31 @@ export class UpdateProfileRequest {
   @IsString({ message: PHONE_MESSAGE })
   @Matches(E164_PHONE_PATTERN, { message: PHONE_MESSAGE })
   phone?: string | null;
+}
+
+/** Why a `fullName` is refused, or null when it is fine; one reason, so the form shows one line. */
+function fullNameProblem(value: unknown, body: UpdateProfileRequest): string | null {
+  if (value === undefined) return body.phone === undefined ? NOTHING_TO_CHANGE : null;
+  if (typeof value !== 'string') return 'fullName must be a string';
+  if (value === '') return 'fullName must not be empty';
+  if (value.length > CUSTOMER_FULL_NAME_MAX_LENGTH) {
+    return `fullName must be at most ${CUSTOMER_FULL_NAME_MAX_LENGTH} characters`;
+  }
+  return null;
+}
+
+/**
+ * `fullName` when sent (already trimmed), and the "send something" rule when the body is empty,
+ * as one check with one message.
+ */
+function IsProfileName(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isProfileName',
+    validator: {
+      validate: (value: unknown, args?: ValidationArguments) =>
+        fullNameProblem(value, args?.object as UpdateProfileRequest) === null,
+      defaultMessage: (args?: ValidationArguments) =>
+        fullNameProblem(args?.value, args?.object as UpdateProfileRequest) ?? NOTHING_TO_CHANGE,
+    },
+  });
 }

@@ -50,8 +50,22 @@ describe('UpdateProfileRequest', () => {
     expect((await check({ fullName: 'x'.repeat(101) })).fields).toEqual(['fullName']);
   });
 
-  it('refuses an empty body, naming a field', async () => {
-    expect((await check({})).fields).toEqual(['fullName']);
+  it('refuses an empty body with one message on one field', async () => {
+    const instance = plainToInstance(UpdateProfileRequest, {});
+    const errors = await validate(instance);
+    expect(errors.map((error) => [error.property, Object.values(error.constraints ?? {})])).toEqual(
+      [['fullName', ['send fullName, phone or both']]],
+    );
+  });
+
+  it('names one problem per invalid name', async () => {
+    const messagesFor = async (fullName: unknown) => {
+      const errors = await validate(plainToInstance(UpdateProfileRequest, { fullName }));
+      return errors.flatMap((error) => Object.values(error.constraints ?? {}));
+    };
+    expect(await messagesFor('  ')).toEqual(['fullName must not be empty']);
+    expect(await messagesFor('x'.repeat(101))).toEqual(['fullName must be at most 100 characters']);
+    expect(await messagesFor(5)).toEqual(['fullName must be a string']);
   });
 
   it('refuses the email and any other field', async () => {

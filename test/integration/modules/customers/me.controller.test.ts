@@ -108,7 +108,7 @@ describe('Profile routes (integration)', () => {
       }
       const empty = await patch({});
       expect(empty.body.error.details.fields).toEqual([
-        { field: 'fullName', messages: expect.arrayContaining(['send fullName, phone or both']) },
+        { field: 'fullName', messages: ['send fullName, phone or both'] },
       ]);
       expect(await storedPhone()).toBeNull();
     });
