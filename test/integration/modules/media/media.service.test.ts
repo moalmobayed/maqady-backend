@@ -6,6 +6,7 @@ import { AccessTokenService } from '../../../../src/common/auth/access-token.ser
 import { IDEMPOTENT_REPLAYED_HEADER } from '../../../../src/common/idempotency/idempotency.constants';
 import {
   TestPrincipalResolvers,
+  REAL_RESOLVERS_OFF,
   TestPrincipalResolversModule,
 } from '../../../support/foundations-probe.module';
 import { jpeg, png, textFile } from '../../../support/media-fixtures';
@@ -65,6 +66,7 @@ describe('Media uploads, deletes and files (integration, local storage)', () => 
     testApp = await createTestApp({
       config: buildTestConfig({}, { LOCAL_STORAGE_DIR: directory }),
       imports: [MediaProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
     });
     await createMediaProbeTables(testApp.knex, TEST_SCHEMA);
     authorization = mediaAdmin(testApp).authorization;

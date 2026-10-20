@@ -3,7 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runMediaOrphans } from '../../../../src/modules/media/media-orphans.command';
 import { TestClock } from '../../../support/clock';
-import { TestPrincipalResolversModule } from '../../../support/foundations-probe.module';
+import {
+  REAL_RESOLVERS_OFF,
+  TestPrincipalResolversModule,
+} from '../../../support/foundations-probe.module';
 import { jpeg } from '../../../support/media-fixtures';
 import { MediaProbeModule } from '../../../support/media-probe.module';
 import {
@@ -36,6 +39,7 @@ describe('npm run media:orphans (integration, local storage)', () => {
       clock,
       config: buildTestConfig({}, { LOCAL_STORAGE_DIR: directory }),
       imports: [MediaProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
     });
 
     // One image with its row, one prefix whose row never committed, and a stray file.

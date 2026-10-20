@@ -10,10 +10,10 @@ import type { TestApp } from './types';
  * Helpers of the media integration suites (U4a).
  *
  * `mediaAdmin()` is the one place these suites get a staff token. It uses U1's test resolvers
- * (`TestPrincipalResolversModule`), so the staff id is any number. When U2a's real resolver is
- * merged, the suites pass `overrides: REAL_RESOLVERS_OFF`; once U4b adds the foreign key from
- * `images.created_by_staff_id` to `staff_users`, this must return a real staff member
- * (`staffSession(testApp, 'admin')`) instead.
+ * (`TestPrincipalResolversModule`), so the staff id is any number; the suites pass
+ * `overrides: REAL_RESOLVERS_OFF` to switch U2a's real staff resolver off. Once U4b adds the
+ * foreign key from `images.created_by_staff_id` to `staff_users`, this must return a real staff
+ * member (`staffSession(testApp, 'admin')`) instead.
  */
 export function mediaAdmin(
   testApp: TestApp,

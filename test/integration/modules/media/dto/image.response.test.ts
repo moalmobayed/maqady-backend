@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { load } from 'js-yaml';
 import { buildOpenApiDocument } from '../../../../../src/common/swagger/openapi-document';
-import { TestPrincipalResolversModule } from '../../../../support/foundations-probe.module';
+import {
+  REAL_RESOLVERS_OFF,
+  TestPrincipalResolversModule,
+} from '../../../../support/foundations-probe.module';
 import { MediaProbeModule } from '../../../../support/media-probe.module';
 import { createTestApp } from '../../../../support/test-app';
 import type { TestApp } from '../../../../support/types';
@@ -39,6 +42,7 @@ describe('ImageResponse in the OpenAPI document', () => {
   beforeAll(async () => {
     testApp = await createTestApp({
       imports: [MediaProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
       resetData: false,
     });
     document = buildOpenApiDocument(testApp.app);
