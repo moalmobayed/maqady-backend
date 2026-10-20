@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SeedApi, SeedApiFailure, SeedUpload, SeedWriteMethod } from './types';
+import type { SeedApi, SeedApiFailure, SeedSignIn, SeedUpload, SeedWriteMethod } from './types';
 
 /**
  * The admin HTTP API of an in-process app, as `npm run seed` calls it with Node's `fetch`. Every
@@ -13,7 +13,7 @@ export class SeedApiClient implements SeedApi {
 
   /** Signs in through `POST /admin/auth/sessions`; later calls carry the access token. */
   async signIn(email: string, password: string): Promise<void> {
-    const body = await this.request<{ accessToken: string }>(
+    const body = await this.request<SeedSignIn>(
       'POST',
       '/admin/auth/sessions',
       { 'Content-Type': 'application/json' },

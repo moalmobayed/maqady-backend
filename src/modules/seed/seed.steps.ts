@@ -7,6 +7,8 @@ import type {
   SeedAdminTheater,
   SeedApi,
   SeedContext,
+  SeedCreatedRow,
+  SeedGenreRow,
   SeedMovie,
   SeedNamedRow,
   SeedPage,
@@ -81,7 +83,7 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
         email: theater.email,
         showContactsPublic: theater.showContactsPublic,
       });
-      id = (await api.write<{ id: number }>('POST', '/admin/theaters', body)).id;
+      id = (await api.write<SeedCreatedRow>('POST', '/admin/theaters', body)).id;
       created += 1;
     }
     context.theaterIds.set(theater.name, id);
@@ -191,10 +193,7 @@ async function seedPeople(context: SeedContext): Promise<SeedStepResult> {
 async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
   const { api } = context;
   const genres = new Map(
-    (await listAll<{ id: number; slug: string }>(api, '/genres')).map((genre) => [
-      genre.slug,
-      genre.id,
-    ]),
+    (await listAll<SeedGenreRow>(api, '/genres')).map((genre) => [genre.slug, genre.id]),
   );
   const existing = new Map(
     (await listAll<SeedTitledRow>(api, '/admin/movies')).map((row) => [row.title, row.id]),
@@ -220,7 +219,7 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
           return genreId;
         }),
       });
-      id = (await api.write<{ id: number }>('POST', '/admin/movies', body)).id;
+      id = (await api.write<SeedCreatedRow>('POST', '/admin/movies', body)).id;
       created += 1;
     }
     context.movieIds.set(movie.title, id);

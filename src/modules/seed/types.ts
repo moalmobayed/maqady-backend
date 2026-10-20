@@ -156,6 +156,22 @@ export interface SeedPage<T> {
   readonly nextCursor: string | null;
 }
 
+/** A created row, as the admin create routes answer it (only the id is read). */
+export interface SeedCreatedRow {
+  readonly id: number;
+}
+
+/** A genre of `GET /genres`. */
+export interface SeedGenreRow {
+  readonly id: number;
+  readonly slug: string;
+}
+
+/** The part of a staff sign-in the seed reads. */
+export interface SeedSignIn {
+  readonly accessToken: string;
+}
+
 export interface SeedNamedRow {
   readonly id: number;
   readonly name: string;
