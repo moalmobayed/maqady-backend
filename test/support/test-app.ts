@@ -5,19 +5,21 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { KNEX } from '../../src/common/database/database.constants';
+import { Clock } from '../../src/common/time/clock';
 import { resetDatabase } from './database';
 import { buildTestConfig } from './test-config';
 import type { TestApp, TestAppOptions } from './types';
 
 /**
- * Boots the real app (every module, the global pipe and filter, `configureApp()`) against the
- * test database, for supertest. Nothing is mocked. Data is truncated on start and on `close()`.
+ * Boots the real app (every module, the global pipe, filter, guards and interceptor,
+ * `configureApp()`) against the test database, for supertest. Nothing is mocked; only the
+ * `Clock` can be replaced, so a test can move time. Data is truncated on start and on `close()`.
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const config = options.config ?? buildTestConfig();
   const resetData = options.resetData ?? true;
 
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       AppModule.forRoot({
         config,
@@ -25,7 +27,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       }),
       ...(options.imports ?? []),
     ],
-  }).compile();
+  });
+  if (options.clock) builder.overrideProvider(Clock).useValue(options.clock);
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
   configureApp(app, config);

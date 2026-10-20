@@ -3,7 +3,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Knex } from 'knex';
 import type { DestinationStream } from 'pino';
 import type request from 'supertest';
+import type { Principal } from '../../src/common/auth/types';
 import type { AppConfig } from '../../src/common/config/types';
+import type { AppError } from '../../src/common/errors/app-error';
+import type { Clock } from '../../src/common/time/clock';
 
 export interface TestAppOptions {
   /** Defaults to `buildTestConfig()`: the test database, silent logs. */
@@ -14,6 +17,8 @@ export interface TestAppOptions {
   readonly logDestination?: DestinationStream;
   /** Truncate data on start and close (default true). Off for an app with no database. */
   readonly resetData?: boolean;
+  /** Replaces the app's `Clock`, for tests that move time. */
+  readonly clock?: Clock;
 }
 
 export interface TestApp {
@@ -33,3 +38,6 @@ export interface LogCapture {
   /** Every line written so far, as raw text. */
   readonly text: () => string;
 }
+
+/** What a test principal resolver answers for one session: a principal, gone, or an error. */
+export type ResolverEntry = Principal | AppError | null;

@@ -11,7 +11,9 @@ const EXTENSIONS = ['btree_gist', 'citext', 'pg_trgm'];
 
 /** Every migration in `src/migrations`, in the order a run from zero applies them. */
 function allMigrations(): Promise<string[]> {
-  return new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, { schema: TEST_SCHEMA }).getMigrations();
+  return new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, {
+    schema: TEST_SCHEMA,
+  }).getMigrations();
 }
 
 /**
@@ -103,16 +105,38 @@ describe('Migrations (integration)', () => {
     expect(after).toEqual(before);
   });
 
-  it('refuses to roll back the base migration, leaving the database as it was', async () => {
-    const rollback = testApp.knex.migrate.rollback({
-      migrationSource: new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, { schema: TEST_SCHEMA }),
-      schemaName: TEST_SCHEMA,
-      tableName: 'knex_migrations',
+  describe('rolling back', () => {
+    // Knex rolls back the whole last batch, one migration per transaction, so this runs on a
+    // scratch database: on the suite's own database it would drop every later unit's tables.
+    const ROLLBACK_DATABASE = scratchDatabaseName('rollback');
+    let scratch: Knex | undefined;
+
+    afterAll(async () => {
+      await scratch?.destroy();
+      await testApp.knex.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [ROLLBACK_DATABASE]);
     });
-    await expect(rollback).rejects.toThrow('0010_01_create_schema cannot be rolled back');
-    expect(await extensionSchemas(testApp.knex)).toHaveProperty('citext', 'public');
-    const names = await testApp.knex.withSchema(TEST_SCHEMA).from('knex_migrations').pluck('name');
-    expect(names).toContain('0010_01_create_schema');
+
+    it('refuses to roll back the base migration, which stays applied', async () => {
+      await testApp.knex.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [ROLLBACK_DATABASE]);
+      await testApp.knex.raw('CREATE DATABASE ??', [ROLLBACK_DATABASE]);
+      const url = new URL(testDatabaseUrl());
+      url.pathname = `/${ROLLBACK_DATABASE}`;
+      const config = buildTestConfig({ database: { url: url.toString(), schema: TEST_SCHEMA } });
+      scratch = createKnex(config.database);
+      await new MigrationRepository(scratch, config).migrateLatest();
+
+      const rollback = scratch.migrate.rollback({
+        migrationSource: new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, {
+          schema: TEST_SCHEMA,
+        }),
+        schemaName: TEST_SCHEMA,
+        tableName: 'knex_migrations',
+      });
+      await expect(rollback).rejects.toThrow('0010_01_create_schema cannot be rolled back');
+      expect(await extensionSchemas(scratch)).toHaveProperty('citext', 'public');
+      const names = await scratch.withSchema(TEST_SCHEMA).from('knex_migrations').pluck('name');
+      expect(names).toContain('0010_01_create_schema');
+    });
   });
 
   describe('when several processes boot at once against an empty database', () => {
