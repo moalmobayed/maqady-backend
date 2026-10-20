@@ -13,4 +13,5 @@ gate (G5) checks it.
 | `docs/reference/design-inventory.md` | What the design prototypes show, screen by screen: data, actions, enums, gaps G1–G22 (not decisions) | Mohamed Tarek | 2026-10-18 |
 | `docs/reference/prd.md` | Text extract of the PRD, "Movie Reservation System" v1.0 (Arabic/English); superseded by v2.0 | Mohamed Tarek | 2026-10-19 |
 | `docs/reference/prd-v2.md` | PRD v2.0: requirements after backend planning (copy of the shared doc) | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-1-scaffold/spec.md` | U0 spec: the NestJS scaffold, config, logging, errors, database, Swagger, health, tests, CI and deploy files | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |
