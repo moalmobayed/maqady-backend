@@ -1,4 +1,5 @@
 import type { Response } from 'supertest';
+import { formatCairoIso } from '../../../../src/common/time/time';
 import { TestClock } from '../../../support/clock';
 import {
   adminWrite,
@@ -242,6 +243,52 @@ describe('Admin people routes (integration)', () => {
         .select('metadata')
         .where({ action: 'person.credits_replaced', entity_id: newcomer.id });
       expect(audit.metadata).toEqual({ count: 2, movieCount: 2 });
+    });
+
+    it('leaves the "Last edited by" of movies whose credits it doesn\'t change', async () => {
+      const [untouched, renamed, added] = await Promise.all([
+        createDraftMovie(testApp, admin),
+        createDraftMovie(testApp, admin),
+        createDraftMovie(testApp, admin),
+      ]);
+      const person = await createPerson(testApp, admin);
+      expectStatus(
+        await putPersonCredits(person.id, [
+          { movieId: untouched.id, role: 'director' },
+          { movieId: renamed.id, role: 'actor', characterName: 'Before' },
+        ]),
+        200,
+      );
+      const before = await get(`${MOVIES}/${untouched.id}`);
+      const other = await staffSession(testApp, 'admin');
+      clock.advance({ minutes: 3 });
+
+      const response = await adminWrite(
+        testApp,
+        other,
+        'put',
+        `${PEOPLE}/${person.id}/credits`,
+      ).send({
+        credits: [
+          { movieId: untouched.id, role: 'director' },
+          { movieId: renamed.id, role: 'actor', characterName: 'After' },
+          { movieId: added.id, role: 'writer' },
+        ],
+      });
+      expect(response.status).toBe(200);
+
+      const after = await get(`${MOVIES}/${untouched.id}`);
+      expect([after.body.updatedAt, after.body.updatedBy]).toEqual([
+        before.body.updatedAt,
+        before.body.updatedBy,
+      ]);
+      for (const movie of [renamed, added]) {
+        const changed = await get(`${MOVIES}/${movie.id}`);
+        expect([changed.body.updatedAt, changed.body.updatedBy.id]).toEqual([
+          formatCairoIso(clock.now()),
+          other.staffUserId,
+        ]);
+      }
     });
 
     it('renumbers a movie whose credit it removes after that credit was added meanwhile', async () => {

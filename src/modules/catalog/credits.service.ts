@@ -129,15 +129,23 @@ export class CreditsService {
       const removed = current.filter((row) => !keptKeys.has(keyOf(row.movie_id, row.role)));
       const added = credits.filter((credit) => !keptKeys.has(keyOf(credit.movieId, credit.role)));
 
-      const affected = [...new Set([...requestedIds, ...currentIds, ...lateIds])].sort(
-        (a, b) => a - b,
-      );
+      const renamed = kept.flatMap((row) => {
+        const characterName = requested.get(keyOf(row.movie_id, row.role))?.characterName ?? null;
+        return characterName === row.character_name
+          ? []
+          : [{ movieId: row.movie_id, change: { id: row.id, characterName } }];
+      });
+      // Only the movies whose credits change are renumbered and get the new "Last edited by".
+      const affected = [
+        ...new Set([
+          ...removed.map((row) => row.movie_id),
+          ...added.map((credit) => credit.movieId),
+          ...renamed.map((rename) => rename.movieId),
+        ]),
+      ].sort((a, b) => a - b);
       await this.credits.deleteByIds(removed.map((row) => row.id));
       await this.credits.setCharacterNames(
-        kept.map((row): CharacterNameChange => ({
-          id: row.id,
-          characterName: requested.get(keyOf(row.movie_id, row.role))?.characterName ?? null,
-        })),
+        renamed.map((rename): CharacterNameChange => rename.change),
       );
       await this.credits.renumber(affected);
       const counts = await this.credits.countsByMovie(affected);
