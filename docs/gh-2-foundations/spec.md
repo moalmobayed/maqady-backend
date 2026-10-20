@@ -1,7 +1,7 @@
 ---
 title: U1 — Foundations - transactions, idempotency, access, time and pagination
 owner: Mohamed Tarek
-status: In progress — 2026-10-20
+status: Implemented — 2026-10-20
 last_verified: 2026-10-20
 tags: [foundations, transactions, idempotency, auth, rate-limit, time, money, pagination, audit, errors]
 ---
@@ -50,6 +50,55 @@ exercised through test-only controllers registered by the integration tests.
 - U0 review finding R4 (preflights and Swagger routes without `X-Request-Id`): a logging change,
   left as a follow-up.
 
+## Modules and files
+
+| Folder (`src/common/…`) | Files |
+|---|---|
+| `database/` | `transaction-context.ts`, `transaction.repository.ts`, `postgres-errors.ts` (adds `isRetryableTransactionError`), `types.ts` |
+| `idempotency/` | `idempotency.module.ts`, `idempotency.repository.ts`, `idempotency.service.ts`, `write.interceptor.ts`, `idempotency.decorators.ts`, `request-hash.ts`, `idempotency.constants.ts`, `enums.ts`, `types.ts` |
+| `crypto/` | `crypto.module.ts`, `data-encryption.service.ts`, `hashing.ts`, `keyring.ts`, `crypto.constants.ts`, `types.ts` |
+| `time/` | `time.module.ts`, `clock.ts`, `time.ts`, `time.constants.ts`, `types.ts` |
+| `money/` | `money.ts`, `enums.ts`, `types.ts`, `dto/money-response.dto.ts` |
+| `pagination/` | `cursor.ts`, `pagination.constants.ts`, `types.ts`, `dto/page-query.dto.ts`, `dto/page-response.dto.ts` |
+| `auth/` | `auth.module.ts`, `access.decorators.ts`, `access-metadata.ts`, `access-token.service.ts`, `principal-resolver.registry.ts`, `jwt-auth.guard.ts`, `access.guard.ts`, `access-declaration.check.ts`, `auth.constants.ts`, `enums.ts`, `types.ts` |
+| `rate-limit/` | `rate-limit.module.ts`, `rate-limit.guard.ts`, `rate-limit.decorators.ts`, `throttler-options.ts`, `trackers.ts`, `rate-limit.constants.ts`, `enums.ts`, `types.ts` |
+| `audit/` | `audit.module.ts`, `audit.repository.ts`, `audit.service.ts`, `audit.constants.ts`, `enums.ts`, `types.ts` |
+| `errors/`, `config/`, `swagger/` | the catalogue; the new variables; `cross-cutting-docs.ts`, applied by `buildOpenApiDocument()` |
+
+`AppModule` imports `TimeModule`, `CryptoModule`, `AuditModule`, `AuthModule`, `RateLimitModule`
+and `IdempotencyModule`, and registers `APP_GUARD` `JwtAuthGuard`, `RateLimitGuard`, `AccessGuard`
+(in that order) and `APP_INTERCEPTOR` `WriteInterceptor`. `TimeModule`, `CryptoModule`,
+`AuditModule`, `AuthModule` and `DatabaseModule` are global.
+
+## Exported services and helpers (what later units call)
+
+| Export | From | Signature and use |
+|---|---|---|
+| `TransactionRepository` | `common/database/transaction.repository` | `run<T>(fn: () => Promise<T>): Promise<T>` opens or joins the transaction; `savepoint<T>(fn)`; `afterCommit(hook: () => void \| Promise<void>): Promise<void>` |
+| `TransactionContext` | `common/database/transaction-context` | `executor(): Knex` (the open transaction or the pool), `isActive(): boolean`. Every repository builds its queries on `executor()` |
+| `isRetryableTransactionError(error)` | `common/database/postgres-errors` | `40P01`/`40001` on the error or its `cause` chain |
+| `Strict()`, `NoIdempotencyStorage()`, `NoRequestTransaction()` | `common/idempotency/idempotency.decorators` | Method decorators read by `WriteInterceptor` |
+| `IdempotencyService` | `common/idempotency/idempotency.service` | `claim(input)`, `complete(id, input, status, body)`: for U4's upload routes, which record their key in their own short transaction |
+| `DataEncryptionService` | `common/crypto/data-encryption.service` | `encrypt(plaintext, associatedData?)`, `decrypt(ciphertext, associatedData?)` |
+| `sha256Hex`, `hmacSha256`, `randomToken`, `safeEqual` | `common/crypto/hashing` | Token hashes (U2, U9), QR signatures (U11) |
+| `Clock` | `common/time/clock` | Inject it; `now(): Date`. Tests replace it with `TestClock` |
+| `cinemaDateOf`, `cinemaDayBounds`, `weekdayOfCinemaDate`, `addDays`, `wallClockToInstant`, `cinemaMinuteToInstant`, `formatCairoIso`, `addToInstant`, `subtractFromInstant`, `isCalendarDate`, `CAIRO_TIME_ZONE` | `common/time/time`, `time.constants` | The only wall-clock and instant conversions (design §8) |
+| `Money`, `money()`, `zeroMoney`, `addMoney`, `subtractMoney`, `multiplyMoney`, `sumMoney`, `isSameMoney`, `MoneyResponse` | `common/money` | Integer piastres |
+| `PageQuery`, `toPageRequest()`, `toPage()`, `encodeCursor`, `decodeCursor`, `PageResponseOf(Item)` | `common/pagination` | Cursor lists `{ items, nextCursor, total }` |
+| `Public`, `Guest`, `Customer`, `Staff`, `Admin`, `CurrentPrincipal` | `common/auth/access.decorators` | One access decorator per route |
+| `AccessTokenService` | `common/auth/access-token.service` | `sign({ audience, subjectId, sessionId }): string`, `verify(token, audience): VerifiedAccessToken` |
+| `PrincipalResolverRegistry` | `common/auth/principal-resolver.registry` | `register(audience, { resolve(token): Promise<Principal \| null> })`, once per audience: staff in U2, customer in U9, in `onModuleInit` |
+| `Principal`, `CustomerPrincipal`, `StaffPrincipal`, `StaffRole`, `TokenAudience` | `common/auth/types` | `request.principal` is typed through Express's `Request` |
+| `RateLimit(...names)` | `common/rate-limit/rate-limit.decorators` | Opts a route into named limits |
+| `AuditService` | `common/audit/audit.service` | `record({ actor, action, entity, bookingId?, changedFields?, metadata? }): Promise<number>` |
+| `ApiErrorResponses(...codes)` | `common/swagger/error-responses` | Unchanged from U0; access, idempotency and `429` errors are added automatically |
+
+## Endpoints
+
+None. U1 changes every route's behaviour (guards, limits, the write transaction) and its
+documentation, but adds no path. The health routes are now `@Public()`; their published shape is
+unchanged apart from the new `429` response.
+
 ## Decisions taken here
 
 | Decision | Why |
@@ -64,13 +113,17 @@ exercised through test-only controllers registered by the integration tests.
 | Only `2xx` responses are stored | An error rolls the key back with the write, so a retry runs again (§14.1). |
 | Ciphertext `v1.<keyId>.<iv>.<data>.<tag>` (base64url), AAD `idempotency:<scope>:<key>` | Key id = first 8 hex of the key's SHA-256, so `DATA_ENCRYPTION_PREVIOUS_KEY` can still decrypt after a rotation. The AAD stops a ciphertext being replayed from another row. |
 | `@NoRequestTransaction()` routes skip the interceptor, except that `@Strict()` still requires the key | U4 decides how an upload records its key in its short transaction. |
-| Access tokens: HS256 via `jsonwebtoken`, claims `sub`, `aud`, `sid` (positive integers as strings), 15 minutes | Design §10.2. `exp` is checked against the `Clock`. |
+| Access tokens: HS256 via `jsonwebtoken`, claims `sub`, `aud`, `sid` (positive integers as strings), plus `iat` and `exp`, 15 minutes | Design §10.2. `iat` and `exp` come from the `Clock`, and `exp` is checked against it. |
+| The guard also requires the resolved principal's `id` and `sessionId` to equal the token's `sub` and `sid` | A resolver bug can't hand one account another's session. |
 | `@Guest()` routes accept no token, or a valid customer token; an invalid one is `UNAUTHENTICATED` | A signed-in customer whose token expired must refresh, not silently act as a guest. |
 | Exactly one access declaration per route, on the method or the controller, counted across both | "Never both" keeps a route's access readable in one place. |
 | Named rate limits apply only to routes that opt in with `@RateLimit(...)`; `default` applies to every route, per route | Design §10.6 "every other route". Named limits share one bucket across the routes that use them (both forgot-password routes, for example). |
 | Weekdays are ISO: 1 = Monday … 7 = Sunday | Luxon's and Postgres's `ISODOW` numbering. |
 | A stored opening minute in a skipped hour moves to the first valid minute after the gap (00:30 on 24 April 2026 → 01:00) | Design §8 "shifted forward to the next valid time". |
 | Every operation documents `429 RATE_LIMITED` | Every route is rate-limited. |
+| Authenticated routes also document `SESSION_REVOKED` | A resolver answers it for a revoked session (U2, U9). |
+| Replays repeat the stored status and body only, not other headers | No route sets response headers that must survive a replay yet; one that does says so in its spec. |
+| Every write opens the request transaction, even with no key | Design §14.1 step 1; a write without a key is still atomic. |
 
 ## Configuration
 
@@ -183,8 +236,9 @@ base64url JSON `[sortKey, id]`; an unreadable one is `400 VALIDATION_FAILED` on 
 **Audit.** `AuditService.record({ actor, action, entity, bookingId?, changedFields?, metadata? })`
 writes through the current executor (inside the request transaction), with `occurred_at` from the
 `Clock`. Changed fields are names only (validated identifiers, sorted, deduplicated). Metadata
-values are scalars, and keys that suggest personal data (`email`, `phone`, `name`, `password`,
-`token`, `secret`, `address`) are refused with `INTERNAL`.
+values are scalars, and keys that suggest personal data or card details (`email`, `phone`,
+`name`, `password`, `token`, `secret`, `address`, `card`, matched anywhere in the key, case
+insensitive) are refused with `INTERNAL`.
 
 ## Error codes added
 
@@ -201,42 +255,79 @@ values are scalars, and keys that suggest personal data (`email`, `phone`, `name
 No new paths. Every operation now documents `429 RATE_LIMITED`. The access and idempotency
 decorators record markers that the document builder turns into: the security requirement
 (`[]`, `customer`, `staff`, or optional customer for `@Guest()`), the access errors
-(`UNAUTHENTICATED`, `ACCOUNT_BLOCKED`/`ACCOUNT_DEACTIVATED`, `FORBIDDEN` for admin), the
+(`UNAUTHENTICATED`, `SESSION_REVOKED`, `ACCOUNT_BLOCKED`/`ACCOUNT_DEACTIVATED`, `FORBIDDEN` for
+admin), the
 `Idempotency-Key` header (required on `@Strict()`), `IDEMPOTENCY_KEY_REQUIRED`/`_REUSED` and the
 `Idempotent-Replayed` response header. The markers are removed from the published document.
 
 ## Tests
 
-**Unit**: config (secrets, rate limits); crypto (round trip, tamper, AAD, previous key, unknown
-key id, helpers); time (cinema date by wall clock incl. 2026-10-17 00:30 → 2026-10-16 and
-2026-04-24 06:30 → 2026-04-24, bounds, weekday, admin nonexistent → `TIME_DOES_NOT_EXIST`,
-ambiguous → first, stored minute shifted, formatting); money; cursor round trip and invalid
-cursors; page builder; request hash; error catalogue (every §14.3 code with its status);
-`WriteInterceptor` (pass-through, key checks, retry once on `40P01`/`40001` and not twice);
-`AccessTokenService`; `JwtAuthGuard`; `AccessGuard`; access check; rate-limit trackers and skip
-rules; `AuditService` validation; Swagger cross-cutting post-processing.
+Test-only routes and resolvers live in `test/support/foundations-probe.module.ts` and are
+registered by the integration suites, never by the app; `test/support/clock.ts` is the
+`TestClock`.
 
-**Integration** (real app, real Postgres, test-only controllers in `test/support/`):
+**Unit** (`test/unit/common/…`): `config/load-config` (secrets, the encryption key, rate
+limits, no values echoed); `crypto/data-encryption.service` (round trip, format, fresh nonce,
+tamper, associated data, previous key, unknown key id) and `crypto/hashing`;
+`time/time` (2026-10-17 00:30 → 2026-10-16, 2026-04-24 06:30 → 2026-04-24, boundaries,
+23- and 25-hour cinema days, ISO weekdays, nonexistent admin times → `TIME_DOES_NOT_EXIST`,
+ambiguous → first, stored minutes shifted out of the gap, formatting, arithmetic);
+`money/money`; `pagination/cursor` (round trips, nine kinds of invalid cursor, page requests,
+pages, `PageResponseOf`); `idempotency/request-hash`, `idempotency/idempotency.service`
+(Clock-based claim and cutoff, replay, reuse, associated data) and
+`idempotency/write.interceptor` (pass-through for reads and WebSocket, key checks, replays,
+`@NoIdempotencyStorage`, `@NoRequestTransaction`, one retry on `40P01`/`40001` including a wrapped
+cause, no second retry, no retry of other errors); `errors/error-catalogue` (exactly the codes
+and statuses of §14.3); `database/postgres-errors` (retryable SQLSTATEs);
+`auth/access-token.service`, `auth/jwt-auth.guard` (with the registry), `auth/access.guard`,
+`auth/access-declaration.check`; `rate-limit/trackers` (keys, skip rules, rule parsing) and
+`rate-limit/throttler-options`; `audit/audit.service` (row shape, refusals);
+`swagger/cross-cutting-docs`.
 
-- Transactions: commit, rollback, executor inside and outside, nested `run` joins, savepoint
-  survives a unique violation, hooks after commit only, never after a rollback, dropped with a
-  rolled-back savepoint.
-- Idempotency: concurrent same-key requests run the handler once and the other replays with
-  `Idempotent-Replayed: true`; same key, different body → `IDEMPOTENCY_KEY_REUSED`; strict route
-  without a key → `IDEMPOTENCY_KEY_REQUIRED`; a throwing handler rolls back its rows and its key
-  so a retry runs; a key older than 24 hours by the `Clock` is taken over; a real `40P01` is
-  retried once; expired keys are purged; scope separates principals; the stored body is
-  ciphertext; `@NoIdempotencyStorage()` stores nothing; GET runs without a transaction.
-- Access: every access level with valid, missing, expired, wrong-audience and malformed tokens,
-  box office on an admin route, no resolver registered, a resolver refusing; the boot check fails
-  for an undecorated route and for a doubly decorated one.
-- Rate limits: the default limit answers `429 RATE_LIMITED` with `Retry-After`; a named limit
-  applies only where declared.
-- Audit: a record commits with the request and disappears with its rollback.
-- Swagger: health stays as agreed, now `@Public()`; the contract is current.
+**Integration** (`test/integration/common/…`, real app, real Postgres):
+
+- `database/transaction.repository`: commit, rollback, executor inside and outside, concurrent
+  transactions kept apart, nested `run` joins, a savepoint survives a unique violation, a
+  savepoint outside a transaction is refused, hooks after commit only, never after a rollback,
+  waiting for the outermost commit, dropped with a rolled-back savepoint, failing hooks contained.
+- `idempotency/write.interceptor`: concurrent same-key requests run the handler once and the
+  other replays with `Idempotent-Replayed: true`; a later retry replays status and body; key
+  order in the body doesn't matter; same key with another body, route or path parameter →
+  `IDEMPOTENCY_KEY_REUSED`; a key older than 24 hours by the `Clock` is taken over, one just under
+  is replayed; scope separates principals; strict route without a key →
+  `IDEMPOTENCY_KEY_REQUIRED`, malformed key → `VALIDATION_FAILED`; `@NoRequestTransaction` still
+  requires the key; a throwing handler rolls back its rows and its key so a retry runs; a real
+  deadlock (`40P01`) between two requests is retried once and both succeed; the stored body is
+  ciphertext; `@NoIdempotencyStorage()` stores nothing; 50 expired keys are purged per write; GET
+  runs without a transaction; post-commit hooks run after the request commits.
+- `auth/jwt-auth.guard`: every access level with valid, missing, malformed, expired (by the
+  `Clock`), forged, wrong-audience and other-subject tokens; box office on an admin route →
+  `FORBIDDEN`; resolver refusals (`ACCOUNT_BLOCKED`, `ACCOUNT_DEACTIVATED`, `SESSION_REVOKED`); no
+  resolver registered → `UNAUTHENTICATED`.
+- `auth/access-declaration.check`: the app refuses to start for an undecorated route and for a
+  doubly decorated one, naming it.
+- `rate-limit/rate-limit.guard`: the default limit answers `429 RATE_LIMITED` with `Retry-After`,
+  per route; a named limit applies only where declared and shares its count across those routes.
+- `audit/audit.service`: a record commits with its request, disappears with its rollback, puts
+  each actor in its own column, and refuses personal data.
+- `swagger/openapi-document`: health still matches the agreed draft and is public; every
+  operation documents `429`; no internal markers are published; the contract is current.
+- `database/migration.repository` (U0, adjusted): no longer hard-codes the migration list, and
+  runs its rollback and race checks on scratch databases named after the test database.
 
 ## Acceptance
 
 - `npm run typecheck`, `npm run lint`, `npm test` (non-zero passes, no failures, no skips),
   `npm run build`, `npm run contract` and a clean `git status`.
 - The tests above exist and pass, including every acceptance case named in issue #2.
+- Manual QA recorded in `docs/gh-2-foundations/qa.md`.
+
+## Follow-ups
+
+- The request log line does not yet carry the principal kind and id (design §14.4); U2 adds it
+  with the first real resolver.
+- U0 review finding R4 (preflights and Swagger routes without `X-Request-Id`) stays open.
+- Invalid tokens are refused by `JwtAuthGuard` before the rate-limit guard counts them, so a
+  flood of bad tokens is not throttled; revisit if abuse appears.
+- `HealthRepository` still injects Knex directly instead of `TransactionContext` (harmless: a
+  `SELECT 1` outside any transaction).
