@@ -133,6 +133,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging |
 | `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
+| `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`); the ticker and hall-count seams U8b fills | catalog, theaters, media |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
@@ -963,6 +964,17 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 | `GET /admin/overview` · `GET /admin/activity` · `GET /admin/messages` · `GET /admin/messages/{id}` · `GET /admin/exports/{overview,bookings,customers,payments}.csv` | Admin | |
 | `GET /admin/alerts` · `POST /admin/alert-reads` · `GET /admin/search` (results filtered by role) | Staff | |
 
+Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
+of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
+`Cache-Control: public, max-age=60` and shows only Coming soon and Now showing movies and
+`active` theaters; anything else is `NOT_FOUND`. `/genres`, `/movies`, `/people` and `/theaters`
+are cursor-paginated (`/genres` and `/theaters` page in memory over the short sets the read
+services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts`;
+`/theaters` takes `openNow` and `parking`; `/movies/{id}/similar` is a bounded `{ items }` of at
+most 4. The ticker and `hallCount` come from the `HomeTickerSource` and `TheaterHallCountSource`
+seams, empty until U8b (showtimes and halls). `npm run seed` fills a development database
+through the admin API.
+
 An integration test sends a box-office token to every Admin route and expects `FORBIDDEN`.
 Exact request and response shapes are defined in each unit's spec and published in the
 generated contract (§19).
@@ -1422,6 +1434,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-28 | Image kinds: posters and person photos refused beyond 2 % off their ratio, backdrops always cropped to 16:9, gallery photos uncropped; the movie backdrop is a gallery photo cover-cropped by the frontend; a required `STORAGE_DRIVER` with a local driver for development and tests | Builder (U4a, `docs/gh-5-media/spec.md`, §9) |
 | D-29 | Customer accounts: registration signs in; a phone is E.164 or an Egyptian local mobile, stored as E.164; sessions end 30 days after sign-in, never extended; a password change keeps the caller's session and ends the others; a reset verifies the email and opens no session; customer self-service writes no audit rows (§13.5); resend verification is limited per customer | Builder (U9, `docs/gh-10-customer-accounts/spec.md`) |
 | D-30 | Catalog: genres seeded with slugs; movies need a synopsis, runtime, release date and a genre to be public, a poster optional; Now showing never goes back; a taken carousel position is refused; the hero is any of the movie's videos; poster routes and the person-side filmography route added to §11; deletion blockers registered by U7 and U10 | Builder (U6, `docs/gh-7-catalog/spec.md`) |
+| D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
 
 ## 19. Kit and process reconciliations
 
@@ -1472,7 +1485,7 @@ the frontend early: a deployed API with real reads comes before the booking flow
 | U5 Halls | Hall CRUD, layout editor API, the hall lock and in-use rule, retire and delete | U4 |
 | U6 Catalog | Genres, movies, people, credits, photos, YouTube videos, publishing, featured carousel | U4 |
 | U7 Showtimes | Scheduling with hours and overlap checks, dry run, batch create with savepoints, move with notifications, prices, admin timeline and list | U3, U5, U6 |
-| U8 Discovery reads | Home, movies list with filters, movie details, showtimes by movie and theater, theaters list and details, similar movies | U7 |
+| U8 Discovery reads | Home, movies list with filters, movie details, showtimes by movie and theater, theaters list and details, similar movies. Split in two: U8a (home and the reads that need no showtimes, the development seed; `docs/gh-9-home-and-browse/spec.md`, built on U4b and U6) and U8b (showtime reads, the ticker, hall counts, showtime seed data) | U7 (U8a: U4b, U6) |
 | U9 Customer accounts | Register, sign-in, refresh, sign-out, verify email, forgot and reset, profile, password change, block checks | U2, U3 |
 | U10 Holds and live map | Seat claims with the lock order, holds, claims and release, availability snapshot, `hold_refusals`, WebSocket gateway | U7, U9 |
 | U11 Checkout | Payment provider interface, simulated provider, payments under claim locks, `SettlementService`, confirmation, tickets message, QR, PDF and calendar | U10 |

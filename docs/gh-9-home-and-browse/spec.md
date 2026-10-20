@@ -238,10 +238,13 @@ class DiscoveryResponseMapper {          // for U8b's showtime reads
 
 ### Query cost
 
-Every route costs a fixed number of queries whatever the number of rows (no N+1): `/home` is
-about 15 (featured 5, genres 2, each movie list 2 plus 3 for its cards, theaters 4 plus hours 2,
-hall counts 0 by default); `/theaters` is 6, `/theaters/{id}` 8, `/movies/{id}` U6's fixed
-details cost. An integration test counts queries for 1 and 6 theaters and for 2 and 10 movies.
+Every route costs a fixed number of queries whatever the number of rows (no N+1), read one
+after the other (the pool holds 5 connections). `/theaters` is 10: the active theaters, their
+phones, facilities, photos and images (`TheaterReadService`), then the open-state hours (2),
+today's hours (2) and the weekly hours (1); hall counts cost nothing by default. `/home` adds the
+carousel, the genres and their counts, and both movie rows with their cards (17 on an empty
+catalog). `/movies` and `/movies/{id}` cost U6's fixed counts. The integration suites count the
+queries of `/theaters` for 1 and 4 theaters and of `/movies` for pages of 2 and 4 movies.
 
 ## Seams for U8b
 
@@ -255,7 +258,8 @@ details cost. An integration test counts queries for 1 and 6 theaters and for 2 
 
 `npm run seed` (`nest build && node dist/cli/seed.js`) for development databases:
 
-1. Refuses `NODE_ENV=production`, `STORAGE_DRIVER` ≠ `local` and `EMAIL_DRIVER` ≠ `simulated`.
+1. Refuses `NODE_ENV=production`, `STORAGE_DRIVER` ≠ `local`, `EMAIL_DRIVER` ≠ `simulated` and a
+   `SEED_ADMIN_PASSWORD` the password policy refuses. App logs are lowered to `warn` for the run.
 2. Boots the real app on `127.0.0.1` at a free port, migrating first as `main.ts` does.
 3. Finds or creates the seed admin `seed-admin@maqady.local` ("Seed Admin") through
    `StaffService.createActiveMember()` with `SEED_ADMIN_PASSWORD` (default `Maqady-seed-2026`),
@@ -265,14 +269,16 @@ details cost. An integration test counts queries for 1 and 6 theaters and for 2 
    parts (hours, phones, facilities, prices, credits) with the same values, uploads an image only
    where none is set, adds a video only when its YouTube id is missing, and changes a status or a
    carousel position only when it differs.
-   - `theaters`: 6 theaters (Zamalek, Downtown, Heliopolis, New Cairo, Sheikh Zayed, Dokki in
-     Giza) with weekly hours (some closing after midnight), prices, phones, facilities and a
-     generated 16:9 cover.
+   - `theaters`: 6 theaters (Zamalek, Downtown, Heliopolis and New Cairo in Cairo; Sheikh Zayed
+     and Dokki in Giza) with weekly hours (all closing after midnight, later on Thursday and
+     Friday nights for two), prices, phones, facilities, a generated 16:9 cover, gallery photos
+     and, for Zamalek, holiday hours 3 days ahead. Sheikh Zayed hides its contacts.
    - `publish-theaters`: publishes them (one kept as a draft, to show it never appears).
    - `people`: 18 people with roles and generated square photos.
    - `movies`: 12 movies across the genres (7 Now showing, 4 Coming soon, 1 draft) with
-     details, a generated 2:3 poster, a generated still used as the backdrop, YouTube videos
-     and credits.
+     details, release dates relative to today, a generated 2:3 poster, stills (the first is the
+     backdrop), two YouTube videos (Blender Foundation open movies, so the embeds play; the
+     first is the hero) and credits.
    - `featured`: 5 carousel positions with hero videos.
 5. Prints one line per step (created and kept counts) and the seed admin's email.
 
@@ -287,6 +293,27 @@ committed; they go through the real image pipeline into the local storage driver
 - `src/app.module.ts`: imports `DiscoveryModule`.
 - `package.json`: `seed` script; dev dependencies `ajv`, `ajv-formats`.
 - `.env.example`: `SEED_ADMIN_PASSWORD`.
+- `README.md` (scripts, environment, "Development seed", the discovery and test-support notes)
+  and `docs/system-design.md` (§5 `discovery` row, §11 discovery paragraph, §21 the U8a/U8b
+  split, decision D-31).
+- Before this unit's own work, the reviewed U4b and U6 branches were merged into this branch
+  (conflicts kept both sides; U6's decision renumbered D-30 because U9 already held D-29). No
+  code of either was changed, and their tests stay green.
+
+## Follow-ups
+
+- **U8b**: replace `NoShowtimesTickerSource` (ticker) and `NoHallsCountSource` (count of active
+  halls); add the theater page's halls, `GET /movies/{id}/showtimes`,
+  `GET /theaters/{id}/showtimes`, the Movies page "show date" filter and the movie side panel
+  (next show today, cinemas showing it, "from" price); append halls (before `publish-theaters`)
+  and showtimes to `SEED_STEPS`.
+- **Frontend and owner**: the draft says to delete `contracts/drafts/home-page.openapi.yaml` once
+  the generated contract covers it, which it now does (qa.md "Contract comparison"). This unit
+  was told not to edit it; deleting it means moving the comparison tests to the committed
+  contract.
+- `TheaterBrowseService` reads today's hours and the open-state hours in two `hoursFor()` calls
+  (4 queries); one call over the open-state range would save 2 queries per theater read if the
+  free host ever needs it.
 
 ## Tests
 
@@ -303,7 +330,12 @@ Unit (`test/unit/modules/discovery/`, collaborators mocked):
 - `theater-browse.service.test.ts`: `openNow` and `parking` filters; hidden contacts; special
   dates asked for today to today + 6; `NOT_FOUND`.
 - `home-ticker.source.test.ts`, `theater-hall-count.source.test.ts`: the defaults.
-- `seed.guards.test.ts`: production, Supabase storage and Resend email are refused.
+- `dto/discovery.queries.test.ts`: comma-separated slugs and ids (a repeated parameter
+  joined), empty lists, `true`/`false`, and every refused value with one message per field.
+- `test/unit/modules/seed/seed.command.test.ts`: production, Supabase storage, Resend email and a
+  weak `SEED_ADMIN_PASSWORD` are refused, without echoing the password.
+- `test/unit/common/swagger/composed-schemas.test.ts`: a composed schema registers once; the
+  same name with another shape throws.
 
 Integration (`test/integration/modules/discovery/`, real app and Postgres, local storage):
 
@@ -318,9 +350,13 @@ Integration (`test/integration/modules/discovery/`, real app and Postgres, local
   (status, genre slugs, unknown slug, `q`, `people`), paging without repeats and `tabCounts`;
   details with videos, photos and credits in order and `404` for draft, archived and unknown;
   similar; people.
-- `theater-browse.controller.test.ts`: list order, paging, `openNow` at a Clock instant,
-  `parking`; details with hidden and shown contacts, gallery, special dates in the next 7
-  days only; `404` for a draft, a paused and an unknown theater; a fixed query count.
+- `theater-browse.controller.test.ts`: list order ignoring case, paging, `openNow` at three
+  Clock instants around midnight, `parking`; details with hidden and shown contacts, gallery
+  captions and alt texts, special dates of the next 7 days only (today + 7 left out); `404` for
+  a draft, a paused and an unknown theater; a fixed query count.
+- A second suite in `home.controller.test.ts` replaces `HomeTickerSource` with a fixed source
+  (`test/support/discovery.ts` `FixedTickerSource`, standing in for U8b's like
+  `theaters-probe.module.ts` stands in for U5) to prove the `TickerItem` mapping and schema.
 - `dto/discovery-contract.test.ts`: the generated `/home` operation and every schema it reaches
   equal the draft's (prose removed, a lone `allOf` read as its `$ref`); every discovery operation
   has the tag, a summary, a description and `security: []`.
