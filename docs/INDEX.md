@@ -21,7 +21,7 @@ gate (G5) checks it.
 | `docs/gh-2-foundations/review.md` | U1 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-4-staff-access/spec.md` | U2a spec: staff users, sessions and one-time tokens, scrypt passwords, staff sign-in, refresh with grace, sign-out, roles and the last-admin rule, `admin:create`, the staff test helper; the exported services U2b and U9 call | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-4-staff-access/qa.md` | U2a manual QA: curl evidence for admin:create, sign-in, refresh rotation, the grace window and reuse, sign-out, the Staff list, role and status changes, the last-admin rule, the sign-in rate limit, audit rows and log hygiene | Mohamed Tarek | 2026-10-20 |
-| `docs/gh-4-staff-access/review.md` | U2a adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-4-staff-access/review.md` | U2a adversarial review, two rounds: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
 | `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |

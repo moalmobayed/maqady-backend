@@ -76,7 +76,7 @@ reuse unchanged. Later units get a test helper that hands them a real token of e
 | Refresh success is not audited; sign-in, sign-out, reuse detection and every staff change are | A refresh every 15 minutes would drown the Activity log. |
 | `messages.related_staff_user_id` FK is added by U2b, not here | U2a does not depend on U3 and may merge before `messages` exists. U3's draft says U2a; U2b (deps U2a, U3) owns it instead. |
 | `admin:create` boots the app context like `npm run migrate`, migrates, then takes `pg_advisory_xact_lock(hashtext('maqady-backend:admin-create'))` | Two concurrent runs create one admin. |
-| `admin:create` does nothing when any `staff_users` row has `role = 'admin'` | "Creates an active admin if none exists"; the last-admin rule keeps at least one active. |
+| `admin:create` does nothing when an active admin exists | "Creates an active admin if none exists"; the last-admin rule keeps at least one active. |
 | Times in responses are `formatCairoIso()` | §11 "ISO 8601 with offset", same as every unit. |
 | Token responses answer `201` | Both routes create a resource (a session, a token). |
 
@@ -120,7 +120,7 @@ are global).
 |---|---|
 | `enums.ts` | `STAFF_STATUSES = ['invited','active','deactivated']`, `SETTABLE_STAFF_STATUSES = ['active','deactivated']` (roles reuse `STAFF_ROLES` from `common/auth/enums.ts`) |
 | `types.ts` | `StaffStatus`, `SettableStaffStatus`, `StaffUserRow`, `NewStaffUserRow`, `StaffUserUpdate`, `StaffMember`, `StaffPrincipalRow`, `StaffListFilter`, `StaffMemberChanges`, `CreateActiveStaffInput`, `StaffSignInInput`, `StaffSignInResult`, `StaffTokens`, `BootstrapAdminInput`, `BootstrapAdminResult`, `BootstrapAdminParse` |
-| `staff.constants.ts` | `STAFF_FULL_NAME_MAX_LENGTH = 100`, `EMAIL_MAX_LENGTH = 320`, `SIGN_IN_PASSWORD_MAX_LENGTH = 128`, `ADMIN_CREATE_LOCK_KEY = 'maqady-backend:admin-create'`, `BOOTSTRAP_ADMIN_VARIABLES`, `EMAIL_SHAPE` |
+| `staff.constants.ts` | `STAFF_FULL_NAME_MAX_LENGTH = 100`, `EMAIL_MAX_LENGTH = 320`, `SIGN_IN_PASSWORD_MAX_LENGTH = 128`, `ADMIN_CREATE_LOCK_KEY = 'maqady-backend:admin-create'`, `BOOTSTRAP_ADMIN_VARIABLES` |
 | `staff-member.mapper.ts` | `toStaffMember(row)` (never the hash) |
 | `staff.repository.ts` | `findById`, `findByIdForUpdate`, `findByEmail`, `lockActiveAdmins`, `anyActiveAdminExists`, `list`, `count`, `insert` (`ON CONFLICT (email) DO NOTHING`), `update`, `recordSignIn`, `findPrincipalBySession`, `takeAdminCreateLock` |
 | `staff.service.ts` | `StaffService` |
