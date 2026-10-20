@@ -1,3 +1,5 @@
+// The environment is validated before Nest loads, so the decorators' metadata API is loaded here.
+import 'reflect-metadata';
 import { Type } from 'class-transformer';
 import { IsDefined, IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 import { LOG_LEVELS } from './enums';
