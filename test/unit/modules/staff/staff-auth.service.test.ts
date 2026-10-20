@@ -39,7 +39,7 @@ describe('StaffAuthService', () => {
     staff = {
       findByEmail: jest.fn().mockResolvedValue(member()),
       findById: jest.fn().mockResolvedValue(member()),
-      recordSignIn: jest.fn().mockResolvedValue(undefined),
+      recordSignIn: jest.fn().mockResolvedValue(member({ last_sign_in_at: NOW, updated_at: NOW })),
     } as unknown as jest.Mocked<StaffRepository>;
     passwords = {
       verify: jest.fn().mockResolvedValue(true),
@@ -111,6 +111,15 @@ describe('StaffAuthService', () => {
         refreshTokenExpiresAt: new Date('2026-10-20T22:00:00Z'),
       });
       expect(result.member).toMatchObject({ id: 3, lastSignInAt: NOW });
+    });
+
+    it('answers ACCOUNT_DEACTIVATED and opens no session when the member stopped being active before the sign-in was recorded', async () => {
+      staff.recordSignIn.mockResolvedValue(undefined);
+      await expect(
+        service.signIn({ email: 'mona@maqady.example', password: 'Cinema2026' }),
+      ).rejects.toMatchObject({ code: 'ACCOUNT_DEACTIVATED' });
+      expect(sessions.open).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('verifies against the dummy hash for an unknown email, then answers INVALID_CREDENTIALS', async () => {

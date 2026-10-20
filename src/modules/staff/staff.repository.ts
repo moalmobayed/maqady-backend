@@ -114,10 +114,17 @@ export class StaffRepository {
     return updated;
   }
 
-  async recordSignIn(id: number, signedInAt: Date): Promise<void> {
-    await this.staff()
+  /**
+   * Records a sign-in of an active member and returns the row as it now is; undefined when the
+   * member is no longer active. The update waits for a staff change in flight and re-checks the
+   * status against its result.
+   */
+  async recordSignIn(id: number, signedInAt: Date): Promise<StaffUserRow | undefined> {
+    const [row] = await this.staff()
       .update({ last_sign_in_at: signedInAt, updated_at: signedInAt })
-      .where({ id });
+      .where({ id, status: 'active' })
+      .returning<StaffUserRow[]>(STAFF_COLUMNS);
+    return row;
   }
 
   /**

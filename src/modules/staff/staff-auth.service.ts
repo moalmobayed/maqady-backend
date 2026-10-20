@@ -37,6 +37,9 @@ export class StaffAuthService {
    *   `INVALID_CREDENTIALS`, after the same scrypt work, so neither the answer nor its timing tells
    *   whether the email exists.
    * - A member who is not active gets `ACCOUNT_DEACTIVATED`, but only once the password matched.
+   * - The sign-in is recorded first, by an update that matches only an active member. It waits for
+   *   a deactivation in flight and then sees its result, so a session never opens for a member who
+   *   was deactivated in the meantime (and would come back to life on reactivation).
    */
   async signIn(input: StaffSignInInput): Promise<StaffSignInResult> {
     return this.transactions.run(async () => {
@@ -45,12 +48,12 @@ export class StaffAuthService {
       if (!row || !matches) throw new AppError('INVALID_CREDENTIALS');
       if (row.status !== 'active') throw new AppError('ACCOUNT_DEACTIVATED');
 
+      const signedIn = await this.staff.recordSignIn(row.id, this.clock.now());
+      if (!signedIn) throw new AppError('ACCOUNT_DEACTIVATED');
       const session = await this.sessions.open({
         owner: { audience: 'staff', id: row.id },
         lifetimeSeconds: SESSION_LIFETIME_SECONDS.staff,
       });
-      const now = this.clock.now();
-      await this.staff.recordSignIn(row.id, now);
       await this.audit.record({
         actor: { kind: 'staff', id: row.id },
         action: 'session.created',
@@ -58,7 +61,7 @@ export class StaffAuthService {
         metadata: { audience: 'staff' },
       });
       return {
-        member: toStaffMember({ ...row, last_sign_in_at: now, updated_at: now }),
+        member: toStaffMember(signedIn),
         tokens: this.tokensFor(row.id, session.sessionId, session.refreshToken, session.expiresAt),
       };
     });

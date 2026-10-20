@@ -262,8 +262,12 @@ stored parameters, `timingSafeEqual` the keys.
 1. `findByEmail(email)` (CITEXT, so case-insensitive).
 2. `verify(password, row?.password_hash ?? null)`; false → `INVALID_CREDENTIALS`.
 3. `status !== 'active'` → `ACCOUNT_DEACTIVATED`.
-4. `SessionService.open({ owner: { audience: 'staff', id }, lifetimeSeconds: 43_200 })`.
-5. `recordSignIn(id, now)` (`last_sign_in_at`, `updated_at`); audit `session.created`.
+4. `recordSignIn(id, now)` (`last_sign_in_at`, `updated_at`) as `UPDATE … WHERE id = ? AND
+   status = 'active' RETURNING …`; no row → `ACCOUNT_DEACTIVATED`. The update waits for a
+   deactivation in flight and re-checks the status against it, so no session opens for a member
+   deactivated in the meantime.
+5. `SessionService.open({ owner: { audience: 'staff', id }, lifetimeSeconds: 43_200 })`; audit
+   `session.created`.
 6. `AccessTokenService.sign({ audience: 'staff', subjectId: id, sessionId })`.
 
 **Refresh** (`SessionService.refresh`, its own transaction; refuses with `INTERNAL` when a

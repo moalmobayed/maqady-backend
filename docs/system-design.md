@@ -676,6 +676,10 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   their unused invite and reset links. Reactivating returns a member to `active`, or to
   `invited` if they never set a password, so the invite can be resent. An invited member becomes
   active only by setting a password.
+  - A sign-in records itself with an update that matches only an active member before it opens
+    the session, so it waits for a deactivation in flight and is refused by it. A session that
+    opened beside a deactivation would otherwise escape its revocation and come back on
+    reactivation.
 - **The bootstrap password** is used as given; v1 forces no change at first sign-in. The admin
   can change it through "Forgot password", and the variable is removed after the run (U2a).
 
