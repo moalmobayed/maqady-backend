@@ -157,8 +157,15 @@ Rules:
   Data API. As a backstop, every table has row-level security enabled with no policies, so
   nothing leaks even if the schema is exposed by mistake. The service connects as the owner
   role, which bypasses row-level security.
-- **Extensions.** `citext`, `pg_trgm` and `btree_gist`. Supabase installs them in its
-  `extensions` schema, so the connection's `search_path` is `maqady, extensions`.
+- **Extensions.** `citext`, `pg_trgm` and `btree_gist`, created by the first migration.
+  - On Supabase they go in its `extensions` schema. Plain Postgres (Docker Compose, CI) has no
+    such schema, so they go in `public`.
+  - The connection's `search_path` is `maqady, extensions, public`. Postgres skips a schema
+    that doesn't exist, so one setting works in both places.
+- **Knex's bookkeeping.** `knex_migrations` and `knex_migrations_lock` live in `maqady`, with
+  row-level security on like every other table, never in Supabase's exposed `public` schema.
+  Migrations are recorded without a file extension, so the TypeScript sources (tests) and the
+  compiled files (production) record the same names.
 - **Naming and types.** Follow `CLAUDE.md` and PostgreSQL Standards: plural `snake_case` tables;
   `id BIGSERIAL`; foreign keys named `fk_…` with a covering `idx_…`; enum-likes as
   `VARCHAR CHECK (…)` mirrored in the module's `enums.ts`; `TIMESTAMPTZ` everywhere.
@@ -754,7 +761,11 @@ many customers behind one shared address.
 - CORS restricted to the configured frontend origins.
   - Allowed request headers: `Authorization`, `Content-Type`, `Idempotency-Key`,
     `X-Hold-Token` and `X-Request-Id`.
-  - Exposed response headers: `Idempotent-Replayed`, `X-Request-Id` and `Content-Disposition`.
+  - Exposed response headers: `Idempotent-Replayed`, `X-Request-Id`, `Content-Disposition` and
+    `Retry-After`. Browsers hide `Retry-After` from a cross-origin page unless it is exposed,
+    and the frontend needs it after a `429`.
+- Helmet's default Content-Security-Policy without `upgrade-insecure-requests`, so Swagger UI
+  also loads over plain HTTP in development. Render serves HTTPS, with HSTS.
 - JSON bodies up to 1 MB; multipart only on upload routes, one file, up to 10 MB.
 - HTTPS is terminated by Render.
 
@@ -1015,16 +1026,31 @@ has no `LIMIT`, hence the sub-select. This only tidies up (ADR 0003).
   (Supavisor) in session mode, port 5432. On the free plan, Supabase's direct connection is
   IPv6-only and Render connects over IPv4 only
   ([Supabase: connecting](https://supabase.com/docs/guides/database/connecting-to-postgres)).
-- The pool holds at most 5 connections. `statement_timeout` is 10 seconds and
-  `idle_in_transaction_session_timeout` 15 seconds.
+- The pool holds at most 5 connections, and none while idle. Opening a connection may take
+  5 seconds, and waiting for a free one 10.
+- Every new connection runs `SET`s, which last for the connection in session mode:
+  `statement_timeout` 10 seconds, `idle_in_transaction_session_timeout` 15 seconds, and the
+  time zone UTC, so `now()` and date casts behave the same on a laptop as on Supabase.
 - node-pg returns `BIGINT` and `NUMERIC` as strings, which covers ids, `COUNT`, `SUM` and
   coordinates. `common/database` installs type parsers that turn `BIGINT` into a JavaScript
-  number (every value is far below 2^53) and `NUMERIC` into a float.
+  number (every value is far below 2^53, and a larger one fails the query) and `NUMERIC` into a
+  float. `DATE` stays its `YYYY-MM-DD` text, because node-pg would build a `Date` at local
+  midnight and shift the day. The array forms of all three are parsed the same way.
+- Knex error messages quote the SQL with its placeholders, never the bound values
+  (`compileSqlOnError: false`).
+- Migrations run at boot before the server listens, and through `npm run migrate`. The runner
+  creates the schema if it is missing, then runs `knex.migrate.latest()` under Knex's lock.
+  Each migration receives `(knex, { schema })`.
 
 ### 14.3 Errors
 
-- **AppError only.** Services throw `AppError(code, status, message, details)`, never
-  `HttpException`.
+- **AppError only.** Services throw `AppError(code, message?, details?, options?)`, never
+  `HttpException`. The HTTP status comes from the catalogue, so a code is always sent with the
+  same status. `options` carries the `cause`, and for `RATE_LIMITED` the `retryAfterSeconds`.
+- **Unreadable bodies.** Malformed JSON becomes `VALIDATION_FAILED` with `details: null`, and a
+  body over 1 MB becomes `PAYLOAD_TOO_LARGE` (413). Only JSON bodies are parsed.
+- **Every `429` carries `Retry-After`**: from the error, a header a guard set (including
+  @nestjs/throttler's `Retry-After-<name>`), or 60 seconds.
 - **One global filter** maps `AppError` to the error shape. It also maps Nest's own exceptions:
   validation to `VALIDATION_FAILED`, guards to `UNAUTHENTICATED` or `FORBIDDEN`, throttling to
   `RATE_LIMITED`.
@@ -1052,6 +1078,7 @@ The initial catalogue:
 | `IDEMPOTENCY_KEY_REUSED` | 422 | `OUTSIDE_OPENING_HOURS` | 422 |
 | `TIME_DOES_NOT_EXIST` | 422 | `RATE_LIMITED` | 429 |
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
+| `PAYLOAD_TOO_LARGE` | 413 | | |
 
 ### 14.4 Logging and observability
 
@@ -1137,8 +1164,9 @@ The testing policy in `CLAUDE.md` binds this section.
 ## 16. Environments and delivery
 
 - **Runtime.** Node 24 LTS in the Docker image and in CI.
-- **Local.** `docker compose up` starts Postgres with the three extensions. `npm run dev`
-  migrates and starts the API. `npm run seed` loads demo data: theaters with halls of
+- **Local.** `docker compose up` starts Postgres 16 with `maqady_dev` and `maqady_test`. In a
+  container with PostgreSQL 16 installed as a cluster, `npm run db:local` does the same. The
+  first migration creates the three extensions, and `npm run dev` migrates and starts the API. `npm run seed` loads demo data: theaters with halls of
   different sizes, movies with YouTube trailers, a week of showtimes, an admin and a box-office
   user.
 - **CI.** The existing workflow gains the steps below, and loses its Redis service and Node 20,
@@ -1151,7 +1179,7 @@ The testing policy in `CLAUDE.md` binds this section.
 - **Deployment.** Render builds the Dockerfile from `main`.
   - On boot the service runs `knex migrate:latest` before listening. Knex's migration lock
     makes that safe, and migrations stay backward-compatible (§6.1).
-  - The health check path is `/health`.
+  - The health check path is `/api/v1/health`.
   - Secrets live in Render's environment settings.
   - The first deploy confirms how Render fills `X-Forwarded-For`, so the proxy-trust setting
     (§10.6) reads the real client address.
@@ -1222,6 +1250,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-20 | Stored idempotency responses encrypted at rest; one-time links never stored | Builder (§13.1, §14.1) |
 | D-21 | Budget stored as a display label, not money | Builder (§6.1) |
 | D-22 | A showtime can be cancelled until it ends, but moved only before it starts | Builder (§7.7, §8) |
+| D-23 | NestJS 11 on CommonJS, TypeScript 6, Jest 30 with ts-jest. NestJS 12 ships only as ES modules, which Jest loads from CommonJS only on Node 24.9+, and the suite must also run on Node 22. Move to NestJS 12 once the minimum Node version allows it | Builder (U0, `docs/gh-1-scaffold/spec.md`) |
 
 ## 19. Kit and process reconciliations
 
@@ -1239,8 +1268,8 @@ The testing policy in `CLAUDE.md` binds this section.
   places them.
 - **Service-to-service auth.** v1 has no internal endpoints, so the review dimension has
   nothing to check yet. Any future internal route must verify a service token.
-- **Source directories.** `CLAUDE.md` lists `src/` and `test/` once the scaffold unit creates
-  them.
+- **Source directories.** `CLAUDE.md` lists `src/`, `test/`, `contracts/`, `scripts/` and
+  `docker/`, created by the scaffold unit.
 
 ## 20. Risks and open questions
 
@@ -1255,7 +1284,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | Render cold starts slow the first request | The frontend shows the PRD's "waking up" state |
 | Supabase pauses idle free projects | The optional keep-alive; restoring takes one click |
 | `idempotency_keys`, `messages` and `hold_refusals` grow without bound | Opportunistic deletion of expired keys; retention can be added if the 500 MB budget is ever at risk |
-| CI on `main` is red until the scaffold adds `package.json` | Unit U0 fixes it first |
+| CI on `main` was red until the scaffold added `package.json` | Resolved by U0: CI runs the gates on Node 24 against Postgres 16 |
 
 ## 21. Delivery plan
 
