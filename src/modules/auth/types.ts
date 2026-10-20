@@ -30,8 +30,8 @@ export interface IssuedSession {
 
 /**
  * What `SessionService.refresh()` takes. `assertOwnerLive` throws the owner's own error (for
- * example `ACCOUNT_DEACTIVATED`) when the account may no longer refresh; the rotation then rolls
- * back.
+ * example `ACCOUNT_DEACTIVATED`) when the account may no longer refresh. It runs before the
+ * session's own checks, so that error wins over `SESSION_REVOKED`, and nothing is written.
  */
 export interface RefreshSessionInput {
   readonly audience: TokenAudience;
@@ -114,6 +114,16 @@ export interface ConsumedOneTimeToken {
   readonly owner: OneTimeTokenOwner;
 }
 
+/**
+ * A live token found by `findLive()`: unused, unexpired, and whose. Read without a lock, so the
+ * caller can lock the owner first; `consume()` still decides whether it is used.
+ */
+export interface LiveOneTimeToken {
+  readonly id: number;
+  readonly purpose: OneTimeTokenPurpose;
+  readonly owner: OneTimeTokenOwner;
+}
+
 /** A `one_time_tokens` row as the repository inserts it. */
 export interface NewOneTimeTokenRow {
   readonly purpose: OneTimeTokenPurpose;
@@ -129,6 +139,11 @@ export interface ConsumedOneTimeTokenRow {
   readonly id: number;
   readonly staff_user_id: number | null;
   readonly customer_id: number | null;
+}
+
+/** A live `one_time_tokens` row as `findLive()` reads it. */
+export interface LiveOneTimeTokenRow extends ConsumedOneTimeTokenRow {
+  readonly purpose: OneTimeTokenPurpose;
 }
 
 /** The scrypt profile of design §10.1, and the sizes of what it produces. */

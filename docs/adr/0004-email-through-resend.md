@@ -56,5 +56,12 @@ service that can text arbitrary numbers.
 - **Other free email APIs (for example Brevo).** Similar free limits. The owner chose Resend for
   its simple API.
 
+## Amendments
+- **2026-10-20, U3 (#3): `failed` is terminal.** The Decision's "Queued and failed messages are
+  retried opportunistically" is narrowed: only `queued` messages are retried. A temporary failure
+  is retried at most 10 times and then marked `failed` (`attempts_exhausted`); a refusal that can
+  never succeed is marked `failed` at once. Nothing resends a `failed` message. See design §13.1
+  and `docs/gh-3-messaging/spec.md` ("Decisions taken here").
+
 Sources: [Resend free tier summary](https://automationatlas.io/answers/resend-free-tier-explained-2026/),
 [Resend: sending with the test domain](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).

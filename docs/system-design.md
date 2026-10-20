@@ -682,6 +682,20 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Staff password reset.** Staff use "Forgot password" on the staff sign-in page. It emails a
   `staff_password_reset` link (1 hour) leading to `/admin/set-password`, the same page an invite
   uses.
+  - Only an `active` member receives one. An invited member gets nothing (the admin resends the
+    invite, so the 72-hour limit keeps its meaning), nor does a deactivated one; the answer is the
+    same `202` either way (U2b).
+- **Staff invites** (U2b). An admin invites by name, email and role: the member is created
+  `invited` with no password and emailed a `staff_invite` link (72 hours). "Resend invite" works
+  only for an `invited` member (`NOT_INVITED` otherwise) and voids the previous link.
+  - `POST /admin/auth/password-setups` takes the token and the new password, whichever link it
+    came from. An invite turns the member `active`; a reset replaces the password and revokes
+    every session. Either way no session opens: the member signs in next.
+  - **Lock order.** The setup reads the live token without locking it
+    (`OneTimeTokenService.findLive()`), locks the member row, then consumes the token. Every staff
+    change locks the member before their tokens (a deactivation deletes them after locking the
+    row), so a setup racing a deactivation waits for it instead of deadlocking, then finds its
+    link gone.
 - **Last admin.** Demoting or deactivating an admin first locks every active admin row
   `FOR NO KEY UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
   demotions therefore can't both succeed.
@@ -698,7 +712,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - A sign-in records itself with an update that matches only an active member before it opens
     the session, so it waits for a deactivation in flight and is refused by it. A session that
     opened beside a deactivation would otherwise escape its revocation and come back on
-    reactivation.
+    reactivation. The same update matches only the password hash the password was checked
+    against, so a sign-in with the old password that waited on a password reset is
+    `INVALID_CREDENTIALS` and opens no session after the reset revoked them all (U2b review).
 - **The bootstrap password** is used as given; v1 forces no change at first sign-in. The admin
   can change it through "Forgot password", and the variable is removed after the run (U2a).
 
@@ -719,6 +735,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - After 30 seconds, presenting an already-rotated token revokes the whole family
     (`SESSION_REVOKED`).
   - A token nobody issued answers `UNAUTHENTICATED`; the frontend signs in again on any 401.
+  - The account is checked before the session, as on every request (§10.3): a deactivated
+    staff member gets `ACCOUNT_DEACTIVATED` and a blocked customer `ACCOUNT_BLOCKED`, although
+    the deactivation or block also revoked the session (U2a).
 - **Revocation.**
   - Sign-out revokes the family.
   - Blocking a customer, or deactivating or demoting a staff member, revokes all their
@@ -773,7 +792,12 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - Email verification (24 hours), customer password reset (1 hour), staff invite (72 hours) and
   staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
   usable once.
-- Requesting a new token invalidates the previous one of the same purpose.
+- Requesting a new token invalidates the previous one of the same purpose. Issues for one
+  owner and purpose queue on an advisory lock, so two at once leave only the later one live
+  (U2a).
+- A token is checked by its hash only: anything that matches no live token of the right kind,
+  malformed ones included, is `INVALID_TOKEN`, never `VALIDATION_FAILED`, so a mangled link reads
+  like an expired one (U2b).
 - Both "Forgot password" routes always answer `202`, whether or not the email exists.
 - Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
   registering is useless without the password, so the usability gain outweighs the small
@@ -793,6 +817,7 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 | Customer and staff sign-in | 5 per minute per email, and 20 per minute per IP address | IP address plus email; IP address |
 | Registration | 5 per hour | IP address |
 | Both forgot-password routes, resend verification | 3 per hour per email, and 20 per hour per IP address | Email; IP address |
+| Staff password setup (from an invite or reset link) | 20 per minute, shared with sign-in (U2b) | IP address |
 | Create a hold | 30 per 10 minutes per IP address, and 10 per 10 minutes per signed-in customer | IP address; customer |
 | Pay | 10 per 5 minutes | Booking |
 | Customer "Email again" | 3 per hour | Booking |
@@ -988,6 +1013,15 @@ generated contract (§19).
 - **SMS.** A simulated SMS goes through the same outbox and is recorded as `sent` on its first
   attempt, right after commit.
 - **The Message log** lists every email and SMS with its delivery status (U2b).
+  - `GET /admin/messages`, newest first (`created_at DESC, id DESC`, served by
+    `idx_messages_created_at`), cursor-paginated, filtered by `channel`, `status` and a time range
+    (`from` inclusive, `to` exclusive, as ISO instants with offset). `GET /admin/messages/{id}`
+    opens one message with its stored subject and bodies.
+  - It reads the stored copies only, never `payload_ciphertext`, so a one-time link can't appear.
+    Related records are returned as ids (`customerId`, `staffUserId`, `bookingId`); showing a
+    booking reference or customer name is left to the units that own those tables.
+  - It is served by its own `MessageLogModule`, imported with the admin feature modules, so the
+    global `MessagingModule` stays free of routes.
 - **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
@@ -1160,11 +1194,19 @@ The initial catalogue:
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
 | `PAYLOAD_TOO_LARGE` | 413 | | |
 
-Units add the codes they introduce, each with its one status (`src/common/errors/error-catalogue.ts`
-holds the full list): U4a the image codes (`IMAGE_TOO_LARGE` 413, `UNSUPPORTED_IMAGE_TYPE` 415,
-`IMAGE_TOO_MANY_PIXELS` and `IMAGE_WRONG_SHAPE` 422, `STORAGE_UNAVAILABLE` 503); U6 the catalog's
-`MOVIE_NOT_PUBLISHABLE`, `MOVIE_NOT_FEATURABLE`, `FEATURED_POSITION_TAKEN` and
-`MOVIE_NOT_DELETABLE`, all 409.
+Codes added by later units (`src/common/errors/error-catalogue.ts` holds the full list):
+
+| Code | HTTP | Added by |
+|---|---|---|
+| `IMAGE_TOO_LARGE` | 413 | U4a: an upload over the size limit |
+| `UNSUPPORTED_IMAGE_TYPE` | 415 | U4a: an upload that is not JPEG, PNG or WebP |
+| `IMAGE_TOO_MANY_PIXELS`, `IMAGE_WRONG_SHAPE` | 422 | U4a: an image over the pixel limit or of the wrong shape |
+| `STORAGE_UNAVAILABLE` | 503 | U4a: the storage adapter cannot be reached |
+| `NOT_INVITED` | 409 | U2b: "Resend invite" for a member who is not `invited` |
+| `MOVIE_NOT_PUBLISHABLE` | 409 | U6: a status change for a movie missing required fields |
+| `MOVIE_NOT_FEATURABLE` | 409 | U6: featuring a movie that is not public or has no hero video |
+| `FEATURED_POSITION_TAKEN` | 409 | U6: a carousel position already held by another movie |
+| `MOVIE_NOT_DELETABLE` | 409 | U6: deleting a movie another unit still depends on |
 
 ### 14.4 Logging and observability
 

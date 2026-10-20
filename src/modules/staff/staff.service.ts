@@ -24,7 +24,7 @@ import type {
 /**
  * Staff accounts (design §10.1, PRD "Staff"): reading and listing members, changing a member's
  * role and status under the last-admin rule, and creating an active member (the bootstrap admin
- * and test fixtures). U2b adds invites and password setup here.
+ * and test fixtures). Invites and password setup are `StaffOnboardingService`'s.
  *
  * Every write joins the request transaction and records an audit event in it.
  */

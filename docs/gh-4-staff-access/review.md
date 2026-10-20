@@ -1,17 +1,19 @@
 ---
 title: U2a — Review of the staff access core
 owner: Mohamed Tarek
-status: Passed — 2026-10-20, no open blocker or major findings
+status: Passed — 2026-10-20, two rounds, no open blocker or major findings
 last_verified: 2026-10-20
-tags: [review, staff, auth, sessions, refresh-tokens, last-admin, locking]
+tags: [review, staff, auth, sessions, refresh-tokens, one-time-tokens, last-admin, locking]
 ---
 
 # U2a — Review of the staff access core
 
-Issue #4, spec [`spec.md`](spec.md), QA [`qa.md`](qa.md). Reviewed range:
-`c5c7c79..7e39253` on `unit/gh-4-staff-access`, against design §6.2, §10 (all), §11 (admin auth
-and staff routes) and §15, PRD v2.0, the spec, and the `CLAUDE.md` stack rules, anti-patterns and
-testing policy.
+Issue #4, spec [`spec.md`](spec.md), QA [`qa.md`](qa.md). Two rounds on `unit/gh-4-staff-access`,
+each against design §6.2, §10 (all), §11 (admin auth and staff routes) and §15, PRD v2.0, the spec,
+and the `CLAUDE.md` stack rules, anti-patterns and testing policy:
+
+- **Round 1** (R1–R5): `c5c7c79..7e39253`.
+- **Round 2** (F1–F3): `c5c7c79..8809d05`, the whole unit including the round-1 fixes.
 
 Each finding was reproduced before it was fixed. Every fix has a test that failed before it, on
 this worktree's own test database (`maqady_u2a_test`).
@@ -25,6 +27,16 @@ this worktree's own test database (`maqady_u2a_test`).
 | R3 | minor | **Two replays of different old refresh tokens of one family deadlocked, and one answered `500`.** The reuse path revoked the family inside the transaction that had locked the presented old row. Each replay held its own old row, queued on the live head (`lockLiveHeads`), then needed the other's old row for the family `UPDATE`. A replay racing a sign-out of the same family had the same cycle. The surviving transaction still revoked the family, so the protection held, but the other caller got `INTERNAL`. | A new integration test in `test/integration/modules/auth/session.service.test.ts`: three tokens of one family, the clock 31 s on, the live head held, two replays queued on it, then released. One replay failed with `deadlock detected`. | Fixed in `1811fd6`. The rotation transaction now only decides `reused` (family and presented row). The revocation and its `session.reuse_detected` audit run in a second transaction, which locks the live heads first like every revocation. `SESSION_REVOKED` is still thrown only after that commit. Both replays now answer `SESSION_REVOKED`. The unit test asserts that the revocation runs in the second transaction. Design §10.2 and the spec are updated. |
 | R4 | minor | **`admin:create` accepted an email that the staff sign-in refuses.** The command checked only `something@something`, while `POST /admin/auth/sessions` validates with class-validator's `isEmail`. `BOOTSTRAP_ADMIN_EMAIL=admin@localhost` (or `first..last@…`) created the first admin, and every sign-in then answered `400 VALIDATION_FAILED`. The operator was locked out, and a second run would not help, because an active admin now exists. | `isEmail('admin@localhost')` is false and the old shape check is true. Then a new unit test on `parseBootstrapAdminEnv` with both addresses, which failed. | Fixed in `bcc79d0`. The command uses the same `isEmail` check, and the unused `EMAIL_SHAPE` constant is removed. |
 | R5 | minor | **`CLAUDE.md`'s source-directories row still lists `src/cli/` as (`migrate`, `contract`).** `admin-create.ts` is a third CLI there. | Read against `src/cli/`. The builder flagged it too. | **Open.** This review does not edit `CLAUDE.md`. The integrator, or the next `/update-docs`, adds `admin-create` to the row. |
+
+## Findings, round 2
+
+| # | Severity | Finding | Verified by | Resolution |
+|---|---|---|---|---|
+| F1 | minor | **A deactivated member's refresh answered `401 SESSION_REVOKED`, never the `403 ACCOUNT_DEACTIVATED` that the contract promises.** The refresh checked the session (revoked, expired, grace, reuse) before the account. A deactivation revokes every session of the member in the same transaction, so the revoked check always answered first and the account check could never refuse. The resolver checks the account first for exactly this reason ("the clearer code the PRD asks for"). The test that claimed `ACCOUNT_DEACTIVATED` set `status` by hand without revoking, a state the system never produces. | The refresh test now deactivates through `PATCH /admin/staff/{id}`, and the deactivation test in `staff.controller.test.ts` expects `ACCOUNT_DEACTIVATED` from the refresh. Both failed with `401 SESSION_REVOKED`. A new unit test (a revoked row whose owner check refuses) failed too. | Fixed in `0ac9b68`. `SessionService.refresh` runs the caller's account check right after finding the row, before anything is written. U9's blocked customers get `ACCOUNT_BLOCKED` the same way. Design §10.2 and the spec's check order are updated. The contract text was already right and does not change. |
+| F2 | minor | **Two one-time tokens issued at once both stayed live.** `issue()` deleted the owner's earlier unused tokens of the purpose, then inserted. Two issues for one owner and purpose at the same moment (two "Forgot password" clicks, a resend beside an invite) each deleted nothing the other had committed, so both links worked, against §10.5's "a new token invalidates the previous one". | A new integration test (`test/integration/modules/auth/one-time-token.service.test.ts`) holds the first issue's transaction open and runs a second issue beside it. It failed with two unused tokens left. | Fixed in `cb2dcbf`. `issue()` first takes `pg_advisory_xact_lock` on a name made of the owner and purpose (`OneTimeTokensRepository.lockIssue`). The later issue queues, then sees and deletes the earlier token. Design §10.5 and the spec are updated. |
+| F3 | minor | **The spec had drifted from the code in two places.** A Decisions row said `admin:create` does nothing when *any* admin row exists, while the code, the behaviour section and the README say *an active* admin. The modules table still listed `EMAIL_SHAPE`, which R4 removed. | Read against `StaffBootstrapService.ensureFirstAdmin` and `staff.constants.ts`. | Fixed in the commit that records this review. Both rows now match the code. |
+
+R5 stays open, for the same reason as in round 1.
 
 ## Checked, with nothing to report
 
@@ -59,6 +71,20 @@ this worktree's own test database (`maqady_u2a_test`).
   `formatCairoIso`. Nothing does offset arithmetic by hand.
 - **Contract.** All six operations have a summary, a description, examples, enum names and the
   error codes the spec lists. The contract does not change with these fixes.
+
+- **Round 2 races, traced again on the final code.** A deactivation racing a refresh: the
+  deactivation's `lockLiveHeads` waits for the refresh, and its `UPDATE` (a new snapshot)
+  revokes the token that the refresh issued. A refresh that starts after the deactivation locked
+  the head waits, then reads the row as revoked. Two concurrent demotions, and a promotion racing
+  a demotion: `FOR NO KEY UPDATE` under READ COMMITTED drops rows that no longer match, so the
+  locked set can miss a new admin (a refusal that is too eager) but never holds a stale one. A
+  sign-in racing a demotion opens a session after the demotion committed, and the response shows
+  the new role. Moving the account check (F1) adds no lock, so the round-1 deadlock tests still
+  pass unchanged.
+- **An admin demoted while their own request is in flight.** That request passed the guard as an
+  admin, queues on the last-admin lock, and then completes. Design §10.3 promises that a
+  demotion applies on the *next* request, so this is the design's behaviour, not a defect. Every
+  later request reads the role from the database.
 
 ## Notes for later units
 

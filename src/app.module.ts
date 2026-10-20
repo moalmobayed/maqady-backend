@@ -19,6 +19,7 @@ import { TimeModule } from './common/time/time.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
+import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
 import { StaffModule } from './modules/staff/staff.module';
@@ -60,6 +61,7 @@ export class AppModule {
         HealthModule,
         StaffModule,
         MediaModule,
+        MessageLogModule,
         CatalogModule,
       ],
       providers: [

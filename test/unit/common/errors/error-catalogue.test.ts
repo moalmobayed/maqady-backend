@@ -1,6 +1,6 @@
 import { ERROR_CATALOGUE } from '../../../../src/common/errors/error-catalogue';
 
-/** Design §14.3, the initial catalogue: every code with its one status. */
+/** Design §14.3: the initial catalogue and the codes later units added, each with its one status. */
 const DESIGN_CATALOGUE: Record<string, number> = {
   VALIDATION_FAILED: 400,
   IDEMPOTENCY_KEY_REQUIRED: 400,
@@ -24,6 +24,7 @@ const DESIGN_CATALOGUE: Record<string, number> = {
   HALL_IN_USE: 409,
   BOOKING_NOT_EDITABLE: 409,
   LAST_ADMIN: 409,
+  NOT_INVITED: 409,
   EMAIL_TAKEN: 409,
   CONFLICT: 409,
   PAYLOAD_TOO_LARGE: 413,

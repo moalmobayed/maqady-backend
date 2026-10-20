@@ -90,7 +90,7 @@ describe('StaffAuthService', () => {
         owner: { audience: 'staff', id: 3 },
         lifetimeSeconds: 43_200,
       });
-      expect(staff.recordSignIn).toHaveBeenCalledWith(3, NOW);
+      expect(staff.recordSignIn).toHaveBeenCalledWith(3, HASH, NOW);
       expect(accessTokens.sign).toHaveBeenCalledWith({
         audience: 'staff',
         subjectId: 3,
@@ -115,9 +115,20 @@ describe('StaffAuthService', () => {
 
     it('answers ACCOUNT_DEACTIVATED and opens no session when the member stopped being active before the sign-in was recorded', async () => {
       staff.recordSignIn.mockResolvedValue(undefined);
+      staff.findById.mockResolvedValue(member({ status: 'deactivated' }));
       await expect(
         service.signIn({ email: 'mona@maqady.example', password: 'Cinema2026' }),
       ).rejects.toMatchObject({ code: 'ACCOUNT_DEACTIVATED' });
+      expect(sessions.open).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('answers INVALID_CREDENTIALS and opens no session when the password changed before the sign-in was recorded', async () => {
+      staff.recordSignIn.mockResolvedValue(undefined);
+      await expect(
+        service.signIn({ email: 'mona@maqady.example', password: 'Cinema2026' }),
+      ).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+      expect(staff.findById).toHaveBeenCalledWith(3);
       expect(sessions.open).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });

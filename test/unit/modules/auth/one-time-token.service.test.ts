@@ -13,8 +13,15 @@ describe('OneTimeTokenService', () => {
   beforeEach(() => {
     tokens = {
       insert: jest.fn().mockResolvedValue(5),
+      lockIssue: jest.fn().mockResolvedValue(undefined),
       deleteUnused: jest.fn().mockResolvedValue(1),
       consume: jest.fn().mockResolvedValue({ id: 5, staff_user_id: 3, customer_id: null }),
+      findLive: jest.fn().mockResolvedValue({
+        id: 6,
+        purpose: 'customer_password_reset',
+        staff_user_id: null,
+        customer_id: 9,
+      }),
     } as unknown as jest.Mocked<OneTimeTokensRepository>;
     const transactions = {
       run: jest.fn((fn: () => Promise<unknown>) => fn()),
@@ -22,7 +29,7 @@ describe('OneTimeTokenService', () => {
     service = new OneTimeTokenService(tokens, transactions, new TestClock(NOW));
   });
 
-  it('issues a hashed token after deleting the owner’s earlier unused ones of that purpose', async () => {
+  it('issues a hashed token after locking the owner and purpose and deleting the earlier unused ones', async () => {
     const issued = await service.issue({
       purpose: 'staff_invite',
       owner: { kind: 'staff', id: 3 },
@@ -34,6 +41,10 @@ describe('OneTimeTokenService', () => {
       token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       expiresAt: new Date('2026-10-23T10:00:00Z'),
     });
+    expect(tokens.lockIssue).toHaveBeenCalledWith({ kind: 'staff', id: 3 }, 'staff_invite');
+    expect(tokens.lockIssue.mock.invocationCallOrder[0]).toBeLessThan(
+      tokens.deleteUnused.mock.invocationCallOrder[0]!,
+    );
     expect(tokens.deleteUnused).toHaveBeenCalledWith({ kind: 'staff', id: 3 }, 'staff_invite');
     expect(tokens.deleteUnused.mock.invocationCallOrder[0]).toBeLessThan(
       tokens.insert.mock.invocationCallOrder[0]!,
@@ -86,6 +97,29 @@ describe('OneTimeTokenService', () => {
       code: 'INVALID_TOKEN',
     });
     expect(tokens.consume).toHaveBeenCalledTimes(1);
+  });
+
+  it('finds a live token by its hash at the current time, with its purpose and owner', async () => {
+    const token = 'q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc';
+    await expect(service.findLive(token)).resolves.toEqual({
+      id: 6,
+      purpose: 'customer_password_reset',
+      owner: { kind: 'customer', id: 9 },
+    });
+    expect(tokens.findLive).toHaveBeenCalledWith(sha256Hex(token), NOW);
+    expect(tokens.consume).not.toHaveBeenCalled();
+  });
+
+  it('finds nothing for an unknown token, and does not query for a malformed one', async () => {
+    tokens.findLive.mockResolvedValueOnce(undefined);
+    await expect(
+      service.findLive('q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc'),
+    ).resolves.toBeNull();
+    tokens.findLive.mockClear();
+    for (const malformed of ['', 'short', 'q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aG!']) {
+      await expect(service.findLive(malformed)).resolves.toBeNull();
+    }
+    expect(tokens.findLive).not.toHaveBeenCalled();
   });
 
   it('invalidates every unused token of an account', async () => {

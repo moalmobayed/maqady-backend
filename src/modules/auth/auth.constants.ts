@@ -27,6 +27,12 @@ export const ONE_TIME_TOKEN_LIFETIME_SECONDS: Readonly<Record<OneTimeTokenPurpos
   staff_password_reset: HOUR_SECONDS,
 };
 
+/**
+ * Prefix of the advisory-lock name that serializes issuing one-time tokens of one owner and
+ * purpose, so the later of two concurrent issues always deletes the earlier token.
+ */
+export const ONE_TIME_TOKEN_ISSUE_LOCK_PREFIX = 'maqady-backend:one-time-token';
+
 /** Which owner each one-time-token purpose names. */
 export const ONE_TIME_TOKEN_OWNER_KIND: Readonly<Record<OneTimeTokenPurpose, TokenAudience>> = {
   verify_email: 'customer',
