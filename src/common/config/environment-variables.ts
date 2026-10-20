@@ -93,6 +93,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsRateLimitRule()
+  RATE_LIMIT_VERIFICATION_RESEND_CUSTOMER?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
   RATE_LIMIT_HOLD_IP?: string;
 
   @IsOptional()
