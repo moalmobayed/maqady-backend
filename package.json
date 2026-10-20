@@ -19,6 +19,7 @@
     "test:integration": "jest --selectProjects integration --runInBand",
     "migrate": "nest build && node --enable-source-maps dist/cli/migrate.js",
     "contract": "nest build && node --enable-source-maps dist/cli/contract.js",
+    "media:orphans": "nest build && node --enable-source-maps dist/cli/media-orphans.js",
     "db:local": "bash scripts/db-local.sh"
   },
   "dependencies": {
@@ -35,12 +36,14 @@
     "jsonwebtoken": "9.0.3",
     "knex": "3.3.0",
     "luxon": "3.7.2",
+    "multer": "2.4.0",
     "nestjs-pino": "5.3.1",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "pino-http": "11.0.0",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "sharp": "0.35.5"
   },
   "overrides": {
     "@nestjs/swagger": {
@@ -55,6 +58,7 @@
     "@types/jest": "30.0.0",
     "@types/jsonwebtoken": "9.0.10",
     "@types/luxon": "3.7.6",
+    "@types/multer": "2.3.0",
     "@types/node": "22.20.4",
     "@types/pg": "8.23.1",
     "@types/supertest": "7.2.1",

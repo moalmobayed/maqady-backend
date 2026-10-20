@@ -15,12 +15,14 @@ import type { AppConfig } from './common/config/types';
 import { toUnreadableBodyError } from './common/errors/error-mapping';
 import { buildOpenApiDocument } from './common/swagger/openapi-document';
 import { setupSwagger } from './common/swagger/swagger.setup';
+import { serveLocalMedia } from './modules/media/storage/local-media.static';
 
 /**
  * The HTTP settings shared by `main.ts`, `npm run contract` and the test app.
  *
  * Create the app with `bodyParser: false`: this registers the only body parser, JSON with a
- * 1 MB limit, so form-encoded bodies are never parsed.
+ * 1 MB limit, so form-encoded bodies are never parsed. Multipart bodies are read only by the
+ * upload routes' own interceptor (`@ImageUpload()`).
  */
 export function configureApp(app: NestExpressApplication, config: AppConfig): void {
   app.useLogger(app.get(Logger));
@@ -40,6 +42,8 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
     credentials: false,
     maxAge: CORS_MAX_AGE_SECONDS,
   });
+  // The local storage driver's files, read-only at /media (outside /api/v1); none for Supabase.
+  serveLocalMedia(app, config.storage);
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   // Maps parser failures to AppError before Nest's error handler rewrites them (design §14.3).
   app.use((error: unknown, _req: Request, _res: Response, next: NextFunction) =>
