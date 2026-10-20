@@ -25,6 +25,8 @@ const EXAMPLE_DETAILS: Partial<Record<ErrorCode, ErrorDetails>> = {
     fields: [{ field: 'seats.0.label', messages: ['label must be a string'] }],
   },
   CONFLICT: { constraint: 'uq_movies_featured_position' },
+  THEATER_NOT_PUBLISHABLE: { missing: ['prices', 'hours'] },
+  THEATER_NOT_DELETABLE: { reasons: ['not_draft'] },
   IMAGE_TOO_LARGE: { maxBytes: 10485760 },
   UNSUPPORTED_IMAGE_TYPE: { allowed: ['jpeg', 'png'] },
   IMAGE_TOO_MANY_PIXELS: { maxPixels: 40000000, width: 8000, height: 6000 },
