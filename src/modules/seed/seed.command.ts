@@ -8,6 +8,7 @@ import { StaffService } from '../staff/staff.service';
 import { SeedApiClient } from './seed-api.client';
 import {
   DEFAULT_SEED_ADMIN_PASSWORD,
+  LOCAL_DATABASE_HOSTS,
   SEED_ADMIN_EMAIL,
   SEED_ADMIN_NAME,
   SEED_ADMIN_PASSWORD_VARIABLE,
@@ -16,8 +17,8 @@ import { SEED_STEPS } from './seed.steps';
 import type { SeedContext, SeedRefusals, SeedStep } from './types';
 
 /**
- * Why the seed must not run with this environment and configuration: production, real storage
- * or real email. A development tool never writes to Supabase Storage or sends an email.
+ * Why the seed must not run with this environment and configuration: production, a database
+ * that is not on this machine, real storage or real email. A development tool never writes to Supabase Storage or sends an email.
  */
 export function seedRefusals(
   env: Readonly<Record<string, string | undefined>>,
@@ -33,11 +34,31 @@ export function seedRefusals(
   if (config.email.driver !== 'simulated') {
     refusals.push('EMAIL_DRIVER must be simulated: the seed never sends email');
   }
+  if (!isLocalDatabase(config.database.url)) {
+    refusals.push(
+      'DATABASE_URL must point at a local database (localhost, 127.0.0.1, ::1, a Unix socket or a Docker Compose service): the seed creates an admin with a known password',
+    );
+  }
   const password = env[SEED_ADMIN_PASSWORD_VARIABLE];
   if (password !== undefined && password !== '' && !isAllowedPassword(password)) {
     refusals.push(`${SEED_ADMIN_PASSWORD_VARIABLE} must meet the password policy`);
   }
   return refusals;
+}
+
+/**
+ * Whether the database is on this machine: a loopback host, a Unix socket (no host) or a
+ * single-label host such as a Docker Compose service (`postgres`). A host with a dot is a
+ * hosted database, and the seed must never leave its admin with a known password there.
+ */
+function isLocalDatabase(url: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return LOCAL_DATABASE_HOSTS.includes(hostname) || /^[a-z0-9-]*$/.test(hostname);
 }
 
 /**

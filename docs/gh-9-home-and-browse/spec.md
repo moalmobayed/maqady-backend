@@ -70,7 +70,7 @@ leaves a seam for each (see "Seams for U8b").
 | Image alt texts: poster "<title> poster", backdrop the title, a movie photo its caption or the title, a person photo the name, a theater cover the theater name, a gallery photo its caption or the theater name | The conventions of U6's and U4b's admin mappers; the draft examples. |
 | The ticker and hall counts come from injectable seams with empty defaults | The fields are always present (the draft requires them); U8b swaps the providers. |
 | `npm run seed` drives the real HTTP API of an in-process app (validation, transactions, idempotency, audit rows and the image pipeline all apply), signed in as a seed admin it creates through `StaffService` | "Through the real services where practical": the admin routes are the most complete path, and the seed admin lets the frontend developer sign in to the dashboard too. |
-| The seed refuses `NODE_ENV=production`, a `STORAGE_DRIVER` other than `local` and an `EMAIL_DRIVER` other than `simulated` | A development tool must never write to real storage or send email. |
+| The seed refuses `NODE_ENV=production`, a `DATABASE_URL` not on this machine, a `STORAGE_DRIVER` other than `local` and an `EMAIL_DRIVER` other than `simulated` | A development tool must never write to real storage or send email, nor leave an admin with a documented default password on a hosted database. |
 
 ## Modules and files
 
@@ -259,8 +259,9 @@ queries of `/theaters` for 1 and 4 theaters and of `/movies` for pages of 2 and 
 
 `npm run seed` (`nest build && node dist/cli/seed.js`) for development databases:
 
-1. Refuses `NODE_ENV=production`, `STORAGE_DRIVER` ≠ `local`, `EMAIL_DRIVER` ≠ `simulated` and a
-   `SEED_ADMIN_PASSWORD` the password policy refuses. App logs are lowered to `warn` for the run.
+1. Refuses `NODE_ENV=production`, a `DATABASE_URL` whose host is not local (loopback, a Unix
+   socket or a single-label Docker Compose host; review finding 2), `STORAGE_DRIVER` ≠ `local`,
+   `EMAIL_DRIVER` ≠ `simulated` and a `SEED_ADMIN_PASSWORD` the password policy refuses. App logs are lowered to `warn` for the run.
 2. Boots the real app on `127.0.0.1` at a free port, migrating first as `main.ts` does.
 3. Finds or creates the seed admin `seed-admin@maqady.local` ("Seed Admin") through
    `StaffService.createActiveMember()` with `SEED_ADMIN_PASSWORD` (default `Maqady-seed-2026`),
@@ -333,8 +334,9 @@ Unit (`test/unit/modules/discovery/`, collaborators mocked):
 - `home-ticker.source.test.ts`, `theater-hall-count.source.test.ts`: the defaults.
 - `dto/discovery.queries.test.ts`: comma-separated slugs and ids (a repeated parameter
   joined), empty lists, `true`/`false`, and every refused value with one message per field.
-- `test/unit/modules/seed/seed.command.test.ts`: production, Supabase storage, Resend email and a
-  weak `SEED_ADMIN_PASSWORD` are refused, without echoing the password.
+- `test/unit/modules/seed/seed.command.test.ts`: production, a hosted database, Supabase storage,
+  Resend email and a weak `SEED_ADMIN_PASSWORD` are refused, without echoing the password or the
+  database URL.
 - `test/unit/common/swagger/composed-schemas.test.ts`: a composed schema registers once; the
   same name with another shape throws.
 

@@ -33,6 +33,28 @@ describe('seedRefusals', () => {
     ]);
   });
 
+  it('refuses a database that is not on this machine, without echoing its URL', () => {
+    const at = (url: string) => ({ ...local, database: { ...local.database, url } }) as AppConfig;
+    const remote = 'postgres://postgres:s3cret@db.abcdefgh.supabase.co:5432/postgres';
+    const refusals = seedRefusals({}, at(remote));
+    expect(refusals).toEqual([
+      'DATABASE_URL must point at a local database (localhost, 127.0.0.1, ::1, a Unix socket or a Docker Compose service): the seed creates an admin with a known password',
+    ]);
+    expect(refusals.join(' ')).not.toContain('s3cret');
+    expect(refusals.join(' ')).not.toContain('supabase');
+    expect(seedRefusals({}, at('postgres://u:p@[2001:db8::7]:5432/maqady'))).toHaveLength(1);
+    expect(seedRefusals({}, at('not a url'))).toHaveLength(1);
+    for (const url of [
+      'postgres://postgres:postgres@localhost:5432/maqady_dev',
+      'postgres://postgres:postgres@127.0.0.1/maqady_dev',
+      'postgres://postgres:postgres@[::1]:5432/maqady_dev',
+      'postgres://postgres:postgres@postgres:5432/maqady_dev',
+      'postgres:///maqady_dev?host=/var/run/postgresql',
+    ]) {
+      expect({ url, refusals: seedRefusals({}, at(url)) }).toEqual({ url, refusals: [] });
+    }
+  });
+
   it('refuses a seed admin password that the policy would refuse, without echoing it', () => {
     const refusals = seedRefusals({ SEED_ADMIN_PASSWORD: 'short' }, local);
     expect(refusals).toEqual(['SEED_ADMIN_PASSWORD must meet the password policy']);

@@ -8,6 +8,9 @@ export const SEED_ADMIN_PASSWORD_VARIABLE = 'SEED_ADMIN_PASSWORD';
 /** The development-only default, documented in the README; the seed refuses production. */
 export const DEFAULT_SEED_ADMIN_PASSWORD = 'Maqady-seed-2026';
 
+/** The loopback hosts a seeded database may be on (besides a socket or a single-label host). */
+export const LOCAL_DATABASE_HOSTS: readonly string[] = ['localhost', '127.0.0.1', '[::1]', '::1'];
+
 /** Placeholder image sizes: each at or above its kind's minimum (design §9). */
 export const SEED_IMAGE_SIZES = {
   poster: { width: 800, height: 1200 },

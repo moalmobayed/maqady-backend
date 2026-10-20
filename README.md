@@ -129,8 +129,10 @@ but never prints its value. `.env` is for local runs only; real environment vari
 `npm run seed` gives a local database something to show: the home page, the Movies and Theaters
 pages and the admin dashboard.
 
-- It refuses `NODE_ENV=production`, `STORAGE_DRIVER` other than `local` and `EMAIL_DRIVER` other
-  than `simulated`, so it never writes to real storage or sends email.
+- It refuses `NODE_ENV=production`, a `DATABASE_URL` that is not on this machine (localhost,
+  `127.0.0.1`, `::1`, a Unix socket or a Docker Compose service name), `STORAGE_DRIVER` other
+  than `local` and `EMAIL_DRIVER` other than `simulated`, so it never leaves an admin with a
+  known password on a hosted database, writes to real storage or sends email.
 - It boots the real app on `127.0.0.1` at a free port (migrating first), creates the seed admin
   `seed-admin@maqady.local` through `StaffService` if missing, signs in through
   `POST /api/v1/admin/auth/sessions` and drives the admin routes: validation, transactions,
