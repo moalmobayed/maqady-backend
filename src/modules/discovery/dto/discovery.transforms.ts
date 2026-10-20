@@ -17,7 +17,10 @@ export function CommaSeparated(): PropertyDecorator {
   });
 }
 
-/** `1,2` → `[1, 2]`; a part that isn't a whole number stays a string, so `@IsInt` refuses it. */
+/**
+ * `1,2` → `[1, 2]`; a part that isn't a positive whole number of at most 15 digits (so always a
+ * safe integer) stays a string, so `@IsInt` refuses it with one message.
+ */
 export function CommaSeparatedIds(): PropertyDecorator {
   return Transform(({ value }: { value: unknown }) => {
     const text = Array.isArray(value) ? value.join(',') : value;
@@ -26,7 +29,7 @@ export function CommaSeparatedIds(): PropertyDecorator {
       .split(',')
       .map((part) => part.trim())
       .filter((part) => part !== '')
-      .map((part) => (/^[0-9]{1,15}$/.test(part) ? Number(part) : part));
+      .map((part) => (/^[1-9][0-9]{0,14}$/.test(part) ? Number(part) : part));
   });
 }
 

@@ -9,8 +9,6 @@ import {
   IsString,
   Length,
   Matches,
-  Max,
-  Min,
 } from 'class-validator';
 import { PageQuery } from '../../../common/pagination/dto/page-query.dto';
 import { MAX_SEARCH_LENGTH, MIN_SEARCH_LENGTH } from '../../catalog/catalog.constants';
@@ -84,8 +82,6 @@ export class MovieListQuery extends PageQuery {
   @IsArray()
   @ArrayMaxSize(MAX_PEOPLE_FILTER)
   @IsInt({ each: true, message: 'each person must be a person id' })
-  @Min(1, { each: true })
-  @Max(Number.MAX_SAFE_INTEGER, { each: true })
   people?: number[];
 }
 

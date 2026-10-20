@@ -53,6 +53,17 @@ describe('MovieListQuery', () => {
     expect(fields).toEqual([field]);
   });
 
+  it('refuses a person that is not an id with one message', async () => {
+    for (const people of ['4,x', '0', '-3']) {
+      const value = plainToInstance(MovieListQuery, { people });
+      const errors = await validate(value);
+      expect({ people, constraints: errors.map((error) => error.constraints) }).toEqual({
+        people,
+        constraints: [{ isInt: 'each person must be a person id' }],
+      });
+    }
+  });
+
   it('refuses more than 20 people and 10 genres', async () => {
     const people = Array.from({ length: 21 }, (_, index) => index + 1).join(',');
     const genres = Array.from({ length: 11 }, (_, index) => `g${index}`).join(',');
