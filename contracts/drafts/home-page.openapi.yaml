@@ -1,0 +1,513 @@
+# Hand-written contract for the home page, agreed with the frontend before the code exists.
+# The generated contract (contracts/openapi.yaml, produced from the NestJS code) must match
+# these paths and schemas exactly. Delete this draft once the generated contract covers them.
+openapi: 3.0.3
+info:
+  title: Maqady API — home page
+  version: 0.1.0-draft
+  description: |
+    Everything the customer home page needs, in one public call.
+
+    Conventions that apply to every Maqady endpoint:
+    - Base path `/api/v1`. JSON with camelCase fields.
+    - Times are ISO 8601 in Cairo time with their offset, for example `2026-10-16T19:30:00+03:00`.
+      A cinema day runs from 06:00 to 06:00, so a 00:30 show belongs to the previous day's
+      `cinemaDate`.
+    - Ids are integers. Money is `{ "amount": <piastres>, "currency": "EGP" }` (none on this page).
+    - Every error has the same shape (`ErrorResponse`). Every response echoes `X-Request-Id`.
+    - The free server sleeps when idle, so the first request after a pause can take much
+      longer. Show a "waking up" state rather than an error; `GET /health` is a cheap way to wake it.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+tags:
+  - name: Discovery
+    description: Public browsing data
+  - name: Health
+    description: Liveness and readiness
+paths:
+  /home:
+    get:
+      operationId: getHome
+      tags: [Discovery]
+      summary: Everything the home page shows
+      description: |
+        Public. Returns, in one call:
+        - `featured`: up to 5 movies for the hero carousel, ordered by `position`.
+        - `ticker`: Now showing movies that still have a bookable showtime today (current
+          cinema day), with that next showtime, soonest first. Movies with nothing left today
+          are left out.
+        - `genres`: every genre, alphabetical, with how many Now showing and Coming soon movies
+          it has. Hide genres with `movieCount: 0` if you like.
+        - `nowShowing`: up to 12 Now showing movies, newest release first, plus the `total` for
+          "View all".
+        - `comingSoon`: up to 12 Coming soon movies, soonest release first, plus the `total`.
+        - `cinemas`: every theater open for sales, alphabetical.
+
+        Responses may be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+      security: []
+      responses:
+        '200':
+          description: The home page data
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeResponse'
+              example:
+                serverTime: '2026-10-16T15:10:00+03:00'
+                cinemaDate: '2026-10-16'
+                featured:
+                  - position: 1
+                    movie:
+                      id: 1
+                      title: The Last Lighthouse
+                      synopsis: >-
+                        A lighthouse keeper on the Red Sea coast finds a logbook that predicts
+                        the storms before they arrive.
+                      genres:
+                        - { id: 7, name: Mystery, slug: mystery }
+                        - { id: 5, name: Drama, slug: drama }
+                      runtimeMinutes: 128
+                      ageRating: 12+
+                      releaseDate: '2026-10-01'
+                      status: now_showing
+                    heroVideo:
+                      id: 11
+                      youtubeId: aBcDeFgHiJk
+                      title: Official trailer
+                      kind: trailer
+                      durationSeconds: 134
+                      embedUrl: https://www.youtube-nocookie.com/embed/aBcDeFgHiJk
+                      thumbnailUrl: https://i.ytimg.com/vi/aBcDeFgHiJk/hqdefault.jpg
+                    backdrop:
+                      alt: The Last Lighthouse
+                      variants:
+                        - name: medium
+                          url: https://example.supabase.co/storage/v1/object/public/media/movies/1/backdrop-1a2b-medium.webp
+                          width: 1280
+                          height: 720
+                        - name: large
+                          url: https://example.supabase.co/storage/v1/object/public/media/movies/1/backdrop-1a2b-large.webp
+                          width: 1920
+                          height: 1080
+                ticker:
+                  - movie: { id: 1, title: The Last Lighthouse }
+                    nextShowtime:
+                      id: 501
+                      startsAt: '2026-10-16T16:15:00+03:00'
+                      cinemaDate: '2026-10-16'
+                      theater: { id: 1, name: Maqady Zamalek }
+                genres:
+                  - { id: 1, name: Action, slug: action, movieCount: 3 }
+                  - { id: 5, name: Drama, slug: drama, movieCount: 4 }
+                  - { id: 7, name: Mystery, slug: mystery, movieCount: 2 }
+                nowShowing:
+                  items:
+                    - id: 1
+                      title: The Last Lighthouse
+                      poster:
+                        alt: The Last Lighthouse poster
+                        variants:
+                          - name: small
+                            url: https://example.supabase.co/storage/v1/object/public/media/movies/1/poster-9f8e-small.webp
+                            width: 342
+                            height: 513
+                          - name: large
+                            url: https://example.supabase.co/storage/v1/object/public/media/movies/1/poster-9f8e-large.webp
+                            width: 780
+                            height: 1170
+                      genres:
+                        - { id: 7, name: Mystery, slug: mystery }
+                        - { id: 5, name: Drama, slug: drama }
+                      runtimeMinutes: 128
+                      ageRating: 12+
+                      releaseDate: '2026-10-01'
+                      status: now_showing
+                  total: 9
+                comingSoon:
+                  items:
+                    - id: 12
+                      title: Desert Signal
+                      poster: null
+                      genres:
+                        - { id: 9, name: Sci-fi, slug: sci-fi }
+                      runtimeMinutes: 112
+                      ageRating: 16+
+                      releaseDate: '2026-10-28'
+                      status: coming_soon
+                  total: 4
+                cinemas:
+                  - id: 1
+                    name: Maqady Zamalek
+                    district: Zamalek
+                    city: Cairo
+                    address: 26 July Street, Zamalek
+                    cover:
+                      alt: Maqady Zamalek lobby
+                      variants:
+                        - name: medium
+                          url: https://example.supabase.co/storage/v1/object/public/media/theaters/1/cover-77aa-medium.webp
+                          width: 1280
+                          height: 720
+                    openState:
+                      isOpen: true
+                      closesAt: '2026-10-17T01:00:00+03:00'
+                      nextOpensAt: null
+                    mainPhone: { label: Main line, number: '+20227351100' }
+                    hallCount: 6
+                    facilities: [wheelchair_access, valet_parking, cafe_bar]
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Liveness, a cheap way to wake the server
+      security: []
+      responses:
+        '200':
+          description: The process is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example: { status: ok }
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags: [Health]
+      summary: Readiness, including the database
+      security: []
+      responses:
+        '200':
+          description: The process and its database are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example: { status: ok }
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  headers:
+    XRequestId:
+      description: Correlation id for this request. Quote it when reporting a problem.
+      schema:
+        type: string
+        format: uuid
+  responses:
+    RateLimited:
+      description: Too many requests; retry after the time in `Retry-After`
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            error:
+              code: RATE_LIMITED
+              message: Too many requests. Try again shortly.
+              details: null
+              correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+    Internal:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            error:
+              code: INTERNAL
+              message: Something went wrong on our side.
+              details: null
+              correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+    Unavailable:
+      description: The database is unavailable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            error:
+              code: SERVICE_UNAVAILABLE
+              message: The service is temporarily unavailable.
+              details: null
+              correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+  schemas:
+    HomeResponse:
+      type: object
+      required: [serverTime, cinemaDate, featured, ticker, genres, nowShowing, comingSoon, cinemas]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: The server's current time, for correcting the client clock
+        cinemaDate:
+          type: string
+          format: date
+          description: Today's cinema day (06:00 to 06:00)
+        featured:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/FeaturedMovie' }
+        ticker:
+          type: array
+          items: { $ref: '#/components/schemas/TickerItem' }
+        genres:
+          type: array
+          items: { $ref: '#/components/schemas/GenreWithCount' }
+        nowShowing: { $ref: '#/components/schemas/MovieCardList' }
+        comingSoon: { $ref: '#/components/schemas/MovieCardList' }
+        cinemas:
+          type: array
+          items: { $ref: '#/components/schemas/TheaterCard' }
+    FeaturedMovie:
+      type: object
+      required: [position, movie, heroVideo, backdrop]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          maximum: 5
+        movie: { $ref: '#/components/schemas/FeaturedMovieDetails' }
+        heroVideo: { $ref: '#/components/schemas/Video' }
+        backdrop:
+          description: Backdrop image (16:9), or null when none is set
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Image'
+    FeaturedMovieDetails:
+      type: object
+      required: [id, title, synopsis, genres, runtimeMinutes, ageRating, releaseDate, status]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        synopsis:
+          type: string
+          maxLength: 600
+          description: The full synopsis; clamp it to a few lines on the carousel
+        genres:
+          type: array
+          items: { $ref: '#/components/schemas/GenreRef' }
+        runtimeMinutes: { type: integer, minimum: 1 }
+        ageRating: { $ref: '#/components/schemas/AgeRating' }
+        releaseDate: { type: string, format: date }
+        status: { $ref: '#/components/schemas/MovieStatus' }
+    MovieCard:
+      type: object
+      required: [id, title, poster, genres, runtimeMinutes, ageRating, releaseDate, status]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        poster:
+          description: Poster image (2:3), or null when none is set
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        genres:
+          type: array
+          description: In display order; the first one is the "first genre" shown on Now showing cards
+          items: { $ref: '#/components/schemas/GenreRef' }
+        runtimeMinutes: { type: integer, minimum: 1 }
+        ageRating: { $ref: '#/components/schemas/AgeRating' }
+        releaseDate: { type: string, format: date }
+        status: { $ref: '#/components/schemas/MovieStatus' }
+    MovieCardList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/MovieCard' }
+        total:
+          type: integer
+          minimum: 0
+          description: How many movies the full list (Movies page) has
+    TickerItem:
+      type: object
+      required: [movie, nextShowtime]
+      properties:
+        movie:
+          type: object
+          required: [id, title]
+          properties:
+            id: { type: integer }
+            title: { type: string }
+        nextShowtime:
+          type: object
+          required: [id, startsAt, cinemaDate, theater]
+          properties:
+            id: { type: integer }
+            startsAt: { type: string, format: date-time }
+            cinemaDate: { type: string, format: date }
+            theater:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: integer }
+                name: { type: string }
+    GenreRef:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id: { type: integer }
+        name: { type: string, example: Sci-fi }
+        slug:
+          type: string
+          example: sci-fi
+          description: Stable URL-safe name, for links such as `/movies?genres=sci-fi`
+    GenreWithCount:
+      allOf:
+        - $ref: '#/components/schemas/GenreRef'
+        - type: object
+          required: [movieCount]
+          properties:
+            movieCount:
+              type: integer
+              minimum: 0
+              description: Now showing plus Coming soon movies in this genre
+    Video:
+      type: object
+      required: [id, youtubeId, title, kind, durationSeconds, embedUrl, thumbnailUrl]
+      properties:
+        id: { type: integer }
+        youtubeId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{11}$'
+        title: { type: string }
+        kind: { $ref: '#/components/schemas/VideoKind' }
+        durationSeconds:
+          type: integer
+          nullable: true
+          description: Typed by an admin; null when unknown
+        embedUrl:
+          type: string
+          format: uri
+          description: Privacy-enhanced embed URL. For the muted, looping carousel, add `?autoplay=1&mute=1&loop=1&playlist=<youtubeId>&controls=0` or use the YouTube IFrame API.
+        thumbnailUrl: { type: string, format: uri }
+    Image:
+      type: object
+      required: [alt, variants]
+      properties:
+        alt:
+          type: string
+          nullable: true
+        variants:
+          type: array
+          minItems: 1
+          description: The same picture in web sizes, smallest first. Use them for `srcset`.
+          items: { $ref: '#/components/schemas/ImageVariant' }
+    ImageVariant:
+      type: object
+      required: [name, url, width, height]
+      properties:
+        name:
+          type: string
+          enum: [small, medium, large]
+        url: { type: string, format: uri }
+        width: { type: integer }
+        height: { type: integer }
+    TheaterCard:
+      type: object
+      required: [id, name, district, city, address, cover, openState, mainPhone, hallCount, facilities]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        district: { type: string }
+        city: { type: string }
+        address: { type: string }
+        cover:
+          description: Cover photo, or null when none is set
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        openState: { $ref: '#/components/schemas/OpenState' }
+        mainPhone:
+          description: Null when the theater hides its contacts from the website
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Phone'
+        hallCount: { type: integer, minimum: 0 }
+        facilities:
+          type: array
+          description: All of the theater's facilities; the design shows up to 3 on this page
+          items: { $ref: '#/components/schemas/Facility' }
+    OpenState:
+      type: object
+      required: [isOpen, closesAt, nextOpensAt]
+      description: Judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours.
+      properties:
+        isOpen: { type: boolean }
+        closesAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it closes, if open now ("Open now · until 01:00")
+        nextOpensAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it next opens, if closed now ("Opens 12:00"); null if no opening is scheduled in the next 7 days
+    Phone:
+      type: object
+      required: [label, number]
+      properties:
+        label: { type: string, example: Main line }
+        number:
+          type: string
+          example: '+20227351100'
+          description: E.164 format; format it for display on the frontend
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    AgeRating:
+      type: string
+      enum: [G, PG, 12+, 16+, 18+]
+    MovieStatus:
+      type: string
+      enum: [coming_soon, now_showing]
+      description: Public statuses only; drafts and archived movies never appear
+    VideoKind:
+      type: string
+      enum: [trailer, teaser, clip, featurette]
+    Facility:
+      type: string
+      enum: [wheelchair_access, free_parking, valet_parking, street_parking, cafe_bar, food_court, kids_room]
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details, correlationId]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code, for example RATE_LIMITED
+            message:
+              type: string
+              description: Human-readable; don't parse it
+            details:
+              type: object
+              nullable: true
+              additionalProperties: true
+              description: Extra structured information; its shape depends on the code
+            correlationId:
+              type: string
+              format: uuid
