@@ -2,7 +2,6 @@ import { type ArgumentsHost, Catch, type ExceptionFilter } from '@nestjs/common'
 import type { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
 import { isUuid, REQUEST_ID_HEADER, resolveCorrelationId } from '../logging/correlation-id';
-import { serializeError } from '../logging/error-serializer';
 import { resolveException, resolveRetryAfterSeconds } from './error-mapping';
 import type { ErrorResponseBody, ResolvedError } from './types';
 
@@ -14,6 +13,7 @@ import type { ErrorResponseBody, ResolvedError } from './types';
  *
  * Unexpected errors are logged with their stack; database errors are logged by SQLSTATE and
  * constraint only. Client errors (4xx) are not logged again: the request line records them.
+ * The error goes to the logger as `err`, whose serializer (`serializeError`) makes it log-safe.
  */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -24,7 +24,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     if (host.getType() !== 'http') {
       // The seat-map gateway (U10) handles its own errors; nothing can be written back here.
-      this.logger.error({ err: serializeError(exception) }, 'Unhandled non-HTTP error');
+      this.logger.error({ err: exception }, 'Unhandled non-HTTP error');
       return;
     }
 
@@ -68,7 +68,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (resolved.log === 'none') return;
     const fields = {
       code: resolved.code,
-      err: serializeError(exception),
+      err: exception,
       // Requests that failed before the logging middleware ran (an unreadable body, for
       // example) have no request-bound logger, so the id is added explicitly.
       ...(request.log === undefined ? { correlationId } : {}),
