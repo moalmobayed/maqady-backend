@@ -215,10 +215,10 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `theaters` | Theaters | `status` (`draft`, `active`, `sales_paused`); `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; `default_price_front`, `_middle`, `_back INT` plus `currency`, required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` |
-| `theater_phones` | Labelled phone numbers | `label`, `number`, `sort_order` |
+| `theaters` | Theaters | `name CITEXT` UNIQUE (case-insensitive); `status` (`draft`, `active`, `sales_paused`); `address`, `district`, `city`; `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; optional `transit_info`, `parking_info`, `email`; `default_price_front`, `_middle`, `_back INT` plus `currency`, set all together or not at all, and required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` (an `images` row of kind `backdrop`, UNIQUE). Hard-deleted: only a draft goes (U4b, `docs/gh-5-theaters/spec.md`) |
+| `theater_phones` | Labelled phone numbers | `label`, `number` (E.164, CHECK), `sort_order` (0 is the main phone); at most 10 per theater, replaced as a whole |
 | `theater_facilities` | Facilities | PK (`theater_id`, `facility`); `facility` is one of `wheelchair_access`, `free_parking`, `valet_parking`, `street_parking`, `cafe_bar`, `food_court`, `kids_room` |
-| `theater_photos` | Gallery | `image_id`, `sort_order` |
+| `theater_photos` | Gallery | `image_id` (UNIQUE, kind `gallery`), optional `caption` (the photo's alt text), `sort_order` kept contiguous from 0; at most 20 per theater |
 | `theater_hours` | Weekly hours, by cinema-day weekday | PK (`theater_id`, `weekday`); `is_closed`, or `opens_minute` and `closes_minute` counted from midnight at the start of the cinema date, with CHECK `360 <= opens_minute < closes_minute <= 1800` (06:00 to 06:00 next day) |
 | `theater_special_dates` | Holiday hours | UNIQUE (`theater_id`, `cinema_date`); `label`; hours as above, or closed |
 | `halls` | Halls | UNIQUE (`theater_id`, `name`); `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes` |
@@ -611,9 +611,22 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Theater lifecycle.**
   - A theater is created as `draft`. `PATCH /admin/theaters/{id}` changes its `status`.
     Publishing (`draft` → `active`) requires zone prices, at least one active hall and opening
-    hours. `active` ↔ `sales_paused` is the selling toggle.
+    hours (all seven weekdays set, at least one open); otherwise `THEATER_NOT_PUBLISHABLE` lists
+    what is missing. `active` ↔ `sales_paused` is the selling toggle; a published theater never
+    returns to `draft` (`CONFLICT`).
   - Customers see only `active` theaters and their showtimes.
-  - Only a draft with no showtimes can be deleted.
+  - Only a draft with no showtimes can be deleted (`THEATER_NOT_DELETABLE` otherwise).
+  - The hall and showtime rules belong to later units, so `TheatersModule` exports a
+    `TheaterLifecycleRegistry`: U5 registers the publish requirement `active_hall` and U7 the
+    deletion blocker `has_showtimes`, checked after the built-in ones.
+  - Every theater write locks the theater row first (`FOR NO KEY UPDATE`; `FOR UPDATE` to delete).
+    Hall and showtime writes lock it `FOR SHARE` (`TheaterReadService.lockForShare()`) before
+    their own rows, so publishing, pausing and hours changes never interleave with them.
+  - Changing weekly hours or special dates never touches existing showtimes; only new scheduling
+    and moves are checked against the new hours.
+  - The cover is an image of kind `backdrop`; gallery photos are kind `gallery`. Both upload
+    through `POST /admin/theaters/{id}/photos` (`usage`); `DELETE /admin/theaters/{id}/cover`
+    removes the cover.
 - **Hall layouts.**
   - `PUT /admin/halls/{id}/layout` replaces the whole layout (row count, seats per row, row
     zones and seat marks) in one transaction.
@@ -885,7 +898,7 @@ customer by account rather than address for the same shared-address reason (U1,
 | `POST /admin/movies` · `POST /admin/movies/{id}/photos` (upload) · `POST /admin/movies/{id}/videos` | Admin | S |
 | `GET /admin/people` · `GET`, `PATCH`, `DELETE /admin/people/{id}` · `PUT`, `DELETE /admin/people/{id}/photo` (upload) | Admin | |
 | `POST /admin/people` | Admin | S |
-| `GET /admin/theaters` · `GET`, `PATCH`, `DELETE /admin/theaters/{id}` (`PATCH` covers publish and selling) · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `PATCH`, `DELETE` a special date or photo | Admin | |
+| `GET /admin/theaters` · `GET`, `PATCH`, `DELETE /admin/theaters/{id}` (`PATCH` covers publish and selling) · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `PATCH`, `DELETE` a special date or photo · `DELETE /admin/theaters/{id}/cover` | Admin | |
 | `POST /admin/theaters` · `POST /admin/theaters/{id}/special-dates` · `POST /admin/theaters/{id}/photos` (upload) · `POST /admin/theaters/{id}/halls` | Admin | S |
 | `PATCH`, `DELETE /admin/halls/{id}` (`PATCH` covers retire) · `GET`, `PUT /admin/halls/{id}/layout` | Admin | |
 | `GET /admin/showtimes?theaterId&date` · `GET /admin/showtimes/{id}` (manage panel) · `GET /admin/showtimes/{id}/cancellation-preview` · `POST /admin/showtime-checks` (dry run) | Admin | |
@@ -1153,6 +1166,9 @@ The initial catalogue:
 | `TIME_DOES_NOT_EXIST` | 422 | `RATE_LIMITED` | 429 |
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
 | `PAYLOAD_TOO_LARGE` | 413 | | |
+
+Codes added by later units: `THEATER_NOT_PUBLISHABLE` (409) and `THEATER_NOT_DELETABLE` (409)
+from U4b, with `details.missing` and `details.reasons`.
 
 ### 14.4 Logging and observability
 

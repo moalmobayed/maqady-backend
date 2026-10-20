@@ -160,6 +160,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   'admin')` creates an active member through `StaffService` and signs them in through
   `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
   `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
+  the admin routes; `test/support/theaters-probe.module.ts` stands in for the publish requirement
+  and the deletion blocker that halls and showtimes register (`TheaterLifecycleRegistry`).
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`

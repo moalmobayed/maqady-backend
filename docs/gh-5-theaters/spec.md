@@ -1,7 +1,7 @@
 ---
 title: U4b — Theaters - hours, special dates, phones, facilities, photos, prices, publishing
 owner: Mohamed Tarek
-status: In progress
+status: Done — 2026-10-20
 last_verified: 2026-10-20
 tags: [theaters, opening-hours, special-dates, summer-time, zone-prices, publishing, photos, admin]
 ---
@@ -35,14 +35,14 @@ window is on a cinema date, judged by the Cairo wall clock with summer time hand
 - 16 admin routes (table below), audit events for every write, complete Swagger.
 - `MoneyRequest` in `src/common/money/dto/money-request.dto.ts` (U7 reuses it for showtime prices).
 - Error codes `THEATER_NOT_PUBLISHABLE` and `THEATER_NOT_DELETABLE`.
-- `docs/system-design.md` §6.2, §11, §14.3 updated (Decisions below); `docs/INDEX.md`.
+- `docs/system-design.md` §6.2, §9, §11, §14.3 updated (Decisions below); `docs/INDEX.md`.
 
 ## Out of scope
 
 - Halls, layouts and the "at least one active hall" publish condition (U5 registers it through
   `TheaterLifecycleRegistry`). `POST /admin/theaters/{id}/halls` is U5's.
 - Showtimes and the "no showtimes" delete condition (U7 registers a deletion blocker; until then
-  every draft is deletable). Follow-up recorded in this unit's `spec.md` and on issue #8.
+  every draft is deletable). Follow-up recorded at the end of this spec.
 - Every public route (`GET /theaters`, `/theaters/{id}`, `/home` cinemas): U8, from the exported
   read services. Hall counts and seat counts: U5/U8. Revenue columns of the admin list: U17.
 - Sales-paused effects on holds and listings (U8, U10 read `status`).
@@ -91,33 +91,44 @@ an owner can reverse any of them in a later change.
 ## Modules and files
 
 **`src/modules/theaters/`** — `TheatersModule`, imports `MediaModule`. Providers: the three
-repositories, `TheatersService`, `TheaterSpecialDatesService`, `TheaterPhotosService`, `TheaterReadService`,
-`TheaterHoursService`, `TheaterLifecycleRegistry`. Exports: `TheaterReadService`,
-`TheaterHoursService`, `TheaterLifecycleRegistry`. `AppModule` imports `TheatersModule`.
+repositories, `TheaterLifecycleRegistry`, `TheaterReadService`, `TheaterHoursService`,
+`TheatersService`, `TheaterSpecialDatesService`, `TheaterPhotosService`, `TheaterResponseMapper`.
+Exports: `TheaterReadService`, `TheaterHoursService`, `TheaterLifecycleRegistry`. `AppModule`
+imports `TheatersModule` after `MediaModule`.
 
 | File | Holds |
 |---|---|
-| `enums.ts` | `THEATER_STATUSES = ['draft','active','sales_paused']`, `FACILITIES = ['wheelchair_access','free_parking','valet_parking','street_parking','cafe_bar','food_court','kids_room']`, `PHOTO_USAGES = ['cover','gallery']`, `HOURS_SOURCES = ['weekly','special','none']` |
-| `types.ts` | `TheaterStatus`, `Facility`, `PhotoUsage`, `HoursSource`, `TheaterRow`, `NewTheaterRow`, `TheaterPhoneRow`, `TheaterPhotoRow`, `TheaterHoursRow`, `SpecialDateRow`, `TheaterPhone`, `TheaterPhoto`, `ZonePrices`, `DayHours`, `SpecialDate`, `TheaterDetails`, `TheaterSummary`, `TheaterListFilter`, `TheaterChanges`, `OpeningWindow`, `CinemaDateHours`, `OpenState`, `TheaterPublishRequirement`, `TheaterDeletionBlocker` |
-| `theaters.constants.ts` | `MAX_PHONES = 10`, `MAX_GALLERY_PHOTOS = 20`, `MAX_PRICE_AMOUNT = 1_000_000`, `PHONE_NUMBER_PATTERN`, `OPEN_STATE_LOOKAHEAD_DAYS = 7`, `MAX_HOURS_RANGE_DAYS = 31`, `MIN_OPENS_MINUTE = 360`, `MAX_CLOSES_MINUTE = 1800` |
-| `opening-hours.ts` | pure: `wallClockToOpeningMinute(time, 'opens' \| 'closes')`, `openingMinuteToWallClock(minute)` → `{ time, nextDay }`, `resolveCinemaDateHours(weekly, specials, cinemaDate)`, `openStateAt(hoursByDate, at)` |
-| `theaters.repository.ts` | theaters, phones, facilities: `insert`, `findById`, `findByIdForUpdate`, `findByIdForShare`, `findByIds`, `list`, `count`, `listByStatus`, `update`, `deleteById`, `replacePhones`, `phonesOf(ids)`, `replaceFacilities`, `facilitiesOf(ids)` |
-| `theater-hours.repository.ts` | `replaceWeekly`, `weeklyOf(ids)`, `specialDatesBetween(ids, from, to)`, `insertSpecialDate`, `findSpecialDate(theaterId, id)`, `updateSpecialDate`, `deleteSpecialDate` |
-| `theater-photos.repository.ts` | `photosOf(ids)`, `countFor`, `insert`, `findPhoto(theaterId, id)`, `updateCaption`, `reorder(theaterId, orderedIds)` (one `UPDATE … FROM unnest(?::bigint[]) WITH ORDINALITY`), `delete`, `renumber` |
+| `enums.ts` | `THEATER_STATUSES`, `FACILITIES` (display order, mirrored by the CHECK and the contract's `Facility`), `PHOTO_USAGES`, `HOURS_SOURCES` |
+| `types.ts` | row types, the domain types other units read (`TheaterSummary`, `TheaterDetails`, `TheaterPhone`, `TheaterPhoto`, `ZonePrices`, `HoursSpec`, `DayHours`, `SpecialDate`, `OpeningWindow`, `CinemaDateHours`, `OpenState`, `WallClockTime`, `WallClockHours`), the lifecycle seams (`TheaterPublishRequirement`, `TheaterDeletionBlocker`), the service inputs and the admin views (`TheaterAdminView`, `TheaterListEntry`) |
+| `theaters.constants.ts` | `MAX_PHONES` 10, `MAX_GALLERY_PHOTOS` 20, `PHONE_NUMBER_PATTERN`, `OPEN_STATE_LOOKAHEAD_DAYS` 7, `MAX_HOURS_RANGE_DAYS` 31, the opening-minute limits, `STATUS_TRANSITIONS`, `STATUS_CHANGE_ACTIONS`, `BUILT_IN_PUBLISH_REQUIREMENTS`, `NOT_DRAFT_REASON`, `TEXT_LIMITS` |
+| `opening-hours.ts` | pure: `minuteOfDay`, `opensMinuteOf`, `closesMinuteOf`, `isValidClosing`, `hoursProblems`, `toHoursSpec`, `mergeHours`, `openingMinuteToWallClock`, `windowOf`, `resolveCinemaDateHours(cinemaDate, weekly, specials)`, `cinemaDatesBetween`, `openStateDates`, `openStateAt(at, days)` |
+| `theater-rows.ts` | rows → domain: `zonePricesOf`, `toTheaterSummary`, `TheaterChildren` (details of many theaters from their child rows), `toDayHours`, `toSpecialDate`, `groupByTheater` |
+| `theaters.repository.ts` | `theaters`, `theater_phones`, `theater_facilities`: `insert`, `findById`, `findByIds`, `findByIdForWrite` (`FOR NO KEY UPDATE`), `findByIdForDelete` (`FOR UPDATE`), `findByIdForShare`, `list`, `count`, `listByStatus`, `findByIdsWithStatus`, `update`, `deleteById`, `replacePhones`, `phonesOf`, `replaceFacilities`, `facilitiesOf` |
+| `theater-hours.repository.ts` | `upsertWeekly` (one `INSERT … ON CONFLICT (theater_id, weekday) DO UPDATE`), `weeklyOf`, `specialDatesBetween(ids, from, to \| null)`, `insertSpecialDate`, `findSpecialDate(theaterId, id)`, `updateSpecialDate`, `deleteSpecialDate` |
+| `theater-photos.repository.ts` | `photosOf`, `insert`, `findPhoto(theaterId, id)`, `updateCaption`, `reorder(theaterId, orderedIds, at)` (one `UPDATE … FROM unnest(?::bigint[]) WITH ORDINALITY`, rows in place untouched), `delete` |
 | `theater-lifecycle.registry.ts` | `TheaterLifecycleRegistry` |
-| `theaters.service.ts` | `TheatersService` (admin CRUD, PUTs, status, delete; registers `prices` and `hours` in `onModuleInit`) |
-| `theater-special-dates.service.ts` | `TheaterSpecialDatesService` |
-| `theater-photos.service.ts` | `TheaterPhotosService` (the `link` callbacks, patch, delete, cover removal) |
 | `theater-read.service.ts`, `theater-hours.service.ts` | the exported services |
-| `theater-response.mapper.ts` | `toTheaterResponse`, `toTheaterListItem`, `toDayHoursResponse`, `toSpecialDateResponse`, `toOpenStateResponse` |
-| `admin-theaters.controller.ts` | `@Controller('admin/theaters')`: list, create, get, patch, delete, the four PUTs |
+| `theaters.service.ts` | `TheatersService`: list, view, create, update (fields, publish, selling), delete, the four `PUT`s, `lockForWrite()` and `touch()` for the other admin services |
+| `theater-special-dates.service.ts` | `TheaterSpecialDatesService` |
+| `theater-photos.service.ts` | `TheaterPhotosService`: upload (cover or gallery), patch, delete, cover removal |
+| `theater-response.mapper.ts` | `TheaterResponseMapper` (needs `MediaService` for image URLs) and the plain mappers `toOpenStateResponse`, `toPhoneResponse`, `toDayHoursResponse`, `toSpecialDateResponse`, `toTodayHoursResponse` |
+| `admin-theaters.controller.ts` | `@Controller('admin/theaters')`: list, create, get, patch, delete, the four `PUT`s |
 | `admin-theater-special-dates.controller.ts` | `@Controller('admin/theaters/:id/special-dates')` |
 | `admin-theater-photos.controller.ts` | `@Controller('admin/theaters/:id')`: `photos`, `photos/:photoId`, `cover` |
-| `dto/` | requests: `create-theater.request.ts`, `update-theater.request.ts`, `theater-list.query.ts`, `theater-id.params.ts` (`TheaterIdParams`, `SpecialDateParams`, `TheaterPhotoParams`), `replace-hours.request.ts` (`ReplaceHoursRequest`, `DayHoursRequest`), `replace-phones.request.ts` (`ReplacePhonesRequest`, `PhoneRequest`), `replace-facilities.request.ts`, `replace-prices.request.ts`, `create-special-date.request.ts`, `update-special-date.request.ts`, `theater-photo-fields.request.ts`, `update-theater-photo.request.ts`; responses: `theater.response.ts`, `theater-list-item.response.ts`, `theater-page.response.ts`, `theater-phone.response.ts`, `day-hours.response.ts`, `special-date.response.ts`, `zone-prices.response.ts`, `theater-photo.response.ts`, `open-state.response.ts`, `today-hours.response.ts` |
+| `dto/` | requests: `create-theater.request.ts`, `update-theater.request.ts`, `theater-list.query.ts`, `theater-id.params.ts` (`TheaterIdParams`, `SpecialDateParams`, `TheaterPhotoParams`), `replace-hours.request.ts` (`ReplaceHoursRequest`, `DayHoursRequest`), `replace-phones.request.ts` (`ReplacePhonesRequest`, `PhoneRequest`), `replace-facilities.request.ts`, `replace-prices.request.ts`, `create-special-date.request.ts`, `update-special-date.request.ts`, `theater-photo-fields.request.ts`, `update-theater-photo.request.ts`, `validators.ts` (`Trim`, `IsCalendarDate`, `IsOpensTime`, `IsClosesTime`); responses: `theater.response.ts`, `theater-list-item.response.ts`, `theater-page.response.ts`, `theater-phone.response.ts` (`Phone`), `open-state.response.ts` (`OpenState`), `day-hours.response.ts`, `special-date.response.ts`, `today-hours.response.ts`, `zone-prices.response.ts`, `theater-photo.response.ts` |
 | `theaters.module.ts` | the module |
 
+Shared code added: `src/common/money/dto/money-request.dto.ts` (`MoneyRequest`, U7 reuses it) and
+`src/common/money/money.constants.ts` (`MAX_PRICE_AMOUNT`); the two error codes; the
+`Admin: theaters` tag in `src/common/swagger/swagger.constants.ts`.
+
+Test support added: `test/support/theaters.ts` (create, prepare and publish theaters through the
+admin routes) and `test/support/theaters-probe.module.ts` (stand-ins for U5's `active_hall` and
+U7's `has_showtimes`, registered as those units will). `test/support/media.ts` `mediaAdmin()` now
+creates a real staff member (it is async), because `fk_images_created_by_staff_id` exists.
+
 Path params (`id`, `specialDateId`, `photoId`): positive integers (`@Type(() => Number)`, `IsInt`,
-`Min(1)`), else `VALIDATION_FAILED`. Text inputs are trimmed (`@Transform`) before length checks.
+`Min(1)`), else `VALIDATION_FAILED`. Text inputs are trimmed before length checks.
 
 ## Migrations (prefix `0055`)
 
@@ -152,12 +163,17 @@ CREATE TABLE theaters (
   CONSTRAINT fk_theaters_cover_image_id FOREIGN KEY (cover_image_id) REFERENCES images (id),
   CONSTRAINT chk_theaters_status CHECK (status IN ('draft', 'active', 'sales_paused')),
   CONSTRAINT chk_theaters_name CHECK (length(name) BETWEEN 2 AND 100 AND btrim(name) = name),
+  CONSTRAINT chk_theaters_address CHECK (length(address) >= 1 AND btrim(address) = address),
+  CONSTRAINT chk_theaters_district CHECK (length(district) >= 1 AND btrim(district) = district),
+  CONSTRAINT chk_theaters_city CHECK (length(city) >= 1 AND btrim(city) = city),
   CONSTRAINT chk_theaters_latitude CHECK (latitude BETWEEN -90 AND 90),
   CONSTRAINT chk_theaters_longitude CHECK (longitude BETWEEN -180 AND 180),
-  CONSTRAINT chk_theaters_email CHECK (email IS NULL OR (length(email) <= 320 AND email ~ '^[^\s@]+@[^\s@]+$')),
+  CONSTRAINT chk_theaters_transit_info CHECK (transit_info IS NULL OR length(transit_info) >= 1),
+  CONSTRAINT chk_theaters_parking_info CHECK (parking_info IS NULL OR length(parking_info) >= 1),
+  CONSTRAINT chk_theaters_email CHECK (email IS NULL OR (length(email) <= 320 AND email ~ '^[^[:space:]@]+@[^[:space:]@]+$')),
   CONSTRAINT chk_theaters_prices_positive CHECK (default_price_front > 0 AND default_price_middle > 0 AND default_price_back > 0),
   CONSTRAINT chk_theaters_prices_complete CHECK (num_nonnulls(default_price_front, default_price_middle, default_price_back, currency) IN (0, 4)),
-  CONSTRAINT chk_theaters_currency CHECK (currency = 'EGP'),
+  CONSTRAINT chk_theaters_currency CHECK (currency IN ('EGP')),
   CONSTRAINT chk_theaters_prices_when_published CHECK (status = 'draft' OR currency IS NOT NULL)
 );
 ```
@@ -170,7 +186,7 @@ CREATE TABLE theaters (
 
 **`0055_02_create_theater_phones`** — `id BIGSERIAL`, `theater_id BIGINT NOT NULL`
 (`fk_theater_phones_theater_id` → `theaters ON DELETE CASCADE`), `label VARCHAR(40) NOT NULL`
-(CHECK trimmed, non-empty), `number VARCHAR(16) NOT NULL` (CHECK `~ '^\+[1-9][0-9]{6,14}$'`),
+(CHECK trimmed, non-empty), `number VARCHAR(16) NOT NULL` (CHECK `~ '^[+][1-9][0-9]{6,14}$'`),
 `sort_order SMALLINT NOT NULL` (CHECK `>= 0`), `created_at`. `uq_theater_phones_theater_id_sort_order
 UNIQUE (theater_id, sort_order)`: covers the FK; "phones of theaters `WHERE theater_id IN (…)
 ORDER BY theater_id, sort_order`" (the main phone is `sort_order = 0`).
@@ -242,21 +258,29 @@ Egypt's 2026 changes, which the tests pin: summer time starts Friday 24 April at
 does not exist) and ends at the end of Thursday 29 October (23:00–23:59 on 29 October happens
 twice).
 
-**Publish** (`TheatersService.update`, request transaction): lock theater `FOR UPDATE` → apply
-field changes → if `status` changes, check the transition; for `draft → active` run every
-`TheaterPublishRequirement.isMet(id)` (built-in `prices`: prices non-null; `hours`: 7 weekly rows
-and at least one open) and refuse with the unmet keys → update → audit.
+**Publish** (`TheatersService.update`, request transaction): lock theater `FOR NO KEY UPDATE` →
+compute the changed fields (values equal to the stored ones are not changes) → if `status`
+changes, check the transition; for `draft → active` check the built-in requirements (`prices`:
+the zone prices are set; `hours`: 7 weekly rows and at least one open) and then every registered
+`TheaterPublishRequirement.isMet(id)`, refusing with the unmet keys → one `UPDATE` → one audit row
+for the fields and one for the status change. Nothing changed: no write, no audit row.
 
-**Delete**: lock `FOR UPDATE` → `not_draft` if not draft → every `TheaterDeletionBlocker.blocks(id)`
-→ collect cover and gallery image ids → delete the theater (children cascade) →
-`MediaService.deleteMany(ids)` (rows now, files after commit) → audit.
+**Delete**: lock `FOR UPDATE` → reasons: `not_draft` when not a draft, plus the key of every
+registered `TheaterDeletionBlocker` that blocks → refuse when any → collect cover and gallery image
+ids → delete the theater (children cascade) → `MediaService.deleteMany(ids)` (rows now, files
+after commit) → audit.
 
-**Photo upload** (`@NoRequestTransaction()` route): the controller checks the theater exists (one
-read, fast `404` before image work), then `MediaService.upload({ kind: usage === 'cover' ?
-'backdrop' : 'gallery', upload, actor, link })`. `link(image)` runs inside the media transaction:
-lock theater `FOR UPDATE` (`NOT_FOUND` if deleted meanwhile); cover → set `cover_image_id`, then
-`MediaService.delete(oldId)`; gallery → `CONFLICT { limit: 20 }` when full, else insert at
-`sort_order = count`; audit; return `TheaterResponse`.
+**Photo upload** (`@NoRequestTransaction()` route): `TheaterPhotosService.upload()` checks that the
+theater exists, and for a gallery photo that the gallery has room (fast `404` / `409` before any
+image work), then `MediaService.upload({ kind: usage === 'cover' ? 'backdrop' : 'gallery', upload,
+actor, link })`. `link(image)` runs inside the media transaction: lock theater `FOR NO KEY UPDATE`
+(`NOT_FOUND` if deleted meanwhile); cover → set `cover_image_id`, then `MediaService.delete(oldId)`;
+gallery → `CONFLICT { limit: 20 }` when full, else insert at `sort_order = count`; audit; return
+the `TheaterResponse` (stored with the key). A refusal inside `link` rolls back and deletes the new
+files (U4a).
+
+**Reads inside a transaction run one query at a time**: a write answers with the theater read in
+its own transaction, where parallel queries would share one connection.
 
 **Audit events** (`AuditService.record`, inside the write's transaction; actor = the staff
 principal; changed fields are API field names, never values):
@@ -266,14 +290,15 @@ principal; changed fields are API field names, never values):
 | `theater.created` | `theater` | — |
 | `theater.updated` | `theater` | changed field names (not `status`) |
 | `theater.published` / `theater.sales_paused` / `theater.sales_resumed` | `theater` | `{ from, to }` |
-| `theater.deleted` | `theater` | `{ photoCount }` |
+| `theater.deleted` | `theater` | `{ photoCount, hadCover }` |
 | `theater.hours_replaced` | `theater` | `{ openDays }` |
 | `theater.phones_replaced` | `theater` | `{ count }` |
 | `theater.facilities_replaced` | `theater` | `{ count }` |
 | `theater.prices_replaced` | `theater` | `{ front, middle, back, currency }` |
-| `theater.cover_replaced` / `theater.cover_removed` | `theater` | — |
+| `theater.cover_replaced` | `theater` | `{ hadCover }` |
+| `theater.cover_removed` | `theater` | — (nothing is recorded when there was no cover) |
 | `theater_special_date.created` / `.updated` / `.deleted` | `theater_special_date` | `{ theaterId, cinemaDate }`; `.updated` adds changed field names |
-| `theater_photo.created` / `.updated` / `.deleted` | `theater_photo` | `{ theaterId }`; `.updated` adds changed field names |
+| `theater_photo.created` / `.updated` / `.deleted` | `theater_photo` | `{ theaterId }`; `.updated` adds changed field names (`caption`, `position`) |
 
 ## Endpoints
 
@@ -322,12 +347,18 @@ A special date or photo that belongs to another theater is `NOT_FOUND`.
   1–1,000,000, `currency` `IsIn(CURRENCIES)`); mixed currencies → `VALIDATION_FAILED`.
 - `CreateSpecialDateRequest`: `cinemaDate` (`isCalendarDate`, not before today's cinema date),
   `label` (1–80), `closed`, `opens`, `closes` (as `DayHoursRequest`).
-  `UpdateSpecialDateRequest`: each optional, at least one; the merged result is validated as a
-  whole (in the service, `VALIDATION_FAILED` with field paths).
-- `TheaterPhotoFieldsRequest` (multipart text fields): `usage` (`cover` | `gallery`, required),
-  optional `caption` (1–120, gallery only).
-- `UpdateTheaterPhotoRequest`: optional nullable `caption`, optional `position` (integer ≥ 0);
+  `UpdateSpecialDateRequest`: each optional, at least one; a time left out keeps its stored value
+  and the merged result is validated as a whole (in the service, `VALIDATION_FAILED` with field
+  paths). A special date whose cinema date is before today's can only be deleted: a `PATCH` of it
+  is `VALIDATION_FAILED` on `cinemaDate`.
+- `TheaterPhotoFieldsRequest` (multipart text fields): `usage` (`cover` | `gallery`, required,
+  schema `TheaterPhotoUsage`), optional `caption` (1–120, gallery only).
+- `UpdateTheaterPhotoRequest`: optional nullable `caption`, optional `position` (integer 0–19);
   at least one.
+
+Text fields are trimmed before their length is checked (`Trim()` in `dto/validators.ts`); the
+opening-time rules are the `IsOpensTime()` / `IsClosesTime()` decorators there, which call
+`opening-hours.ts`, so the DTOs and the service apply one rule.
 
 **Response DTOs**
 
@@ -348,8 +379,9 @@ A special date or photo that belongs to another theater is `NOT_FOUND`.
 - `TheaterListItemResponse`: `id`, `name`, `status`, `district`, `city`, `address`, `cover`,
   `mainPhone` (`TheaterPhoneResponse` or null), `openState`, `today` (`TodayHoursResponse` =
   `{ cinemaDate, closed, opens, closes, closesNextDay, specialDateLabel }`), `updatedAt`.
-  `TheaterPage = PageResponseOf(TheaterListItemResponse)`. A page costs a fixed number of
-  queries (theaters, count, phones, hours, special dates, images).
+  `TodayHoursResponse` reads `closed: true` when no hours are set yet.
+  `TheaterListItemResponsePage = PageResponseOf(TheaterListItemResponse)`. A page costs a fixed
+  number of queries (theaters, count, phones, weekly hours, special dates, images).
 
 ## Error codes added
 
@@ -358,9 +390,8 @@ A special date or photo that belongs to another theater is `NOT_FOUND`.
 | `THEATER_NOT_PUBLISHABLE` | 409 | `{ missing: string[] }`, e.g. `['prices', 'hours', 'active_hall']` |
 | `THEATER_NOT_DELETABLE` | 409 | `{ reasons: string[] }`, e.g. `['not_draft']`, `['has_showtimes']` |
 
-Catalogue descriptions: "Set the zone prices and opening hours (and an active hall) before
-publishing." / "Only a draft theater with no showtimes can be deleted; pause ticket sales
-instead."
+Both are in `src/common/errors/error-catalogue.ts` with published descriptions, and in the
+example `details` of `src/common/swagger/error-responses.ts`.
 
 ## Services
 
@@ -370,18 +401,20 @@ instead."
 class TheaterReadService {
   findById(id: number): Promise<TheaterDetails | null>;                 // any status (U5, U7)
   lockForShare(id: number): Promise<TheaterSummary | null>;             // FOR SHARE in the open
-                                                                        // transaction (U5, U7)
+                                                                        // transaction (U5, U7);
+                                                                        // outside one: INTERNAL
   listActive(): Promise<readonly TheaterDetails[]>;                     // status active, by name;
                                                                         // fixed query count (U8)
   findActive(id: number): Promise<TheaterDetails | null>;               // U8 /theaters/{id}
   findActiveByIds(ids: readonly number[]): Promise<ReadonlyMap<number, TheaterDetails>>;
+  detailsOf(rows: readonly TheaterRow[]): Promise<TheaterDetails[]>;    // used inside the module
 }
 // TheaterSummary = { id; name; status: TheaterStatus; defaultPrices: ZonePrices | null }
 // ZonePrices = { front: Money; middle: Money; back: Money }
 // TheaterDetails = TheaterSummary & { address; district; city; latitude: number; longitude: number;
 //   transitInfo: string | null; parkingInfo: string | null; email: string | null;
 //   showContactsPublic: boolean; phones: readonly TheaterPhone[] /* { label; number }, in order */;
-//   facilities: readonly Facility[]; cover: StoredImage | null;
+//   facilities: readonly Facility[] /* FACILITIES order */; cover: StoredImage | null;
 //   photos: readonly TheaterPhoto[] /* { id; caption; position; image: StoredImage } */;
 //   createdAt: Date; updatedAt: Date }
 // U8 hides phones and email itself when showContactsPublic is false.
@@ -391,110 +424,116 @@ class TheaterHoursService {
   hoursFor(theaterIds: readonly number[], from: CalendarDate, to: CalendarDate):
     Promise<ReadonlyMap<number, readonly CinemaDateHours[]>>;  // every date from..to (≤ 31), 2 queries
   openStates(theaterIds: readonly number[], at: Date): Promise<ReadonlyMap<number, OpenState>>;
-  weeklyHours(theaterIds: readonly number[]): Promise<ReadonlyMap<number, readonly DayHours[]>>;
+  weeklyHours(theaterIds: readonly number[]): Promise<ReadonlyMap<number, DayHours[]>>;
+  specialDates(theaterIds: readonly number[], from: CalendarDate, to: CalendarDate | null):
+    Promise<ReadonlyMap<number, SpecialDate[]>>;               // U8 "special dates in the next 7 days"
 }
-// OpeningWindow = { opensAt: Date; closesAt: Date }
-// CinemaDateHours = { cinemaDate; weekday: IsoWeekday; source: HoursSource;
-//   specialDateLabel: string | null; window: OpeningWindow | null }
+// OpeningWindow = { opensAt: Date; closesAt: Date }            // closesAt exclusive
+// CinemaDateHours = { cinemaDate; weekday: IsoWeekday; source: 'special' | 'weekly' | 'none';
+//   specialDateLabel: string | null; hours: HoursSpec | null; window: OpeningWindow | null }
+// HoursSpec = { closed: boolean; opensMinute: number | null; closesMinute: number | null }
 // OpenState = { isOpen: boolean; closesAt: Date | null; nextOpensAt: Date | null }
-// DayHours = { weekday: IsoWeekday; closed: boolean; opensMinute: number | null; closesMinute: number | null }
+// DayHours = HoursSpec & { weekday: IsoWeekday }
+// None of these look at the theater's status; callers filter (U8 reads active theaters only).
 
 class TheaterLifecycleRegistry {
-  addPublishRequirement(requirement: TheaterPublishRequirement): void; // duplicate key → throws
-  addDeletionBlocker(blocker: TheaterDeletionBlocker): void;
+  addPublishRequirement(requirement: TheaterPublishRequirement): void; // key taken → throws
+  addDeletionBlocker(blocker: TheaterDeletionBlocker): void;           // key taken → throws
+  publishRequirements(): readonly TheaterPublishRequirement[];
+  deletionBlockers(): readonly TheaterDeletionBlocker[];
 }
 // TheaterPublishRequirement = { key: string; isMet(theaterId: number): Promise<boolean> }
-//   (runs in the publish transaction with the theater locked FOR UPDATE; U5 adds 'active_hall')
+//   (runs in the publish transaction with the theater locked, and for GET's publishBlockers;
+//   U5 adds 'active_hall'; 'prices' and 'hours' are built in and cannot be registered)
 // TheaterDeletionBlocker = { key: string; blocks(theaterId: number): Promise<boolean> }
-//   (U7 adds 'has_showtimes')
+//   (runs in the delete transaction with the theater locked FOR UPDATE; U7 adds 'has_showtimes')
 ```
 
-Also exported by path: `openingMinuteToWallClock()` (U8 formats hours), `FACILITIES`,
-`TheaterPhoneResponse`, `OpenStateResponse`, `toOpenStateResponse()`.
+Register from the owning module's `onModuleInit` (see `test/support/theaters-probe.module.ts`).
 
-**Consumed from U4a** (exact names): `MediaModule`, `MediaService.upload()`, `.findByIds()`,
-`.delete()`, `.deleteMany()`, `.toImageResponse()`, `ImageUpload()`, `UploadedImage()`,
-`ImageUploadPayload`, `UploadOutcome`, `StoredImage`, `ImageResponse`, image kinds `backdrop` and
-`gallery`.
+Also exported by path for U8: `openingMinuteToWallClock()` (formats stored minutes),
+`FACILITIES`, `TheaterPhoneResponse` (`Phone`), `OpenStateResponse` (`OpenState`),
+`toOpenStateResponse()`, `toPhoneResponse()`, `toDayHoursResponse()`, `toSpecialDateResponse()`.
+
+**Consumed from U4a**: `MediaModule`, `MediaService.upload()`, `.findByIds()`, `.delete()`,
+`.deleteMany()`, `.toImageResponse()`, `ImageUpload()`, `UploadedImage()`, `ImageUploadPayload`,
+`UploadOutcome`, `StoredImage`, `ImageResponse`, image kinds `backdrop` and `gallery`.
 
 **Consumed from U2a**: nothing at runtime (the staff resolver authenticates the routes); tests use
-`createStaffMember()`, `staffToken()`, `listHttpRoutes()`, `samplePath()`.
+`staffSession()`, `signInStaff()`, `createStaffMember()`, `listHttpRoutes()`, `samplePath()`.
 
-**Consumed from U1** (exact names): `TransactionRepository.run()`, `.afterCommit()` (through
-`MediaService`), `TransactionContext.executor()`, `Strict()`, `Admin()`, `CurrentPrincipal()`,
-`StaffPrincipal`, `AuditService.record()`, `Clock`, `cinemaDateOf()`, `weekdayOfCinemaDate()`,
-`addDays()`, `cinemaMinuteToInstant()`, `isCalendarDate()`, `formatCairoIso()`,
-`WALL_CLOCK_TIME_PATTERN`, `CalendarDate`, `IsoWeekday`, `Money`, `money()`, `CURRENCIES`,
-`MoneyResponse`, `PageQuery`, `toPageRequest()`, `toPage()`, `PageResponseOf()`, `AppError`,
-`ApiErrorResponses()`.
+**Consumed from U1**: `TransactionRepository.run()`, `TransactionContext`, `Strict()`, `Admin()`,
+`CurrentPrincipal()`, `StaffPrincipal`, `AuditService.record()`, `Clock`, `cinemaDateOf()`,
+`weekdayOfCinemaDate()`, `addDays()`, `cinemaMinuteToInstant()`, `isCalendarDate()`,
+`formatCairoIso()`, `WALL_CLOCK_TIME_PATTERN`, `CalendarDate`, `IsoWeekday`, `Money`, `money()`,
+`CURRENCIES`, `MoneyResponse`, `PageQuery`, `toPageRequest()`, `toPage()`, `PageResponseOf()`,
+`AppError`, `ApiErrorResponses()`, `REQUEST_ID_RESPONSE_HEADER`.
 
 ## Tests
 
-**Unit** (`test/unit/modules/theaters/`):
+**Unit** (`test/unit/modules/theaters/`, collaborators mocked):
 
-- `opening-hours.test.ts` (pure, fixed instants):
-  - minutes: `opens 05:59` refused; `closes 00:00` → 1440, `06:00` → 1800, `01:00` → 1500 and
-    `nextDay`; `closes ≤ opens` refused; round trip minute → wall clock.
-  - resolution: a special date replaces the weekday; a closed special date → no window; no rows →
-    `none`.
-  - open state on a normal day (weekly 12:00–01:00): 11:00 → closed, `nextOpensAt` 12:00 today;
-    20:00 → open, `closesAt` 01:00 next calendar day; 01:30 Thursday is judged by Wednesday (open
-    when Wednesday closes 02:00; closed with `nextOpensAt` Thursday 12:00 when it closes 01:00);
-    after closing → next day's opening; a closed special date tomorrow skips to the day after; a
-    special date with changed hours (11:00–03:00) is used; every day closed → `nextOpensAt null`;
-    the only opening 8 days ahead → `null`.
-  - summer time: cinema date 2026-04-23, closes 00:30 → `closesAt 2026-04-24T01:00:00+03:00`
-    (shifted), and at `23:50+02:00` it is open; 2026-04-24 06:30 belongs to 2026-04-24 and opens
-    at 12:00+03:00; cinema date 2026-10-29 closing 23:30 → `2026-10-29T23:30:00+03:00` (first
-    occurrence), and at the second 23:45 (`+02:00`) it is closed with `nextOpensAt`
-    `2026-10-30T12:00:00+02:00`; closing 01:00 on that date → `2026-10-30T01:00:00+02:00` (a
-    window one hour longer in real time).
-- `theaters.service.test.ts` (repositories, media and audit mocked): the transition table;
-  `missing` lists built-in and registered keys in order; `reasons` for not-draft and a blocker; a
-  no-op `PATCH` writes no audit row; field changes plus publish write two audit rows.
-- `theater-lifecycle.registry.test.ts`: duplicate key throws; registration order kept.
-- DTO validation (`ValidationPipe` with the global options): hours (6 or 8 days, a weekday twice,
-  a closed day with times, an open day without), phones (non-E.164, 11 phones), facilities
-  (duplicates, unknown), prices (0, 1,000,001, fraction, mixed currencies), photo fields (caption
-  with `cover`).
+- `opening-hours.test.ts` (pure, fixed instants): opening and closing minutes (05:59 refused,
+  `00:00` → 1440, `06:00` → 1800, round trips); `hoursProblems` and `mergeHours`; resolution
+  (special replaces weekday, closed special, no rows); open state on a normal day (before
+  opening, evening, the closing instant, 01:30 Thursday judged by Wednesday, a closed special date
+  tomorrow, a special date with changed hours, every day closed, 7 dates ahead but not 8); summer
+  time (23 April closing at 00:30 moved to 01:00+03:00 and open at 23:50+02:00; 06:30 on 24 April;
+  29 October closing at the first 23:30 and closed at the second 23:45; a 01:00 closing on 29
+  October in winter time).
+- `theaters.service.test.ts`: the transition table and its audit actions; `missing` lists the
+  built-in keys first, then registered ones in order; hours missing with 6 rows; field changes
+  and publish in one write with two audit rows; a no-op `PATCH` writes nothing; deletion reasons
+  (`not_draft` with a blocker, a blocker alone), images of a deleted draft, `NOT_FOUND`.
+- `theater-photos.service.test.ts`: moves, past-the-end, no-op, another theater's photo, the gap a
+  deletion leaves, a 21st photo refused before any image work.
+- `theater-special-dates.service.test.ts`: today's cinema date by the wall clock (05:00 belongs
+  to yesterday), changed-field names, no-op, a past special date refused.
+- `theater-lifecycle.registry.test.ts`: order kept, taken keys (including the built-in ones)
+  refused, copies handed out.
+- `dto/theater-requests.test.ts` (the global `ValidationPipe`): every request DTO, valid and
+  refused (6 or 8 days, a weekday twice, a closed day with times, an open day without, bad times;
+  non-E.164 and 11 phones; duplicate or unknown facilities; 0, 1,000,001, a fraction, another
+  currency; a caption with `cover`; empty `PATCH` bodies; `null` for non-clearable fields).
+- `test/unit/common/errors/error-catalogue.test.ts` now lists the two new codes.
 
-**Integration** (`test/integration/modules/theaters/`, real app and Postgres, `TestClock`,
-`STORAGE_DRIVER=local`, admin and box-office tokens from `staffToken()`):
+**Integration** (`test/integration/modules/theaters/`, real app and Postgres, `TestClock`, real
+staff members and tokens, `STORAGE_DRIVER=local` in a temporary directory):
 
-- Flow: create (`201`, draft, audit `theater.created`) → `PATCH` fields → publish refused with
-  `missing: ['prices','hours']` → `PUT /prices` → refused `['hours']` → `PUT /hours` all closed →
-  still `['hours']` → `PUT /hours` with open days → publish `200 active` (audit
-  `theater.published`) → pause → resume → back to `draft` and `draft → sales_paused` →
-  `409 CONFLICT { from, to }`; duplicate name (other case) → `409 CONFLICT`.
-- Seam: a test module registering an unmet `active_hall` requirement → `missing` includes it;
-  a test blocker → `DELETE` → `THEATER_NOT_DELETABLE ['has_showtimes']`.
-- Delete: a draft with phones, hours, special dates, a cover and photos → `204`, every child row
-  and `images` row gone, files gone after commit; an active theater → `['not_draft']`.
-- Sub-resources: `PUT /phones`, `/facilities` replace (second PUT leaves only the new set, order
-  kept); special dates create, duplicate date → `CONFLICT`, past date → `VALIDATION_FAILED`,
-  `PATCH` hours, `DELETE`, another theater's id → `NOT_FOUND`; `GET` lists only special dates from
-  today's cinema date.
-- Photos through the real pipeline (local adapter): gallery JPEG → `201`, three WebP files,
-  response URLs served by `/media`; cover 1920 × 1080 PNG → cover set; a 1000 × 1000 cover →
-  `IMAGE_WRONG_SHAPE`, nothing stored; replacing the cover deletes the old prefix after commit;
-  `PATCH position` reorders contiguously; `DELETE` removes row and files; the 21st photo →
-  `CONFLICT { limit: 20 }` and no leftover prefix; no key → `IDEMPOTENCY_KEY_REQUIRED`; same key
-  and file → replay with `Idempotent-Replayed: true`; unknown theater → `404` before any file
-  is written.
-- Open state: `TheaterHoursService.openStates()` for three theaters (normal, after-midnight close,
-  closed special date) with the `TestClock` at fixed instants, including 2026-04-23 23:50 and
-  2026-10-29 23:45 (second occurrence); `windowFor()` with a changed special date; `GET
-  /admin/theaters/{id}` `openState` matches.
-- Reads: `listActive()` returns only active theaters, by name, with phones, facilities, cover and
-  photos; the number of queries (counted with Knex's `query` event) is the same for 1 and 10
-  theaters.
-- List: 25 theaters → pages of 20 and 5 with `nextCursor`, `total`, `status` filter.
-- Access: every route from `listHttpRoutes()` under `/api/v1/admin/theaters` (asserted to be the
-  16 above) answers `403 FORBIDDEN` to a box-office token and `401 UNAUTHENTICATED` to none.
-- Audit: each write leaves its row with field names only; no email, phone number or address
-  value appears in `audit_events`.
-- Contract: `npm run contract` regenerates `contracts/openapi.yaml` with the 16 operations, the
-  two codes, and the `Phone`, `OpenState`, `Facility` schemas matching the home-page draft.
+- `admin-theaters.controller.test.ts`: the create, edit and publish flow (`missing` shrinking from
+  `prices, hours, active_hall` as each is set, all-closed hours still missing), selling toggles
+  and the refused transitions with their audit rows, fields plus publish in one `PATCH`, a no-op
+  `PATCH`, case-insensitive name clash, key required and replay, `NOT_FOUND` and bad ids; phones
+  and facilities replaced; audit rows with names and counts only (no number, email or address in
+  `audit_events`); delete with children, `not_draft`, a registered `has_showtimes` blocker; the
+  list (25 theaters, pages of 20 and 5, total, status filter, a tampered cursor, today's hours and
+  the open state); the 16 routes listed and all Admin; `FORBIDDEN` for a box-office token and
+  `UNAUTHENTICATED` without one, on every theater route.
+- `admin-theater-special-dates.controller.test.ts`: today's cinema date at 03:00 accepted and its
+  hours used by the open state, a past date refused, a duplicate date `CONFLICT` (another theater
+  may use it), `PATCH` hours checked as a whole with `windowFor()` reading the result, audit rows,
+  only special dates from today shown, a past one deletable but not editable, another theater's
+  special date `NOT_FOUND`.
+- `admin-theater-photos.controller.test.ts` (the real pipeline): a gallery JPEG stored as three
+  WebP files served at `/media`, uploader recorded; a 1920 × 1080 cover and its replacement
+  deleting the old prefix, cover removal; a square cover `IMAGE_WRONG_SHAPE` with nothing stored;
+  reorder and the gap a deletion leaves; the 21st photo `CONFLICT { limit: 20 }` with no leftover
+  prefix; key required and replay without a second copy; unknown theater `404` before any file;
+  a caption on a cover refused; another theater's photo `NOT_FOUND`; deleting a draft removes its
+  images and files.
+- `theater-hours.service.test.ts`: three theaters (closing 23:30, closing 00:30, a closed special
+  date and a special date with changed hours) at 2026-04-23 23:50+02:00, 2026-04-26 02:30,
+  2026-10-29 23:45+02:00 (the second occurrence); `windowFor()` with special dates and the moved
+  closing; `hoursFor()` sources and the 31-date limit; the same open state on
+  `GET /admin/theaters/{id}`.
+- `theater-read.service.test.ts`: `listActive()` (active only, by name, phones, facilities,
+  prices), `findActive()`, `findActiveByIds()`, `findById()`; the same number of queries for 1 and
+  10 theaters (Knex `query` events); `lockForShare()` refused outside a transaction and making a
+  publish wait until the holder ends.
+- `dto/theater-contract.test.ts`: `Phone`, `OpenState` and `Facility` have exactly the home-page
+  draft's shape; the 16 operations carry the tag, an "Admin only" description and their codes.
+- The U4a media suites now upload as a real staff member (`mediaAdmin()`), which the new foreign
+  key requires.
 
 ## Acceptance
 
@@ -505,7 +544,32 @@ Also exported by path: `openingMinuteToWallClock()` (U8 formats hours), `FACILIT
   closing time after midnight, a closed special date, a special date with changed hours and both
   2026 summer-time transition days; photo upload through the real pipeline with the local storage
   adapter; every theater admin route refuses a box-office token with `FORBIDDEN`.
-- `docs/system-design.md` §6.2 (theater columns, photo caption), §11 (`DELETE
-  /admin/theaters/{id}/cover`) and §14.3 (two codes) updated; follow-ups for U5 (`active_hall`
-  requirement, halls FK cascade, `lockForShare`) and U7 (`has_showtimes` blocker, `windowFor`)
-  recorded; `docs/gh-5-theaters/spec.md` is this draft.
+- Manual QA recorded in [`qa.md`](qa.md).
+- `docs/system-design.md` §6.2 (theater columns, phones, photos), §9 (lifecycle, locks, the
+  registry, hours changes, photos), §11 (`DELETE /admin/theaters/{id}/cover`) and §14.3 (two codes)
+  updated.
+
+## Deviations from the design
+
+- `DELETE /admin/theaters/{id}/cover` is added to §11: the cover is a column, not a photo, so
+  without it a cover could be replaced but never removed.
+- Publishing's "opening hours" is made precise in §9: all seven weekdays set and at least one open.
+
+## Follow-ups for other units
+
+- **U5 Halls**: register the publish requirement `active_hall` from `HallsModule.onModuleInit()`
+  (`TheaterLifecycleRegistry.addPublishRequirement`); call `TheaterReadService.lockForShare()` first
+  in every hall write and refuse a missing theater; give `halls.theater_id` its FK with
+  `ON DELETE CASCADE`, so a deleted draft takes its halls.
+- **U7 Showtimes**: register the deletion blocker `has_showtimes`; schedule and move inside
+  `TheaterHoursService.windowFor()`; lock the theater `FOR SHARE` before the showtime rows; give
+  `showtimes.theater_id` its FK with no action (the database backstop for the blocker); copy
+  `TheaterSummary.defaultPrices` into a new showtime; reuse `MoneyRequest`. The admin timeline can
+  flag showtimes outside the current hours (spec Q1).
+- **U8 Discovery**: build `TheaterCard` and the theater page from `listActive()`, `findActive()`,
+  `openStates()`, `hoursFor()` / `specialDates()` and the exported response DTOs (`Phone`,
+  `OpenState`, `Facility`); hide phones and email when `showContactsPublic` is false;
+  `hallCount` comes from U5.
+- **Integrator**: `test/support/media.ts` `mediaAdmin()` is now async and creates a real staff
+  member. Any suite merged in parallel that calls it (U6 Catalog may) needs `await`, and must not
+  assume staff id 7.
