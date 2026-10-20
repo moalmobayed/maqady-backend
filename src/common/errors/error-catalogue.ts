@@ -145,6 +145,18 @@ export const ERROR_CATALOGUE = {
     message: 'An account with this email already exists.',
     description: 'Sign in instead, or use "Forgot password".',
   },
+  THEATER_NOT_PUBLISHABLE: {
+    status: 409,
+    message: 'This theater is not ready to publish.',
+    description:
+      'Publishing a draft theater needs its zone prices, its opening hours (all seven weekdays set, at least one open) and an active hall. `details.missing` lists what is still missing, for example `["prices", "hours", "active_hall"]`, so the page can show a checklist.',
+  },
+  THEATER_NOT_DELETABLE: {
+    status: 409,
+    message: 'Only a draft theater with no showtimes can be deleted.',
+    description:
+      'Pause ticket sales instead: a published theater is never deleted, and neither is a draft with showtimes. `details.reasons` says why, for example `["not_draft"]` or `["has_showtimes"]`.',
+  },
   CONFLICT: {
     status: 409,
     message: 'The request conflicts with existing data.',

@@ -35,6 +35,7 @@ describe('Media uploads, deletes and files (integration, local storage)', () => 
   let testApp: TestApp;
   let directory: string;
   let authorization: string;
+  let adminId: number;
   let poster: Buffer;
 
   const imageRows = () =>
@@ -69,7 +70,9 @@ describe('Media uploads, deletes and files (integration, local storage)', () => 
       overrides: REAL_RESOLVERS_OFF,
     });
     await createMediaProbeTables(testApp.knex, TEST_SCHEMA);
-    authorization = mediaAdmin(testApp).authorization;
+    const admin = await mediaAdmin(testApp);
+    authorization = admin.authorization;
+    adminId = admin.principal.id;
     poster = await jpeg(1000, 1500);
   });
 
@@ -100,7 +103,7 @@ describe('Media uploads, deletes and files (integration, local storage)', () => 
           kind: 'poster',
           source_width: 1000,
           source_height: 1500,
-          created_by_staff_id: 7,
+          created_by_staff_id: adminId,
         }),
       );
       expect(row.storage_prefix).toMatch(/^poster\/[0-9a-f-]{36}$/);

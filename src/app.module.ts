@@ -23,6 +23,7 @@ import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
 import { StaffModule } from './modules/staff/staff.module';
+import { TheatersModule } from './modules/theaters/theaters.module';
 
 /**
  * The root module. It takes the validated configuration as a value, so `main.ts`, the CLIs and
@@ -61,6 +62,7 @@ export class AppModule {
         HealthModule,
         StaffModule,
         MediaModule,
+        TheatersModule,
         MessageLogModule,
         CustomersModule,
       ],

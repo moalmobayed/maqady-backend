@@ -168,6 +168,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   'admin')` creates an active member through `StaffService` and signs them in through
   `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
   `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
+  the admin routes; `test/support/theaters-probe.module.ts` stands in for the publish requirement
+  and the deletion blocker that halls and showtimes register (`TheaterLifecycleRegistry`).
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
 - `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`

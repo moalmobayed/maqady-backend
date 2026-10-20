@@ -33,6 +33,11 @@ export const API_TAGS = [
       'Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset',
   },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
+  {
+    name: 'Admin: theaters',
+    description:
+      'Theaters: details, contacts, facilities, opening hours, special dates, zone prices, photos, publishing and selling (admins only)',
+  },
 ] as const;
 
 /** Relative first, so Swagger UI's "Try it out" calls whichever host serves the docs. */

@@ -36,13 +36,15 @@ const DESIGN_CATALOGUE: Record<string, number> = {
   SERVICE_UNAVAILABLE: 503,
 };
 
-/** The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`). */
+/** The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`, U4b: `docs/gh-5-theaters/spec.md`). */
 const UNIT_CODES: Record<string, number> = {
   IMAGE_TOO_LARGE: 413,
   UNSUPPORTED_IMAGE_TYPE: 415,
   IMAGE_TOO_MANY_PIXELS: 422,
   IMAGE_WRONG_SHAPE: 422,
   STORAGE_UNAVAILABLE: 503,
+  THEATER_NOT_PUBLISHABLE: 409,
+  THEATER_NOT_DELETABLE: 409,
 };
 
 describe('ERROR_CATALOGUE', () => {
