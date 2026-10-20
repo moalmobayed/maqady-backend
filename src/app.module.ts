@@ -17,6 +17,8 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
 import { HealthModule } from './modules/health/health.module';
+import { MessagingModule } from './modules/messaging/messaging.module';
+import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
 
 /**
  * The root module. It takes the validated configuration as a value, so `main.ts`, the CLIs and
@@ -27,7 +29,9 @@ import { HealthModule } from './modules/health/health.module';
  * - the one `ValidationPipe` and the one exception filter;
  * - the guards, in the order of design §10.3: `JwtAuthGuard` (who is calling), `RateLimitGuard`
  *   (so per-customer limits know the customer), then `AccessGuard` (may they call this route);
- * - the `WriteInterceptor`, which runs every write in one transaction with idempotency (§14.1).
+ * - the interceptors, outermost first: `OutboxDrainInterceptor`, which starts sending queued
+ *   messages once a write has committed (§13.1), then the `WriteInterceptor`, which runs every
+ *   write in one transaction with idempotency (§14.1).
  *
  * Feature modules are imported in the order of the delivery plan (design §21).
  */
@@ -49,6 +53,7 @@ export class AppModule {
         AuthModule,
         RateLimitModule,
         IdempotencyModule,
+        MessagingModule,
         HealthModule,
       ],
       providers: [
@@ -57,6 +62,7 @@ export class AppModule {
         { provide: APP_GUARD, useExisting: JwtAuthGuard },
         { provide: APP_GUARD, useExisting: RateLimitGuard },
         { provide: APP_GUARD, useExisting: AccessGuard },
+        { provide: APP_INTERCEPTOR, useExisting: OutboxDrainInterceptor },
         { provide: APP_INTERCEPTOR, useExisting: WriteInterceptor },
       ],
     };
