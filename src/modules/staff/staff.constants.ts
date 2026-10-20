@@ -16,6 +16,3 @@ export const BOOTSTRAP_ADMIN_VARIABLES = {
   fullName: 'BOOTSTRAP_ADMIN_NAME',
   password: 'BOOTSTRAP_ADMIN_PASSWORD',
 } as const;
-
-/** A plausible email: something, `@`, something, no spaces (the table's CHECK). */
-export const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+$/;

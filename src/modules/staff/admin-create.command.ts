@@ -1,4 +1,5 @@
 import type { INestApplicationContext } from '@nestjs/common';
+import { isEmail } from 'class-validator';
 import { MigrationRepository } from '../../common/database/migration.repository';
 import { isAllowedPassword } from '../auth/password-policy';
 import { PASSWORD_POLICY_MESSAGE } from '../auth/auth.constants';
@@ -6,7 +7,6 @@ import { StaffBootstrapService } from './staff-bootstrap.service';
 import {
   BOOTSTRAP_ADMIN_VARIABLES,
   EMAIL_MAX_LENGTH,
-  EMAIL_SHAPE,
   STAFF_FULL_NAME_MAX_LENGTH,
 } from './staff.constants';
 import type { BootstrapAdminParse, BootstrapAdminResult } from './types';
@@ -22,7 +22,8 @@ export function parseBootstrapAdminEnv(
   const fullName = env[BOOTSTRAP_ADMIN_VARIABLES.fullName]?.trim() ?? '';
   const password = env[BOOTSTRAP_ADMIN_VARIABLES.password] ?? '';
   const problems: string[] = [];
-  if (email.length === 0 || email.length > EMAIL_MAX_LENGTH || !EMAIL_SHAPE.test(email)) {
+  // The same check as the sign-in form's (`StaffSignInRequest`), so the admin can sign in.
+  if (email.length > EMAIL_MAX_LENGTH || !isEmail(email)) {
     problems.push(
       `${BOOTSTRAP_ADMIN_VARIABLES.email} must be an email address of at most ${EMAIL_MAX_LENGTH} characters`,
     );

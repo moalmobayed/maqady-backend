@@ -39,6 +39,15 @@ describe('parseBootstrapAdminEnv', () => {
     expect(text).not.toContain('nodigits');
   });
 
+  it('refuses an email the staff sign-in form would refuse, so the first admin can always sign in', () => {
+    for (const email of ['admin@localhost', 'first..last@maqady.example']) {
+      const parsed = parseBootstrapAdminEnv({ ...VALID, BOOTSTRAP_ADMIN_EMAIL: email });
+      expect(parsed.ok || parsed.problems).toEqual([
+        'BOOTSTRAP_ADMIN_EMAIL must be an email address of at most 320 characters',
+      ]);
+    }
+  });
+
   it('refuses missing variables', () => {
     const parsed = parseBootstrapAdminEnv({});
     expect(parsed).toEqual({ ok: false, problems: expect.arrayContaining([expect.any(String)]) });
