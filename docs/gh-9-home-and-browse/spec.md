@@ -56,7 +56,7 @@ leaves a seam for each (see "Seams for U8b").
 | Discovery reads only through the exported `CatalogReadService`, `TheaterReadService` and `TheaterHoursService`; it has no repository and no table | Design §5: modules talk through exported services. Both units built those reads for U8. |
 | Every route is `@Public()` at the controller and has the default rate limit (300 a minute per route per IP) | §11 lists them Public; §10.6 gives every route the default limit; none is a search. |
 | Public means `coming_soon` or `now_showing` movies and `active` theaters. A draft, archived or unknown movie and a draft, `sales_paused` or unknown theater answer `404 NOT_FOUND` | PRD "Theaters and movies" 1 and 3; §9 "Customers see only active theaters". |
-| `GET /home` and every discovery read send `Cache-Control: public, max-age=60` | The draft says home responses may be cached 60 seconds; the other reads change no faster. |
+| `GET /home` and every discovery read send `Cache-Control: public, max-age=60` on success and `Cache-Control: no-store` on an error (`DiscoveryCacheInterceptor`) | The draft says home responses may be cached 60 seconds; the other reads change no faster. A shared cache must never keep a `404`, `400` or `503` (review finding 1: Nest's `@Header()` set the public header before the handler ran, so errors carried it too). |
 | Lists are cursor-paginated (`{ items, nextCursor, total }`, default 20, at most 100) — including `/genres` and `/theaters`, which page in memory over the whole set the read services return (ten genres; theaters in the tens) | §11 and `CLAUDE.md`: every list endpoint. The in-memory page uses the same cursor codec and stays stable while rows are added. |
 | `GET /movies/{id}/similar` returns `{ items }` with at most 4 movies, not a page | PRD C3 "up to 4": a bounded recommendation, not a list the client pages through. |
 | `GET /movies?genres=` takes genre **slugs**, comma-separated; an unknown slug is `VALIDATION_FAILED` on `genres` | The draft's `GenreRef.slug` is "for links such as `/movies?genres=sci-fi`"; genres are a fixed seeded list, so an unknown slug is a broken link worth reporting. |
@@ -86,6 +86,7 @@ leaves a seam for each (see "Seams for U8b").
 | `home.service.ts` | `HomeService.getHome()` |
 | `movie-browse.service.ts` | `MovieBrowseService`: genres with counts, the movie list, a movie, similar movies, people |
 | `theater-browse.service.ts` | `TheaterBrowseService`: theater cards (home), the theater list, a theater |
+| `discovery-cache.interceptor.ts` | `DiscoveryCacheInterceptor` (on all three controllers): `public, max-age=60` on success, `no-store` on an error |
 | `in-memory-page.ts` | pure: `pageInMemory()` (a cursor page of an already sorted array), `compareByNameThenId()` |
 | `discovery-response.mapper.ts` | `DiscoveryResponseMapper` (needs `MediaService` for image URLs): every response DTO of the unit |
 | `home.controller.ts` | `GET /home` |
@@ -108,7 +109,7 @@ prefix stays reserved for U8.
 
 ## Endpoints
 
-All `GET`, `@Public()`, tag `Discovery`, `Cache-Control: public, max-age=60`, errors
+All `GET`, `@Public()`, tag `Discovery`, `Cache-Control: public, max-age=60` (`no-store` on an error), errors
 `429 RATE_LIMITED`, `500 INTERNAL`, `503 SERVICE_UNAVAILABLE`, plus those listed.
 
 | Route | Operation id | Query / params | Response | Errors |

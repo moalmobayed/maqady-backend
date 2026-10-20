@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/auth/access.decorators';
 import { toPageRequest } from '../../common/pagination/cursor';
@@ -7,8 +7,9 @@ import {
   REQUEST_ID_RESPONSE_HEADER,
 } from '../../common/swagger/error-responses';
 import { MovieIdParams } from '../catalog/dto/movie-id.params';
+import { DiscoveryCacheInterceptor } from './discovery-cache.interceptor';
 import { DiscoveryResponseMapper } from './discovery-response.mapper';
-import { DISCOVERY_CACHE_CONTROL, PUBLIC_READ_NOTE } from './discovery.constants';
+import { PUBLIC_READ_NOTE } from './discovery.constants';
 import { GenreListQuery, MovieListQuery, PublicPersonListQuery } from './dto/discovery.queries';
 import { GenreWithCountPage } from './dto/genre-with-count.response';
 import { MovieDetailsResponse } from './dto/movie-details.response';
@@ -19,6 +20,7 @@ import { MovieBrowseService } from './movie-browse.service';
 /** The public catalog reads (PRD C2, C3): genres, the Movies page, a movie's page and people. */
 @ApiTags('Discovery')
 @Public()
+@UseInterceptors(DiscoveryCacheInterceptor)
 @Controller()
 export class CatalogBrowseController {
   constructor(
@@ -27,7 +29,6 @@ export class CatalogBrowseController {
   ) {}
 
   @Get('genres')
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: 'Genres with their movie counts',
     description: `${PUBLIC_READ_NOTE}\n\nEvery genre, alphabetical, with \`movieCount\`: its Coming soon plus Now showing movies, or only the tab's when \`status\` is given (the Movies page genre filter). Link a genre with its \`slug\`: \`/movies?genres=sci-fi\`. Cursor-paginated (default 20, at most 100); there are ten genres, so one page holds them all.`,
@@ -44,7 +45,6 @@ export class CatalogBrowseController {
   }
 
   @Get('movies')
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: 'The Movies page: one tab, filtered',
     description: `${PUBLIC_READ_NOTE}\n\nOne page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): \`genres\` (slugs) and \`people\` (person ids) match any of their values, \`q\` a title or a credited person's name. \`total\` counts the tab with the filters ("Showing n of total"); \`tabCounts\` counts both tabs with the same filters, for the tab labels. Load more with \`cursor\` = \`nextCursor\`; pages never repeat or skip a movie. The "show date" filter comes with showtimes.`,
@@ -69,7 +69,6 @@ export class CatalogBrowseController {
   }
 
   @Get('movies/:id')
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: "A movie's page",
     description: `${PUBLIC_READ_NOTE}\n\nThe header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is \`404 NOT_FOUND\`. Showtimes, the next show today and "from" prices come with showtimes.`,
@@ -85,7 +84,6 @@ export class CatalogBrowseController {
   }
 
   @Get('movies/:id/similar')
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: '"More like this" for a movie',
     description: `${PUBLIC_READ_NOTE}\n\nUp to 4 Now showing movies sharing the most genres with the movie, then newest release first; never the movie itself. Empty when none shares a genre. A movie that isn't public is \`404 NOT_FOUND\`.`,
@@ -101,7 +99,6 @@ export class CatalogBrowseController {
   }
 
   @Get('people')
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: 'People on public movies (the cast filter)',
     description: `${PUBLIC_READ_NOTE}\n\nPeople credited on a Coming soon or Now showing movie, by name then id, with their roles. \`q\` matches part of a name; \`roleGroup\` keeps Actors, Directors, Writers or Crew. Filter the Movies page by a person with \`/movies?people=<id>\`. Cursor-paginated (default 20, at most 100).`,

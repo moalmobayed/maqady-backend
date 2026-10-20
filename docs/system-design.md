@@ -966,7 +966,7 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
-`Cache-Control: public, max-age=60` and shows only Coming soon and Now showing movies and
+`Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
 `active` theaters; anything else is `NOT_FOUND`. `/genres`, `/movies`, `/people` and `/theaters`
 are cursor-paginated (`/genres` and `/theaters` page in memory over the short sets the read
 services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts`;

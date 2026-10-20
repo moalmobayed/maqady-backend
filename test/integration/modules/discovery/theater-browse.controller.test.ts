@@ -273,5 +273,20 @@ describe('The public theater reads', () => {
       }
       expect((await get('/theaters/0')).status).toBe(400);
     });
+
+    it('never lets a shared cache keep an error: no public Cache-Control on a 404 or a 400', async () => {
+      for (const path of [`/theaters/${theater.draft}`, '/theaters/0', '/theaters?openNow=yes']) {
+        const response = await get(path);
+        expect({
+          path,
+          status: response.status >= 400,
+          cacheControl: response.headers['cache-control'],
+        }).toEqual({
+          path,
+          status: true,
+          cacheControl: 'no-store',
+        });
+      }
+    });
   });
 });

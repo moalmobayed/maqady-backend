@@ -1,17 +1,18 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/auth/access.decorators';
 import {
   ApiErrorResponses,
   REQUEST_ID_RESPONSE_HEADER,
 } from '../../common/swagger/error-responses';
+import { DiscoveryCacheInterceptor } from './discovery-cache.interceptor';
 import { DiscoveryResponseMapper } from './discovery-response.mapper';
-import { DISCOVERY_CACHE_CONTROL } from './discovery.constants';
 import { HomeResponse } from './dto/home.response';
 import { HomeService } from './home.service';
 
 @ApiTags('Discovery')
 @Public()
+@UseInterceptors(DiscoveryCacheInterceptor)
 @Controller('home')
 export class HomeController {
   constructor(
@@ -20,7 +21,6 @@ export class HomeController {
   ) {}
 
   @Get()
-  @Header('Cache-Control', DISCOVERY_CACHE_CONTROL)
   @ApiOperation({
     summary: 'Everything the home page shows',
     description: [

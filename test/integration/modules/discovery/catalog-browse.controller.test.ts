@@ -326,6 +326,28 @@ describe('The public catalog reads', () => {
       }
       expect((await get('/movies/abc')).status).toBe(400);
     });
+
+    it('never lets a shared cache keep an error: no public Cache-Control on a 404 or a 400', async () => {
+      for (const path of [
+        `/movies/${movie.draft}`,
+        `/movies/${movie.archived}/similar`,
+        '/movies/abc',
+        '/movies?status=archived',
+        '/genres?status=draft',
+        '/people?roleGroup=extras',
+      ]) {
+        const response = await get(path);
+        expect({
+          path,
+          status: response.status >= 400,
+          cacheControl: response.headers['cache-control'],
+        }).toEqual({
+          path,
+          status: true,
+          cacheControl: 'no-store',
+        });
+      }
+    });
   });
 
   describe('GET /movies/{id}/similar', () => {
