@@ -41,7 +41,11 @@ describe('applyCrossCuttingDocs', () => {
     expect(publicOp!.security).toEqual([]);
     expect(publicOp!.responses).not.toHaveProperty('401');
     expect(guestOp!.security).toEqual([{}, { customer: [] }]);
-    expect(codesOf(guestOp!, '401')).toEqual(['UNAUTHENTICATED', 'SESSION_REVOKED']);
+    expect(codesOf(guestOp!, '401')).toEqual([
+      'UNAUTHENTICATED',
+      'SESSION_EXPIRED',
+      'SESSION_REVOKED',
+    ]);
     expect(codesOf(guestOp!, '403')).toEqual(['ACCOUNT_BLOCKED']);
     expect(adminOp!.security).toEqual([{ staff: [] }]);
     expect(codesOf(adminOp!, '403')).toEqual(['ACCOUNT_DEACTIVATED', 'FORBIDDEN']);

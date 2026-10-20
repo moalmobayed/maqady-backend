@@ -16,6 +16,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
+import { CustomersModule } from './modules/customers/customers.module';
 import { HealthModule } from './modules/health/health.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
@@ -57,6 +58,7 @@ export class AppModule {
         MessagingModule,
         HealthModule,
         StaffModule,
+        CustomersModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
