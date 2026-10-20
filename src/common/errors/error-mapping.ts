@@ -119,10 +119,15 @@ function isRouteNotFound(exception: HttpException): boolean {
   return httpExceptionMessage(exception)?.startsWith('Cannot ') ?? false;
 }
 
+/** The `type` values Express's body parser gives its errors, such as `entity.too.large`. */
+const BODY_PARSER_ERROR_TYPE = /^(entity|encoding|charset|request|stream|parameters)\.[a-z.]+$/;
+
 export function isBodyParserError(error: unknown): error is BodyParserError {
   if (!(error instanceof Error)) return false;
   const { type, status } = error as Partial<BodyParserError>;
-  return typeof type === 'string' && typeof status === 'number';
+  return (
+    typeof type === 'string' && BODY_PARSER_ERROR_TYPE.test(type) && typeof status === 'number'
+  );
 }
 
 /**

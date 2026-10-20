@@ -134,6 +134,18 @@ describe('resolveException', () => {
       });
     });
 
+    it("does not mistake another library's error with a type and a status for a body error", () => {
+      const providerError = Object.assign(new Error('Invalid `to` field'), {
+        type: 'validation_error',
+        status: 422,
+      });
+      expect(resolveException(providerError)).toMatchObject({
+        status: 500,
+        code: 'INTERNAL',
+        log: 'error',
+      });
+    });
+
     it('treats a body parser failure on our side as INTERNAL', () => {
       const resolved = resolveException(
         bodyParserError('stream.not.readable', 500, 'stream is not readable'),
