@@ -107,3 +107,53 @@ export function IsRateLimitRule(): PropertyDecorator {
     },
   });
 }
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The Supabase project URL: an `https://` origin, or plain `http://` on a loopback host (the
+ * Supabase CLI's local stack). A service key never travels unencrypted to a remote host.
+ */
+export function isStorageOrigin(value: unknown): boolean {
+  if (typeof value !== 'string' || !isOrigin(value)) return false;
+  const url = new URL(value);
+  return url.protocol === 'https:' || LOOPBACK_HOSTS.has(url.hostname);
+}
+
+/** An `http(s)://` URL with an optional path, no query, no fragment and no trailing slash. */
+export function isBaseUrl(value: unknown): boolean {
+  if (typeof value !== 'string' || value.endsWith('/')) return false;
+  try {
+    const url = new URL(value);
+    return (
+      WEB_PROTOCOLS.has(url.protocol) &&
+      url.search === '' &&
+      url.hash === '' &&
+      `${url.origin}${url.pathname === '/' ? '' : url.pathname}` === value
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function IsStorageOrigin(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isStorageOrigin',
+    validator: {
+      validate: isStorageOrigin,
+      defaultMessage: () =>
+        'must be the project URL such as https://abcd.supabase.co (https, no path, no trailing slash)',
+    },
+  });
+}
+
+export function IsBaseUrl(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isBaseUrl',
+    validator: {
+      validate: isBaseUrl,
+      defaultMessage: () =>
+        'must be an http(s) URL such as http://localhost:3000/media (no trailing slash, no query)',
+    },
+  });
+}

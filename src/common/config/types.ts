@@ -1,7 +1,9 @@
 import type { RateLimitsConfig } from '../rate-limit/types';
-import type { LOG_LEVELS } from './enums';
+import type { LOG_LEVELS, STORAGE_DRIVERS } from './enums';
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export type StorageDriver = (typeof STORAGE_DRIVERS)[number];
 
 export interface DatabaseConfig {
   /** Postgres connection URL (Supabase: the session pooler, port 5432). */
@@ -24,6 +26,28 @@ export interface EncryptionConfig {
   readonly previousKey?: string;
 }
 
+/** Supabase Storage (design §9): a public-read bucket, written with the service role key. */
+export interface SupabaseStorageConfig {
+  readonly driver: 'supabase';
+  /** The project URL, an origin such as `https://abcd.supabase.co`. */
+  readonly supabaseUrl: string;
+  /** Server-side only; never logged, never sent to the browser. */
+  readonly serviceRoleKey: string;
+  readonly bucket: string;
+}
+
+/** A local directory the app serves read-only under `/media` (development and tests). */
+export interface LocalStorageConfig {
+  readonly driver: 'local';
+  /** Absolute path of the directory that holds the files. */
+  readonly directory: string;
+  /** Public URL of that directory, no trailing slash, for example `http://localhost:3000/media`. */
+  readonly publicBaseUrl: string;
+}
+
+/** Where uploaded images go (`STORAGE_DRIVER`). */
+export type StorageConfig = SupabaseStorageConfig | LocalStorageConfig;
+
 /** The validated environment, built once at boot by `loadConfig()`. */
 export interface AppConfig {
   readonly port: number;
@@ -34,6 +58,7 @@ export interface AppConfig {
   readonly auth: AuthConfig;
   readonly encryption: EncryptionConfig;
   readonly rateLimits: RateLimitsConfig;
+  readonly storage: StorageConfig;
 }
 
 /** How long a base64 secret must decode to: at least `minBytes`, or exactly `exactBytes`. */

@@ -25,6 +25,8 @@ const CONTRACT_CONFIG = loadConfig({
   JWT_SECRET_CUSTOMER: Buffer.alloc(32, 1).toString('base64'),
   JWT_SECRET_STAFF: Buffer.alloc(32, 2).toString('base64'),
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+  // The local driver writes nothing until an upload, and the document never uploads.
+  STORAGE_DRIVER: 'local',
 });
 
 /** `npm run contract`: writes `contracts/openapi.yaml` from the controllers and DTOs. */
