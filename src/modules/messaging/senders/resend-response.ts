@@ -53,7 +53,9 @@ export function outcomeOfResponse(
 
 /** A fetch that never got an answer: a timeout or a network problem, both worth retrying. */
 export function outcomeOfFetchError(error: unknown): SendOutcome {
-  const name = error instanceof Error ? error.name : undefined;
+  // AbortSignal.timeout() rejects with a DOMException, which is not always an `Error` instance.
+  const name =
+    typeof error === 'object' && error !== null && 'name' in error ? error.name : undefined;
   const timedOut = name === 'TimeoutError' || name === 'AbortError';
   return {
     kind: 'retry',
