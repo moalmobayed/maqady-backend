@@ -90,4 +90,16 @@ describe('TheaterSpecialDatesService (collaborators mocked)', () => {
       code: 'VALIDATION_FAILED',
     });
   });
+
+  it('refuses to move a past special date to a later date too', async () => {
+    stored = { ...stored, cinema_date: '2026-10-01' };
+    await expect(
+      service.update(ACTOR, 1, 4, { cinemaDate: '2026-10-25', label: 'Renamed' }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { fields: [{ field: 'cinemaDate', messages: [expect.any(String)] }] },
+    });
+    expect(hours.updateSpecialDate).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
 });

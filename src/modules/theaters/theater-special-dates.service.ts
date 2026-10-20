@@ -14,6 +14,8 @@ import { TheatersService } from './theaters.service';
 import type { SpecialDate, SpecialDateChanges, SpecialDateInput, SpecialDateRow } from './types';
 
 const PAST_DATE_MESSAGE = "cinemaDate must be today's cinema date or later";
+const PAST_SPECIAL_DATE_MESSAGE =
+  "a special date before today's cinema date can only be deleted, not changed";
 
 /**
  * Holiday hours (design §8, PRD A4 "Special dates"): a special date replaces a theater's weekly
@@ -81,8 +83,13 @@ export class TheaterSpecialDatesService {
         { closed: row.is_closed, opensMinute: row.opens_minute, closesMinute: row.closes_minute },
         changes,
       );
-      // A past special date changes nothing that matters any more, so it can only be deleted.
-      const problems = [...this.dateProblems(cinemaDate), ...merged.problems];
+      // A past special date changes nothing that matters any more, so it can only be deleted,
+      // and moving it to a later date counts as changing it.
+      const dateProblems =
+        this.dateProblems(row.cinema_date).length > 0
+          ? [{ field: 'cinemaDate', messages: [PAST_SPECIAL_DATE_MESSAGE] }]
+          : this.dateProblems(cinemaDate);
+      const problems = [...dateProblems, ...merged.problems];
       if (problems.length > 0) throw invalid(problems);
 
       const { hours } = merged;
