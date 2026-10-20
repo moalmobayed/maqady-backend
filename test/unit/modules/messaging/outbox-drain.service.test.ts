@@ -292,6 +292,27 @@ describe('OutboxDrainService.requestDrain', () => {
     expect(drainSpy.mock.calls).toEqual([['batch'], ['flush']]);
   });
 
+  it('never drops a request made while the running drain is finishing', async () => {
+    // A request can land in any microtask after the drain's last check for more work; each
+    // depth below puts one there. Every one must give one more run.
+    for (let depth = 0; depth < 8; depth += 1) {
+      const { service } = setup();
+      const empty = { claimed: 0, sent: 0, retried: 0, throttled: 0, failed: 0 };
+      const drainSpy = jest.spyOn(service, 'drain').mockImplementationOnce(() => {
+        let chain = Promise.resolve();
+        for (let step = 0; step < depth; step += 1) chain = chain.then(() => undefined);
+        void chain.then(() => service.requestDrain('batch'));
+        return Promise.resolve(empty);
+      });
+      drainSpy.mockResolvedValue(empty);
+
+      service.requestDrain('batch');
+      await new Promise((resolve) => setImmediate(resolve));
+      await service.whenIdle();
+      expect({ depth, runs: drainSpy.mock.calls.length }).toEqual({ depth, runs: 2 });
+    }
+  });
+
   it('logs a drain that throws and keeps accepting requests', async () => {
     const { service } = setup();
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);

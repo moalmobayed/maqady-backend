@@ -65,9 +65,7 @@ export class OutboxDrainService implements BeforeApplicationShutdown {
       this.pending = this.pending === 'flush' || mode === 'flush' ? 'flush' : 'batch';
       return;
     }
-    this.running = this.runLoop(mode).finally(() => {
-      this.running = undefined;
-    });
+    this.running = this.runLoop(mode);
   }
 
   /** Resolves once no drain is running or waiting to run. */
@@ -102,6 +100,11 @@ export class OutboxDrainService implements BeforeApplicationShutdown {
     return total;
   }
 
+  /**
+   * Runs drains until no request is pending. `running` is cleared in the same synchronous step
+   * as the last look at `pending`, so a request made at any moment either becomes `pending` and
+   * is run here, or finds nothing running and starts a new loop: none is dropped.
+   */
   private async runLoop(mode: DrainMode): Promise<void> {
     let next: DrainMode | undefined = mode;
     while (next) {
@@ -113,6 +116,7 @@ export class OutboxDrainService implements BeforeApplicationShutdown {
       }
       next = this.pending;
     }
+    this.running = undefined;
   }
 
   /** Sends one claimed batch in id order. True when a 429 stopped it. */
