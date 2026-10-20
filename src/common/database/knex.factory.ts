@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { type Knex, knex } from 'knex';
 import type { Client } from 'pg';
 import type { DatabaseConfig } from '../config/types';
@@ -23,6 +24,17 @@ export const SESSION_SETTINGS_SQL = [
   `SET TIME ZONE 'UTC'`,
 ].join('; ');
 
+/** Knex's own warnings (a failed connection attempt, for example) go to the JSON logs too. */
+const knexLogger = new Logger('Knex');
+
+export const KNEX_LOG: Knex.Logger = {
+  warn: (message: unknown) => knexLogger.warn(String(message)),
+  error: (message: unknown) => knexLogger.error(String(message)),
+  debug: (message: unknown) => knexLogger.debug(String(message)),
+  deprecate: (method: string, alternative: string) =>
+    knexLogger.warn(`${method} is deprecated; use ${alternative}`),
+};
+
 /** The one Knex instance's configuration (design §14.2). The `DatabaseModule` provides it. */
 export function buildKnexConfig(config: DatabaseConfig): Knex.Config {
   return {
@@ -46,6 +58,7 @@ export function buildKnexConfig(config: DatabaseConfig): Knex.Config {
     acquireConnectionTimeout: ACQUIRE_TIMEOUT_MS,
     // Query errors then quote the SQL with its placeholders, never the bound values.
     compileSqlOnError: false,
+    log: KNEX_LOG,
   };
 }
 
