@@ -16,9 +16,17 @@ export const API_TAGS = [
   { name: 'Health', description: 'Liveness and readiness' },
   {
     name: 'Admin: auth',
-    description: 'Staff sign-in, token refresh, sign-out and the signed-in member',
+    description:
+      'Staff sign-in, token refresh, sign-out, the signed-in member, "Forgot password" and the set-password page',
   },
-  { name: 'Admin: staff', description: 'Staff accounts: list, roles and status (admins only)' },
+  {
+    name: 'Admin: staff',
+    description: 'Staff accounts: list, invites, roles and status (admins only)',
+  },
+  {
+    name: 'Admin: messages',
+    description: 'The Message log: every email and SMS with its delivery status (admins only)',
+  },
 ] as const;
 
 /** Relative first, so Swagger UI's "Try it out" calls whichever host serves the docs. */

@@ -7,6 +7,7 @@ import { ADMIN_CREATE_LOCK_KEY } from './staff.constants';
 import type {
   NewStaffUserRow,
   StaffListFilter,
+  StaffPasswordUpdate,
   StaffPrincipalRow,
   StaffUserRow,
   StaffUserUpdate,
@@ -106,6 +107,16 @@ export class StaffRepository {
   }
 
   async update(id: number, changes: StaffUserUpdate): Promise<StaffUserRow> {
+    const [updated] = await this.staff()
+      .update(changes)
+      .where({ id })
+      .returning<StaffUserRow[]>(STAFF_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The staff member to update is gone.');
+    return updated;
+  }
+
+  /** Sets a member's password and status (a password setup, U2b); the row as it now is. */
+  async setPassword(id: number, changes: StaffPasswordUpdate): Promise<StaffUserRow> {
     const [updated] = await this.staff()
       .update(changes)
       .where({ id })
