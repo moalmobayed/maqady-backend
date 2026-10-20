@@ -21,6 +21,7 @@
     "contract": "nest build && node --enable-source-maps dist/cli/contract.js",
     "admin:create": "nest build && node --enable-source-maps dist/cli/admin-create.js",
     "media:orphans": "nest build && node --enable-source-maps dist/cli/media-orphans.js",
+    "seed": "nest build && node --enable-source-maps dist/cli/seed.js",
     "db:local": "bash scripts/db-local.sh"
   },
   "dependencies": {
@@ -63,6 +64,8 @@
     "@types/node": "22.20.4",
     "@types/pg": "8.23.1",
     "@types/supertest": "7.2.1",
+    "ajv": "8.18.0",
+    "ajv-formats": "3.0.1",
     "eslint": "10.12.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.12.0",
