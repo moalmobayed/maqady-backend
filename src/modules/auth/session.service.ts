@@ -26,8 +26,9 @@ import type {
  * the same service with their own lifetimes and account checks.
  *
  * - `open()` starts a family with its first refresh token. Only the token's SHA-256 is stored.
- * - `refresh()` rotates within the family. The previous token again within 30 seconds of its
- *   rotation is `REFRESH_CONFLICT` (nothing revoked); later it revokes the family
+ * - `refresh()` rotates within the family. The caller's account check runs first, so a
+ *   deactivated or blocked account gets its own code. The previous token again within 30 seconds
+ *   of its rotation is `REFRESH_CONFLICT` (nothing revoked); later it revokes the family
  *   (`SESSION_REVOKED`). It runs in its own transactions, so the revocation commits before the
  *   error is answered: call it from a `@NoRequestTransaction()` route.
  * - `revokeFamilyOf()` and `revokeAllFor()` end sessions; the guard checks the session on every
@@ -104,6 +105,9 @@ export class SessionService {
     const row = await this.sessions.findByTokenHashForUpdate(sha256Hex(input.refreshToken));
     const ownerId = row ? ownerIdOf(row, input.audience) : null;
     if (!row || ownerId === null) throw new AppError('UNAUTHENTICATED');
+    // The account first, as the per-request check does (design 10.3): a deactivated or blocked
+    // account had every session revoked with it, and its own code is the clearer answer.
+    await input.assertOwnerLive(ownerId);
 
     const now = this.clock.now();
     if (row.revoked_at !== null) throw new AppError('SESSION_REVOKED');
@@ -113,8 +117,6 @@ export class SessionService {
       if (now.getTime() < graceEnds.getTime()) throw new AppError('REFRESH_CONFLICT');
       return { kind: 'reused', familyId: row.family_id, sessionId: row.id };
     }
-
-    await input.assertOwnerLive(ownerId);
 
     const refreshToken = randomToken();
     const sessionId = await this.sessions.insert({

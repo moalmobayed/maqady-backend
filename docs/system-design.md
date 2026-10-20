@@ -729,6 +729,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - After 30 seconds, presenting an already-rotated token revokes the whole family
     (`SESSION_REVOKED`).
   - A token nobody issued answers `UNAUTHENTICATED`; the frontend signs in again on any 401.
+  - The account is checked before the session, as on every request (§10.3): a deactivated
+    staff member gets `ACCOUNT_DEACTIVATED` and a blocked customer `ACCOUNT_BLOCKED`, although
+    the deactivation or block also revoked the session (U2a).
 - **Revocation.**
   - Sign-out revokes the family.
   - Blocking a customer, or deactivating or demoting a staff member, revokes all their
@@ -783,7 +786,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - Email verification (24 hours), customer password reset (1 hour), staff invite (72 hours) and
   staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
   usable once.
-- Requesting a new token invalidates the previous one of the same purpose.
+- Requesting a new token invalidates the previous one of the same purpose. Issues for one
+  owner and purpose queue on an advisory lock, so two at once leave only the later one live
+  (U2a).
 - A token is checked by its hash only: anything that matches no live token of the right kind,
   malformed ones included, is `INVALID_TOKEN`, never `VALIDATION_FAILED`, so a mangled link reads
   like an expired one (U2b).

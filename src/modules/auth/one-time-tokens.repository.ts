@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
-import { OWNER_COLUMN } from './auth.constants';
+import { ONE_TIME_TOKEN_ISSUE_LOCK_PREFIX, OWNER_COLUMN } from './auth.constants';
 import type {
   ConsumedOneTimeTokenRow,
   LiveOneTimeTokenRow,
@@ -22,6 +22,18 @@ export class OneTimeTokensRepository {
       .returning<{ id: number }[]>('id');
     if (!inserted) throw new AppError('INTERNAL', 'The one-time token insert returned no id.');
     return inserted.id;
+  }
+
+  /**
+   * Serializes issuing tokens of one owner and purpose until the transaction ends. Without it, two
+   * concurrent issues each delete nothing they can see and both tokens stay live.
+   */
+  async lockIssue(owner: OneTimeTokenOwner, purpose: OneTimeTokenPurpose): Promise<void> {
+    await this.db
+      .executor()
+      .raw('SELECT pg_advisory_xact_lock(hashtext(?))', [
+        `${ONE_TIME_TOKEN_ISSUE_LOCK_PREFIX}:${owner.kind}:${owner.id}:${purpose}`,
+      ]);
   }
 
   /**

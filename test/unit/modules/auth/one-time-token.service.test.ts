@@ -13,6 +13,7 @@ describe('OneTimeTokenService', () => {
   beforeEach(() => {
     tokens = {
       insert: jest.fn().mockResolvedValue(5),
+      lockIssue: jest.fn().mockResolvedValue(undefined),
       deleteUnused: jest.fn().mockResolvedValue(1),
       consume: jest.fn().mockResolvedValue({ id: 5, staff_user_id: 3, customer_id: null }),
       findLive: jest.fn().mockResolvedValue({
@@ -28,7 +29,7 @@ describe('OneTimeTokenService', () => {
     service = new OneTimeTokenService(tokens, transactions, new TestClock(NOW));
   });
 
-  it('issues a hashed token after deleting the owner’s earlier unused ones of that purpose', async () => {
+  it('issues a hashed token after locking the owner and purpose and deleting the earlier unused ones', async () => {
     const issued = await service.issue({
       purpose: 'staff_invite',
       owner: { kind: 'staff', id: 3 },
@@ -40,6 +41,10 @@ describe('OneTimeTokenService', () => {
       token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       expiresAt: new Date('2026-10-23T10:00:00Z'),
     });
+    expect(tokens.lockIssue).toHaveBeenCalledWith({ kind: 'staff', id: 3 }, 'staff_invite');
+    expect(tokens.lockIssue.mock.invocationCallOrder[0]).toBeLessThan(
+      tokens.deleteUnused.mock.invocationCallOrder[0]!,
+    );
     expect(tokens.deleteUnused).toHaveBeenCalledWith({ kind: 'staff', id: 3 }, 'staff_invite');
     expect(tokens.deleteUnused.mock.invocationCallOrder[0]).toBeLessThan(
       tokens.insert.mock.invocationCallOrder[0]!,

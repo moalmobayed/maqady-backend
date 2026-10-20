@@ -29,7 +29,10 @@ export class OneTimeTokenService {
     private readonly clock: Clock,
   ) {}
 
-  /** A new token; the owner's earlier unused tokens of the same purpose stop working. */
+  /**
+   * A new token; the owner's earlier unused tokens of the same purpose stop working, also when two
+   * issues run at once (they queue on a lock per owner and purpose).
+   */
   async issue(input: IssueOneTimeTokenInput): Promise<IssuedOneTimeToken> {
     if (ONE_TIME_TOKEN_OWNER_KIND[input.purpose] !== input.owner.kind) {
       throw new AppError('INTERNAL', 'A one-time token purpose names the wrong kind of owner.');
@@ -38,6 +41,8 @@ export class OneTimeTokenService {
       const now = this.clock.now();
       const token = randomToken();
       const expiresAt = addToInstant(now, { seconds: input.lifetimeSeconds });
+      // Concurrent issues queue here, so the later one sees and deletes the earlier token.
+      await this.tokens.lockIssue(input.owner, input.purpose);
       await this.tokens.deleteUnused(input.owner, input.purpose);
       const id = await this.tokens.insert({
         purpose: input.purpose,
