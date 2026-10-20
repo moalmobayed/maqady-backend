@@ -11,6 +11,7 @@ import {
   AccessProbeModule,
   LOCKS_TABLE,
   ProbeState,
+  REAL_RESOLVERS_OFF,
   TestPrincipalResolvers,
   TestPrincipalResolversModule,
   WIDGETS_TABLE,
@@ -46,6 +47,7 @@ describe('WriteInterceptor: request transactions and idempotency (integration)',
     testApp = await createTestApp({
       clock,
       imports: [FoundationsProbeModule, AccessProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
     });
     await createFoundationsProbeTables(testApp.knex, TEST_SCHEMA);
     state = testApp.app.get(ProbeState);

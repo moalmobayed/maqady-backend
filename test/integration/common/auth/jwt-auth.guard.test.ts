@@ -5,6 +5,7 @@ import { AppError } from '../../../../src/common/errors/app-error';
 import { TestClock } from '../../../support/clock';
 import {
   AccessProbeModule,
+  REAL_RESOLVERS_OFF,
   TestPrincipalResolvers,
   TestPrincipalResolversModule,
 } from '../../../support/foundations-probe.module';
@@ -38,6 +39,7 @@ describe('Access guards (integration)', () => {
       clock,
       resetData: false,
       imports: [AccessProbeModule, TestPrincipalResolversModule],
+      overrides: REAL_RESOLVERS_OFF,
     });
     tokens = testApp.app.get(AccessTokenService);
     const resolvers = testApp.app.get(TestPrincipalResolvers);
@@ -189,7 +191,11 @@ describe('Access guards with no principal resolver registered (integration)', ()
   let testApp: TestApp;
 
   beforeAll(async () => {
-    testApp = await createTestApp({ resetData: false, imports: [AccessProbeModule] });
+    testApp = await createTestApp({
+      resetData: false,
+      imports: [AccessProbeModule],
+      overrides: REAL_RESOLVERS_OFF,
+    });
   });
 
   afterAll(async () => {

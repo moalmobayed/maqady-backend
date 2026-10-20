@@ -13,7 +13,8 @@ import type { TestApp, TestAppOptions } from './types';
 /**
  * Boots the real app (every module, the global pipe, filter, guards and interceptor,
  * `configureApp()`) against the test database, for supertest. Nothing is mocked; only the
- * `Clock` can be replaced, so a test can move time. Data is truncated on start and on `close()`.
+ * `Clock` can be replaced, so a test can move time, and `overrides` can switch a real provider
+ * off for the U1 suites that stand in their own (`REAL_RESOLVERS_OFF`). Data is truncated on start and on `close()`.
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const config = options.config ?? buildTestConfig();
@@ -29,6 +30,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     ],
   });
   if (options.clock) builder.overrideProvider(Clock).useValue(options.clock);
+  for (const override of options.overrides ?? []) {
+    builder.overrideProvider(override.provide).useValue(override.useValue);
+  }
   const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });

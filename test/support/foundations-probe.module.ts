@@ -34,7 +34,8 @@ import {
   Strict,
 } from '../../src/common/idempotency/idempotency.decorators';
 import { RateLimit } from '../../src/common/rate-limit/rate-limit.decorators';
-import type { ResolverEntry } from './types';
+import { StaffPrincipalResolver } from '../../src/modules/staff/staff-principal.resolver';
+import type { ProviderOverride, ResolverEntry } from './types';
 
 /**
  * Test-only routes under `/api/v1/test-foundations`, registered by the integration suites and
@@ -355,6 +356,15 @@ export class AccessProbeModule {}
 
 @Module({ providers: [TestPrincipalResolvers] })
 export class TestPrincipalResolversModule {}
+
+/**
+ * Switches the real principal resolvers off, so `TestPrincipalResolversModule` (or no resolver at
+ * all) stands in for them: the registry accepts one resolver per audience. Pass as
+ * `createTestApp({ overrides: REAL_RESOLVERS_OFF })`. U9 adds the customer resolver here.
+ */
+export const REAL_RESOLVERS_OFF: readonly ProviderOverride[] = [
+  { provide: StaffPrincipalResolver, useValue: {} },
+];
 
 export async function createFoundationsProbeTables(knex: Knex, schema: string): Promise<void> {
   await knex.raw(
