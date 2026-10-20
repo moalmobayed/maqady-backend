@@ -26,7 +26,8 @@ function cropFor(rule: KindRule, width: number, height: number): CropRegion | nu
   if (rule.aspect === null || rule.shape === 'keep') return { left: 0, top: 0, width, height };
   const [ratioWidth, ratioHeight] = rule.aspect;
   const target = ratioWidth / ratioHeight;
-  if (rule.shape === 'refuse' && Math.abs(width / height / target - 1) > ASPECT_TOLERANCE) {
+  // The epsilon keeps a ratio exactly 2 % off inside the tolerance despite floating point.
+  if (rule.shape === 'refuse' && Math.abs(width / height / target - 1) > ASPECT_TOLERANCE + 1e-9) {
     return null;
   }
   // The largest centred rectangle of the exact ratio that fits in the picture.
