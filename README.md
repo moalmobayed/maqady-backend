@@ -87,6 +87,17 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `npm run contract` | Writes `contracts/openapi.yaml` from the code, with no database and no listener |
 | `npm run db:local` | Starts a local PostgreSQL 16 cluster and creates `maqady_dev` and `maqady_test` |
 
+## Dependencies
+
+- Versions are pinned exactly (`.npmrc` sets `save-exact`), and `package-lock.json` is committed;
+  CI and the image install with `npm ci`.
+- NestJS stays on 11 (CommonJS) for now: NestJS 12 ships only as ES modules, which Jest loads
+  from CommonJS only on Node 24.9+, and the suite must also run on Node 22 (design D-23).
+- `overrides` moves `@nestjs/swagger`'s pinned `js-yaml` to 5.4.2, which fixes a YAML-parsing
+  advisory. Drop the override once the Swagger version in use depends on a fixed `js-yaml`.
+- `npm audit` reports a moderate advisory in `sprintf-js`, reached only through Jest's coverage
+  tooling (dev only, no fix upstream). `npm audit --omit=dev` is clean.
+
 ## Tests
 
 - **Unit** (`test/unit/`, mirroring `src/`): one unit at a time, collaborators mocked.
