@@ -80,6 +80,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `LOCAL_STORAGE_DIR`, `LOCAL_STORAGE_PUBLIC_URL` | for `local`, optional | The directory the files go to (default `.media`, created on the first upload) and its public URL (default `http://localhost:<PORT>/media`) |
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all twelve |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
+| `SEED_ADMIN_PASSWORD` | `npm run seed` only, optional | The seed admin's password (default `Maqady-seed-2026`, development only); it must meet the password policy |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
 ### Email and SMS
@@ -120,7 +121,35 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `npm run contract` | Writes `contracts/openapi.yaml` from the code, with no database and no listener |
 | `npm run admin:create` | Migrates, then creates the first active admin from `BOOTSTRAP_ADMIN_*` unless an active admin exists. Safe to repeat; never prints the email or password |
 | `npm run media:orphans` | Lists stored image files that no `images` row points to (older than an hour); `npm run media:orphans -- --delete` removes them. It only tidies up |
+| `npm run seed` | Fills a development database with Cairo and Giza theaters, people and movies through the real admin API (see "Development seed"). Refuses production. Safe to repeat |
 | `npm run db:local` | Starts a local PostgreSQL 16 cluster and creates `maqady_dev` and `maqady_test` |
+
+## Development seed
+
+`npm run seed` gives a local database something to show: the home page, the Movies and Theaters
+pages and the admin dashboard.
+
+- It refuses `NODE_ENV=production`, a `DATABASE_URL` that is not on this machine (localhost,
+  `127.0.0.1`, `::1`, a Unix socket or a Docker Compose service name), `STORAGE_DRIVER` other
+  than `local` and `EMAIL_DRIVER` other than `simulated`, so it never leaves an admin with a
+  known password on a hosted database, writes to real storage or sends email.
+- It boots the real app on `127.0.0.1` at a free port (migrating first), creates the seed admin
+  `seed-admin@maqady.local` through `StaffService` if missing, signs in through
+  `POST /api/v1/admin/auth/sessions` and drives the admin routes: validation, transactions,
+  idempotency, audit rows and the image pipeline all apply. Sign in to the dashboard with the
+  same account (password `SEED_ADMIN_PASSWORD`, default `Maqady-seed-2026`).
+- What it adds: 6 theaters (5 published, Dokki left a draft) with weekly hours, some past
+  midnight, a special date, prices, phones, facilities, a cover and gallery photos; 18 people with
+  photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the first is the
+  backdrop), two YouTube videos each and credits; 5 of them in the home carousel. Names, phones
+  and emails are invented; release dates are relative to the day you run it. Pictures are
+  generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
+  videos are Blender Foundation open movies on YouTube, so the embeds play.
+- It is idempotent: each step finds what exists by name or title and adds only what is missing,
+  and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
+- Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
+  active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
+  only with an active hall; showtimes go at the end, when that unit adds them.
 
 ## Dependencies
 
@@ -179,6 +208,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
   `test/support/halls-probe.module.ts` stands in for the hall rules showtimes and holds register
   (`HallLifecycleRegistry`).
+- `test/support/discovery.ts` reads the home-page draft as data: `schemaStructure()` compares a
+  generated schema with the draft's, and `draftValidator('HomeResponse')` validates a real
+  response against it (ajv).
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
 - `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`
@@ -248,6 +280,13 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   blockers, and layout participants (`beforeLock`, `blockingShowtimes` for `HALL_IN_USE`,
   `afterSave`). Seat maps reuse `HallLayoutResponse` (`HallLayout`, with
   `toHallLayoutResponse()`).
+- **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`): the public reads
+  (`GET /home`, `/genres`, `/movies`, `/movies/{id}`, `/movies/{id}/similar`, `/people`,
+  `/theaters`, `/theaters/{id}`) through the catalog and theater read services. The home ticker
+  and the cards' `hallCount` come from `HomeTickerSource` and `TheaterHallCountSource`, whose
+  defaults answer nothing until showtimes and halls exist; replace the provider in
+  `DiscoveryModule` to fill them. `DiscoveryResponseMapper` builds `MovieCard` and
+  `TheaterCard` for other public reads.
 
 ## Database and migrations
 
@@ -295,13 +334,14 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 ```
 src/
   main.ts, app.module.ts, app.setup.ts   boot, root module, HTTP settings
-  cli/                                   migrate, contract, admin:create and media:orphans
-                                         commands
+  cli/                                   migrate, contract, admin:create, media:orphans and
+                                         seed commands
   common/                                config, database, errors, logging, swagger, auth,
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
-                                         (credentials), staff, media, customers
+                                         (credentials), staff, media, theaters, catalog,
+                                         customers, discovery, seed (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)
