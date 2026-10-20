@@ -34,6 +34,17 @@ export class HallReadService {
   }
 
   /**
+   * These halls in any status, by id; unknown ids are absent. Three queries whatever their number
+   * (U7: the halls of a page of showtimes, for names and "from" prices).
+   */
+  async findByIds(ids: readonly number[]): Promise<ReadonlyMap<number, HallSummary>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const summaries = await this.summariesOf(await this.halls.findByIds(unique));
+    return new Map(summaries.map((summary) => [summary.id, summary]));
+  }
+
+  /**
    * Locks the hall `FOR SHARE` in the open transaction and returns it; null when there is none.
    * A layout save or a hall write (rename, status, delete) waits until that transaction ends, so
    * the layout and status read here stay true while it runs. Lock the showtime first and the
