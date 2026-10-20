@@ -76,10 +76,23 @@ export interface NewSessionRow {
   readonly expires_at: Date;
 }
 
-/** Which rows a revocation covers: one family, or every session of one owner. */
+/**
+ * Which rows a revocation covers: one family, or every session of one owner, optionally but one
+ * family (a password change keeps the device in use signed in, U9).
+ */
 export type SessionScope =
   | { readonly kind: 'family'; readonly familyId: string }
-  | { readonly kind: 'owner'; readonly owner: SessionOwner };
+  | {
+      readonly kind: 'owner';
+      readonly owner: SessionOwner;
+      readonly exceptFamilyId?: string;
+    };
+
+/** What `SessionService.revokeAllFor()` may also take. */
+export interface RevokeAllOptions {
+  /** Leaves the family of this session alone, for example the caller's own. */
+  readonly exceptSessionId?: number;
+}
 
 /** The account a one-time token belongs to. Staff purposes need a staff member, customer ones a customer. */
 export interface OneTimeTokenOwner {

@@ -82,8 +82,9 @@ export class SessionsRepository {
 
   private scoped(scope: SessionScope) {
     const query = this.db.executor()('sessions');
-    return scope.kind === 'family'
-      ? query.where({ family_id: scope.familyId })
-      : query.where(OWNER_COLUMN[scope.owner.audience], scope.owner.id);
+    if (scope.kind === 'family') return query.where({ family_id: scope.familyId });
+    query.where(OWNER_COLUMN[scope.owner.audience], scope.owner.id);
+    if (scope.exceptFamilyId !== undefined) query.whereNot({ family_id: scope.exceptFamilyId });
+    return query;
   }
 }

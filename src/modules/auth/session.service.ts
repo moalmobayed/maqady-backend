@@ -15,6 +15,7 @@ import type {
   RefreshedSession,
   RefreshOutcome,
   RefreshSessionInput,
+  RevokeAllOptions,
   SessionOwner,
   SessionRevokeReason,
   SessionRow,
@@ -94,9 +95,28 @@ export class SessionService {
     });
   }
 
-  /** Revokes every session of an account (deactivation, demotion, blocking, password change). */
-  async revokeAllFor(owner: SessionOwner, reason: SessionRevokeReason): Promise<number> {
-    return this.transactions.run(() => this.revokeScope({ kind: 'owner', owner }, reason));
+  /**
+   * Revokes every session of an account (deactivation, demotion, blocking, password change).
+   * With `exceptSessionId`, the family of that session stays live: a customer's password change
+   * keeps the device in use signed in and signs out every other one (U9).
+   */
+  async revokeAllFor(
+    owner: SessionOwner,
+    reason: SessionRevokeReason,
+    options: RevokeAllOptions = {},
+  ): Promise<number> {
+    return this.transactions.run(async () => {
+      const exceptFamilyId =
+        options.exceptSessionId === undefined
+          ? undefined
+          : await this.sessions.familyOf(options.exceptSessionId);
+      const scope: SessionScope = {
+        kind: 'owner',
+        owner,
+        ...(exceptFamilyId === undefined ? {} : { exceptFamilyId }),
+      };
+      return this.revokeScope(scope, reason);
+    });
   }
 
   private async rotate(input: RefreshSessionInput): Promise<RefreshOutcome> {
