@@ -35,12 +35,21 @@ const DESIGN_CATALOGUE: Record<string, number> = {
   SERVICE_UNAVAILABLE: 503,
 };
 
+/** The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`). */
+const UNIT_CODES: Record<string, number> = {
+  IMAGE_TOO_LARGE: 413,
+  UNSUPPORTED_IMAGE_TYPE: 415,
+  IMAGE_TOO_MANY_PIXELS: 422,
+  IMAGE_WRONG_SHAPE: 422,
+  STORAGE_UNAVAILABLE: 503,
+};
+
 describe('ERROR_CATALOGUE', () => {
-  it('holds every code of design §14.3 with its status, and nothing else yet', () => {
+  it('holds every code of design §14.3 and of the later units with its status, and nothing else', () => {
     const statuses = Object.fromEntries(
       Object.entries(ERROR_CATALOGUE).map(([code, { status }]) => [code, status]),
     );
-    expect(statuses).toEqual(DESIGN_CATALOGUE);
+    expect(statuses).toEqual({ ...DESIGN_CATALOGUE, ...UNIT_CODES });
   });
 
   it('gives every code a default message and a published description', () => {

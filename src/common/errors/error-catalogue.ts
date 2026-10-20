@@ -151,6 +151,19 @@ export const ERROR_CATALOGUE = {
     message: 'The request body is too large.',
     description: 'JSON bodies are limited to 1 MB.',
   },
+  IMAGE_TOO_LARGE: {
+    status: 413,
+    message: 'This image is larger than 10 MB.',
+    description:
+      'Uploaded photos are limited to 10 MB (`details.maxBytes`). Export a smaller JPG or PNG and upload it again.',
+  },
+  // --- 415 ---------------------------------------------------------------------------------
+  UNSUPPORTED_IMAGE_TYPE: {
+    status: 415,
+    message: 'Upload a JPG or PNG image.',
+    description:
+      'The file is not a readable JPG or PNG. The type is read from the file itself, never from its name or `Content-Type`, so a renamed or damaged file is refused too. `details.allowed` lists the accepted types.',
+  },
   // --- 422 ---------------------------------------------------------------------------------
   IDEMPOTENCY_KEY_REUSED: {
     status: 422,
@@ -168,6 +181,18 @@ export const ERROR_CATALOGUE = {
     status: 422,
     message: 'This time is outside the theater opening hours.',
     description: 'A showtime must start and end inside the opening hours of its cinema date.',
+  },
+  IMAGE_TOO_MANY_PIXELS: {
+    status: 422,
+    message: 'This image has more than 40 megapixels.',
+    description:
+      "Images are limited to 40 megapixels (`details.maxPixels`); `details.width` and `details.height` give the upload's size. Resize it and upload it again.",
+  },
+  IMAGE_WRONG_SHAPE: {
+    status: 422,
+    message: 'This image does not have the required shape or size.',
+    description:
+      "Posters must be 2:3 and at least 400 × 600; people photos square and at least 600 × 600; covers at least 1280 × 720 once cropped to 16:9; gallery photos at least 320 pixels on the shorter side. A 2:3 or square image may be up to 2 % off and is centre-cropped. `details` gives the `kind`, the required `aspect` (null when any shape is accepted), `minWidth`, `minHeight`, and the upload's `width` and `height` after its EXIF rotation.",
   },
   // --- 429 ---------------------------------------------------------------------------------
   RATE_LIMITED: {
@@ -187,5 +212,11 @@ export const ERROR_CATALOGUE = {
     message: 'The service is temporarily unavailable.',
     description:
       "The database can't be reached right now. Retry after a short wait; the free host may also be waking up.",
+  },
+  STORAGE_UNAVAILABLE: {
+    status: 503,
+    message: 'Image storage is temporarily unavailable.',
+    description:
+      "The image storage service can't be reached right now, so nothing was saved. Retry the upload after a short wait.",
   },
 } as const satisfies Record<string, ErrorDefinition>;
