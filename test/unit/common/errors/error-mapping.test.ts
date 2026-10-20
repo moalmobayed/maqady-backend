@@ -15,9 +15,42 @@ import {
   DEFAULT_RETRY_AFTER_SECONDS,
   resolveException,
   resolveRetryAfterSeconds,
+  toUnreadableBodyError,
 } from '../../../../src/common/errors/error-mapping';
 import { ERROR_CATALOGUE } from '../../../../src/common/errors/error-catalogue';
 import { bodyParserError, postgresError, socketError } from '../../../support/errors';
+
+describe('toUnreadableBodyError', () => {
+  it('turns malformed JSON into VALIDATION_FAILED with a fixed message, never the parser text', () => {
+    // body-parser raises a SyntaxError whose message quotes part of the body.
+    const parseError = Object.assign(new SyntaxError('Unexpected token \'s\', "{"name": secret"'), {
+      type: 'entity.parse.failed',
+      status: 400,
+    });
+    const mapped = toUnreadableBodyError(parseError);
+    expect(mapped).toBeInstanceOf(AppError);
+    expect(mapped).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: 'The request body could not be read.',
+      details: null,
+    });
+    expect(mapped).not.toBeInstanceOf(SyntaxError);
+  });
+
+  it('turns a body over the limit into PAYLOAD_TOO_LARGE', () => {
+    const mapped = toUnreadableBodyError(
+      bodyParserError('entity.too.large', 413, 'request entity too large'),
+    );
+    expect(mapped).toMatchObject({ code: 'PAYLOAD_TOO_LARGE', status: 413 });
+  });
+
+  it('passes through a parser failure on our side and anything that is not a body error', () => {
+    const ours = bodyParserError('stream.not.readable', 500, 'stream is not readable');
+    const other = new Error('boom');
+    expect(toUnreadableBodyError(ours)).toBe(ours);
+    expect(toUnreadableBodyError(other)).toBe(other);
+  });
+});
 
 describe('resolveException', () => {
   describe('AppError', () => {

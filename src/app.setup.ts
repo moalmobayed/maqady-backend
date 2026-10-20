@@ -1,4 +1,5 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import {
@@ -11,6 +12,7 @@ import {
   TRUSTED_PROXY_HOPS,
 } from './app.constants';
 import type { AppConfig } from './common/config/types';
+import { toUnreadableBodyError } from './common/errors/error-mapping';
 import { buildOpenApiDocument } from './common/swagger/openapi-document';
 import { setupSwagger } from './common/swagger/swagger.setup';
 
@@ -39,6 +41,10 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
     maxAge: CORS_MAX_AGE_SECONDS,
   });
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  // Maps parser failures to AppError before Nest's error handler rewrites them (design §14.3).
+  app.use((error: unknown, _req: Request, _res: Response, next: NextFunction) =>
+    next(toUnreadableBodyError(error)),
+  );
   app.setGlobalPrefix(API_PREFIX);
   setupSwagger(app, buildOpenApiDocument(app));
 }

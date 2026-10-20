@@ -104,6 +104,28 @@ describe('Error responses (integration)', () => {
       });
     });
 
+    it.each([
+      ['malformed JSON', '{"name": secret-fragment-42'],
+      ['a JSON value that is not an object or array', '"secret-fragment-42"'],
+    ])(
+      'answers %s with a fixed message, never the parser error or the body',
+      async (_case, body) => {
+        const response = await testApp
+          .http()
+          .post('/api/v1/test-probe/echo')
+          .set('Content-Type', 'application/json')
+          .send(body);
+        expect(response.status).toBe(400);
+        expectErrorShape(response);
+        expect(response.body.error).toMatchObject({
+          code: 'VALIDATION_FAILED',
+          message: 'The request body could not be read.',
+          details: null,
+        });
+        expect(JSON.stringify(response.body)).not.toContain('secret-fragment-42');
+      },
+    );
+
     it('never parses a form-encoded body: only JSON is accepted', async () => {
       const response = await testApp
         .http()

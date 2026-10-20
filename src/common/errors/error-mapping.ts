@@ -12,6 +12,9 @@ import type {
   ResolvedError,
 } from './types';
 
+/** The message for a body that could not be parsed. Fixed, so no parser text or body fragment leaks. */
+export const UNREADABLE_BODY_MESSAGE = 'The request body could not be read.';
+
 /** Used when a 429 carries no retry time of its own; matches the widest window (1 minute). */
 export const DEFAULT_RETRY_AFTER_SECONDS = 60;
 
@@ -67,9 +70,7 @@ export function resolveException(exception: unknown, request: RequestSummary = {
   if (isBodyParserError(exception)) {
     if (exception.type === 'entity.too.large') return fromCode('PAYLOAD_TOO_LARGE', 'none');
     if (exception.status < 500) {
-      return fromCode('VALIDATION_FAILED', 'none', {
-        message: 'The request body could not be read.',
-      });
+      return fromCode('VALIDATION_FAILED', 'none', { message: UNREADABLE_BODY_MESSAGE });
     }
   }
   if (isDatabaseUnavailableError(exception)) {
@@ -128,6 +129,19 @@ export function isBodyParserError(error: unknown): error is BodyParserError {
   return (
     typeof type === 'string' && BODY_PARSER_ERROR_TYPE.test(type) && typeof status === 'number'
   );
+}
+
+/**
+ * Turns a body-parser failure into the `AppError` it answers with, and passes anything else
+ * through. It runs as Express error middleware right after the JSON parser, because Nest would
+ * otherwise turn the parser's `SyntaxError` into a `BadRequestException` carrying the parser's
+ * message, which quotes part of the body.
+ */
+export function toUnreadableBodyError(error: unknown): unknown {
+  if (!isBodyParserError(error)) return error;
+  if (error.type === 'entity.too.large') return new AppError('PAYLOAD_TOO_LARGE');
+  if (error.status < 500) return new AppError('VALIDATION_FAILED', UNREADABLE_BODY_MESSAGE);
+  return error;
 }
 
 /**
