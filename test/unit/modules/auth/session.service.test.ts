@@ -132,7 +132,18 @@ describe('SessionService', () => {
       expect(sessions.insert).not.toHaveBeenCalled();
     });
 
-    it('answers SESSION_REVOKED for a revoked session, before any other check', async () => {
+    it("asks the owner's check first, so a deactivated or blocked account is the answer even for its revoked session", async () => {
+      sessions.findByTokenHashForUpdate.mockResolvedValue(
+        row({ revoked_at: NOW, rotated_at: new Date('2026-10-20T09:00:00Z') }),
+      );
+      assertOwnerLive.mockRejectedValue(new Error('ACCOUNT_DEACTIVATED stand-in'));
+      await expect(refresh()).rejects.toThrow('ACCOUNT_DEACTIVATED stand-in');
+      expect(assertOwnerLive).toHaveBeenCalledWith(3);
+      expect(sessions.revoke).not.toHaveBeenCalled();
+      expect(sessions.insert).not.toHaveBeenCalled();
+    });
+
+    it('answers SESSION_REVOKED for a revoked session of a live account, before the expiry', async () => {
       sessions.findByTokenHashForUpdate.mockResolvedValue(
         row({ revoked_at: NOW, expires_at: new Date('2026-10-19T00:00:00Z') }),
       );
@@ -190,7 +201,7 @@ describe('SessionService', () => {
         metadata: { audience: 'staff' },
       });
       expect(sessions.insert).not.toHaveBeenCalled();
-      expect(assertOwnerLive).not.toHaveBeenCalled();
+      expect(assertOwnerLive).toHaveBeenCalledWith(3);
     });
 
     it("lets the owner's check refuse before anything is written", async () => {

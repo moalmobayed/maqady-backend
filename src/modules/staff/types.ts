@@ -1,9 +1,12 @@
 import type { StaffRole } from '../../common/auth/types';
-import type { SETTABLE_STAFF_STATUSES, STAFF_STATUSES } from './enums';
+import type { PASSWORD_SETUP_PURPOSES, SETTABLE_STAFF_STATUSES, STAFF_STATUSES } from './enums';
 
 export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
 export type SettableStaffStatus = (typeof SETTABLE_STAFF_STATUSES)[number];
+
+/** What a set-password link was issued for. */
+export type PasswordSetupPurpose = (typeof PASSWORD_SETUP_PURPOSES)[number];
 
 /** A `staff_users` row as the repository reads it. */
 export interface StaffUserRow {
@@ -33,6 +36,13 @@ export interface NewStaffUserRow {
 export interface StaffUserUpdate {
   readonly role: StaffRole;
   readonly status: StaffStatus;
+  readonly updated_at: Date;
+}
+
+/** The columns a password setup changes. */
+export interface StaffPasswordUpdate {
+  readonly password_hash: string;
+  readonly status: 'active';
   readonly updated_at: Date;
 }
 
@@ -115,3 +125,35 @@ export type BootstrapAdminResult =
 export type BootstrapAdminParse =
   | { readonly ok: true; readonly input: BootstrapAdminInput }
   | { readonly ok: false; readonly problems: readonly string[] };
+
+/** `POST /admin/staff`: who to invite. */
+export interface InviteStaffInput {
+  readonly email: string;
+  readonly fullName: string;
+  readonly role: StaffRole;
+}
+
+/** A sent invite: whose, and when its link stops working. */
+export interface StaffInvitation {
+  readonly staffUserId: number;
+  readonly expiresAt: Date;
+}
+
+/** `POST /admin/auth/password-setups`: the emailed token and the new password. */
+export interface PasswordSetupInput {
+  readonly token: string;
+  readonly password: string;
+}
+
+/** The parameters of the `staff.invite` email. `token` is secret: never stored in the clear. */
+export interface StaffInviteParams {
+  readonly fullName: string;
+  readonly role: StaffRole;
+  readonly token: string;
+}
+
+/** The parameters of the `staff.password_reset` email. `token` is secret. */
+export interface StaffPasswordResetParams {
+  readonly fullName: string;
+  readonly token: string;
+}

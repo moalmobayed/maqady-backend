@@ -56,7 +56,7 @@ reuse unchanged. Later units get a test helper that hands them a real token of e
 | One `sessions` row per refresh token; `family_id UUID` groups a sign-in's chain; `sid` in the access token is the row id of the newest token | Rotation keeps history (`rotated_at`, `replaced_by_id`) and reuse detection needs the old row. Revoking sets `revoked_at` on every row of the family, so any access token of the family is refused at once. |
 | Session expiry is absolute: a rotated row inherits the family's `expires_at` (sign-in + 12 h for staff, + 30 days for U9's customers) | §10.2 says a refresh token "lasts" 12 hours / 30 days. Read literally, the lifetime belongs to the sign-in, not to each rotation, and a sliding window would let a stolen token live forever by refreshing every 15 minutes. A staff session is a shift; a customer signs in again monthly. One rule for both audiences, recorded in §10.2. |
 | `POST /admin/auth/tokens` is `@NoRequestTransaction()` + `@NoIdempotencyStorage()`; `SessionService.refresh()` opens its own transaction and throws `SESSION_REVOKED` only after the family revocation committed | Inside the request transaction the error would roll the revocation back, and reuse detection would never stick. Accepted deviation from §10.2/§14.1 ("auth routes run in the transaction"); both sections now say refresh routes are the exception. U9's `POST /auth/tokens` uses the same two decorators. |
-| Refresh order of checks: unknown (or the other audience's) → `UNAUTHENTICATED`; revoked → `SESSION_REVOKED`; expired → `SESSION_EXPIRED`; already rotated and `now < rotated_at + 30 s` → `REFRESH_CONFLICT` (no write); rotated later → revoke the family, `SESSION_REVOKED`; then the caller's account check | Expired or revoked families need no reuse handling; the grace window never revokes (§10.2). An unknown well-formed token is `UNAUTHENTICATED`, not `SESSION_REVOKED`: there is no session to call revoked, and the frontend sends the user to sign-in on any 401. |
+| Refresh order of checks: unknown (or the other audience's) → `UNAUTHENTICATED`; the caller's account check (staff: `ACCOUNT_DEACTIVATED` unless `active`); revoked → `SESSION_REVOKED`; expired → `SESSION_EXPIRED`; already rotated and `now < rotated_at + 30 s` → `REFRESH_CONFLICT` (no write); rotated later → revoke the family, `SESSION_REVOKED` | The account comes first, as in the resolver: a deactivation revokes every session with it, so with the account check last a deactivated member's refresh could only ever answer `SESSION_REVOKED`, never the `ACCOUNT_DEACTIVATED` the contract promises (review F1). Expired or revoked families need no reuse handling; the grace window never revokes (§10.2). An unknown well-formed token is `UNAUTHENTICATED`, not `SESSION_REVOKED`: there is no session to call revoked, and the frontend sends the user to sign-in on any 401. |
 | The presented row is read `FOR UPDATE` | Two concurrent refreshes of one token serialize: the second sees `rotated_at` and gets `REFRESH_CONFLICT`. |
 | Sign-in is `@NoIdempotencyStorage()` and runs in the request transaction; sign-out also `@NoIdempotencyStorage()` | §10.2: auth responses are never stored. Sign-out is naturally idempotent. |
 | Sign-in: unknown email, or an `invited` member without a password, still runs one scrypt against a fixed dummy hash and answers `INVALID_CREDENTIALS` | Timing and answer never reveal whether the email exists. |
@@ -72,11 +72,11 @@ reuse unchanged. Later units get a test helper that hands them a real token of e
 | The bootstrap admin's password is used as given; v1 forces no change on first sign-in | §10.1's "one-time" means the variable is used once, by the command. The admin changes it through "Forgot password" (U2b) when wanted; the README says to remove the variable after the run. A forced change needs a screen the PRD does not have. |
 | Password hash text: `scrypt$16384$8$5$<salt base64url>$<key base64url>`, 16-byte salt, 64-byte key | Self-describing, so the profile can change later without a migration. |
 | Password policy: 8–128 characters, at least one ASCII digit `[0-9]` | §10.1; the upper bound caps hashing work per request. |
-| One-time tokens: issuing deletes the owner's earlier **unused** tokens of the same purpose; consuming is one `UPDATE … WHERE used_at IS NULL AND expires_at > :now RETURNING` | "Invalidates the previous one" (§10.5) without a new column; single use is enforced by the database row. |
+| One-time tokens: issuing takes `pg_advisory_xact_lock(hashtext('maqady-backend:one-time-token:<kind>:<id>:<purpose>'))`, then deletes the owner's earlier **unused** tokens of the same purpose; consuming is one `UPDATE … WHERE used_at IS NULL AND expires_at > :now RETURNING` | "Invalidates the previous one" (§10.5) without a new column; single use is enforced by the database row. The lock makes two issues at once queue, so the later one sees and deletes the earlier token instead of both staying live (review F2). |
 | Refresh success is not audited; sign-in, sign-out, reuse detection and every staff change are | A refresh every 15 minutes would drown the Activity log. |
 | `messages.related_staff_user_id` FK is added by U2b, not here | U2a does not depend on U3 and may merge before `messages` exists. U3's draft says U2a; U2b (deps U2a, U3) owns it instead. |
 | `admin:create` boots the app context like `npm run migrate`, migrates, then takes `pg_advisory_xact_lock(hashtext('maqady-backend:admin-create'))` | Two concurrent runs create one admin. |
-| `admin:create` does nothing when any `staff_users` row has `role = 'admin'` | "Creates an active admin if none exists"; the last-admin rule keeps at least one active. |
+| `admin:create` does nothing when an active admin exists | "Creates an active admin if none exists"; the last-admin rule keeps at least one active. |
 | Times in responses are `formatCairoIso()` | §11 "ISO 8601 with offset", same as every unit. |
 | Token responses answer `201` | Both routes create a resource (a session, a token). |
 
@@ -103,12 +103,12 @@ are global).
 |---|---|
 | `enums.ts` | `SESSION_REVOKE_REASONS = ['sign_out','refresh_reuse','account_deactivated','role_changed','password_changed','account_blocked']`, `ONE_TIME_TOKEN_PURPOSES = ['verify_email','customer_password_reset','staff_invite','staff_password_reset']` |
 | `types.ts` | `SessionOwner`, `OpenSessionInput`, `IssuedSession`, `RefreshSessionInput`, `RefreshedSession`, `RefreshOutcome`, `SessionRow`, `NewSessionRow`, `SessionScope`, `SessionRevokeReason`, `OneTimeTokenPurpose`, `OneTimeTokenOwner`, `IssueOneTimeTokenInput`, `IssuedOneTimeToken`, `ConsumeOneTimeTokenInput`, `ConsumedOneTimeToken`, `NewOneTimeTokenRow`, `ConsumedOneTimeTokenRow`, `ScryptProfile`, `ParsedPasswordHash` |
-| `auth.constants.ts` | `SESSION_LIFETIME_SECONDS = { staff: 43_200, customer: 2_592_000 }`, `REFRESH_REUSE_GRACE_SECONDS = 30`, `ONE_TIME_TOKEN_LIFETIME_SECONDS = { verify_email: 86_400, customer_password_reset: 3_600, staff_invite: 259_200, staff_password_reset: 3_600 }`, `ONE_TIME_TOKEN_OWNER_KIND`, `SCRYPT_PROFILE = { N: 16_384, r: 8, p: 5, maxmem: 67_108_864, keyLength: 64, saltBytes: 16 }`, `PASSWORD_HASH_PATTERN`, `DUMMY_PASSWORD_HASH` (a fixed valid hash of a random value), `PASSWORD_MIN_LENGTH = 8`, `PASSWORD_MAX_LENGTH = 128`, `PASSWORD_POLICY_MESSAGE`, `OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/` (refresh and one-time tokens), `OWNER_COLUMN` |
+| `auth.constants.ts` | `SESSION_LIFETIME_SECONDS = { staff: 43_200, customer: 2_592_000 }`, `REFRESH_REUSE_GRACE_SECONDS = 30`, `ONE_TIME_TOKEN_LIFETIME_SECONDS = { verify_email: 86_400, customer_password_reset: 3_600, staff_invite: 259_200, staff_password_reset: 3_600 }`, `ONE_TIME_TOKEN_ISSUE_LOCK_PREFIX = 'maqady-backend:one-time-token'`, `ONE_TIME_TOKEN_OWNER_KIND`, `SCRYPT_PROFILE = { N: 16_384, r: 8, p: 5, maxmem: 67_108_864, keyLength: 64, saltBytes: 16 }`, `PASSWORD_HASH_PATTERN`, `DUMMY_PASSWORD_HASH` (a fixed valid hash of a random value), `PASSWORD_MIN_LENGTH = 8`, `PASSWORD_MAX_LENGTH = 128`, `PASSWORD_POLICY_MESSAGE`, `OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/` (refresh and one-time tokens), `OWNER_COLUMN` |
 | `password-policy.ts` | `isAllowedPassword(value)`, `@IsAllowedPassword()` (class-validator; message "password must be 8 to 128 characters and include a digit") |
 | `password.service.ts` | `PasswordService` |
 | `sessions.repository.ts` | `insert`, `findByTokenHashForUpdate`, `markRotated`, `familyOf`, `lockLiveHeads`, `revoke` |
 | `session.service.ts` | `SessionService` |
-| `one-time-tokens.repository.ts` | `deleteUnused`, `insert`, `consume` |
+| `one-time-tokens.repository.ts` | `lockIssue`, `deleteUnused`, `insert`, `consume` |
 | `one-time-token.service.ts` | `OneTimeTokenService` |
 | `dto/refresh-tokens.request.ts` | `RefreshTokensRequest` |
 | `dto/session-tokens.response.ts` | `SessionTokensResponse` |
@@ -120,7 +120,7 @@ are global).
 |---|---|
 | `enums.ts` | `STAFF_STATUSES = ['invited','active','deactivated']`, `SETTABLE_STAFF_STATUSES = ['active','deactivated']` (roles reuse `STAFF_ROLES` from `common/auth/enums.ts`) |
 | `types.ts` | `StaffStatus`, `SettableStaffStatus`, `StaffUserRow`, `NewStaffUserRow`, `StaffUserUpdate`, `StaffMember`, `StaffPrincipalRow`, `StaffListFilter`, `StaffMemberChanges`, `CreateActiveStaffInput`, `StaffSignInInput`, `StaffSignInResult`, `StaffTokens`, `BootstrapAdminInput`, `BootstrapAdminResult`, `BootstrapAdminParse` |
-| `staff.constants.ts` | `STAFF_FULL_NAME_MAX_LENGTH = 100`, `EMAIL_MAX_LENGTH = 320`, `SIGN_IN_PASSWORD_MAX_LENGTH = 128`, `ADMIN_CREATE_LOCK_KEY = 'maqady-backend:admin-create'`, `BOOTSTRAP_ADMIN_VARIABLES`, `EMAIL_SHAPE` |
+| `staff.constants.ts` | `STAFF_FULL_NAME_MAX_LENGTH = 100`, `EMAIL_MAX_LENGTH = 320`, `SIGN_IN_PASSWORD_MAX_LENGTH = 128`, `ADMIN_CREATE_LOCK_KEY = 'maqady-backend:admin-create'`, `BOOTSTRAP_ADMIN_VARIABLES` |
 | `staff-member.mapper.ts` | `toStaffMember(row)` (never the hash) |
 | `staff.repository.ts` | `findById`, `findByIdForUpdate`, `findByEmail`, `lockActiveAdmins`, `anyActiveAdminExists`, `list`, `count`, `insert` (`ON CONFLICT (email) DO NOTHING`), `update`, `recordSignIn`, `findPrincipalBySession`, `takeAdminCreateLock` |
 | `staff.service.ts` | `StaffService` |
@@ -271,10 +271,10 @@ stored parameters, `timingSafeEqual` the keys.
 6. `AccessTokenService.sign({ audience: 'staff', subjectId: id, sessionId })`.
 
 **Refresh** (`SessionService.refresh`, its own transaction; refuses with `INTERNAL` when a
-transaction is already open): the order in Decisions. On success insert the new row (same
-`family_id`, owner and `expires_at`, `created_at = now`), then mark the old row `rotated_at = now,
-replaced_by_id = new.id`, call `assertOwnerLive(ownerId)` (staff: `ACCOUNT_DEACTIVATED` unless
-`active`; a throw rolls the rotation back), and return. Reuse after the grace window ends that
+transaction is already open): the order in Decisions, with `assertOwnerLive(ownerId)` (staff:
+`ACCOUNT_DEACTIVATED` unless `active`) right after the row is found, before anything is written.
+On success insert the new row (same `family_id`, owner and `expires_at`, `created_at = now`),
+then mark the old row `rotated_at = now, replaced_by_id = new.id`, and return. Reuse after the grace window ends that
 transaction, then, in a second one, revokes the family with `refresh_reuse` and writes audit
 `session.reuse_detected` (actor system), commits, and throws `SESSION_REVOKED`. The second
 transaction locks the live heads first like every revocation, so concurrent replays and sign-outs

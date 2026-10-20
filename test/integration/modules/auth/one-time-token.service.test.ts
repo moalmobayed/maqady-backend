@@ -1,3 +1,4 @@
+import { TransactionRepository } from '../../../../src/common/database/transaction.repository';
 import { OneTimeTokenService } from '../../../../src/modules/auth/one-time-token.service';
 import { TestClock } from '../../../support/clock';
 import { createStaffMember } from '../../../support/staff-auth';
@@ -92,6 +93,50 @@ describe('OneTimeTokenService (integration)', () => {
     ).resolves.toMatchObject({
       id: reset.id,
     });
+  });
+
+  it('two links issued at the same moment leave only the later one live', async () => {
+    const transactions = testApp.app.get(TransactionRepository);
+    const input = {
+      purpose: 'staff_password_reset',
+      owner: owner(),
+      lifetimeSeconds: 3600,
+    } as const;
+    const unusedIds = () =>
+      testApp
+        .knex('one_time_tokens')
+        .pluck('id')
+        .where({ staff_user_id: staffUserId, purpose: 'staff_password_reset' })
+        .whereNull('used_at');
+
+    // The first issue's transaction stays open (its caller is still sending the email).
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let firstIssued = false;
+    const first = transactions.run(async () => {
+      const issued = await service.issue(input);
+      firstIssued = true;
+      await held;
+      return issued;
+    });
+    while (!firstIssued) await new Promise((resolve) => setTimeout(resolve, 10));
+
+    let secondSettled = false;
+    const second = service.issue(input).finally(() => (secondSettled = true));
+    // Either the second issue queues behind the first, or (the bug) it finishes beside it.
+    for (let attempt = 0; attempt < 250 && !secondSettled; attempt += 1) {
+      const { rows } = await testApp.knex.raw<{ rows: { waiting: number }[] }>(
+        `SELECT count(*)::int AS waiting FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      if ((rows[0]?.waiting ?? 0) >= 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    release();
+    await first;
+    const later = await second;
+
+    expect(await unusedIds()).toEqual([later.id]);
   });
 
   it('lets two concurrent uses of one token succeed exactly once', async () => {
