@@ -63,7 +63,8 @@ const PRICE_FIELDS = { front: 'priceFront', middle: 'priceMiddle', back: 'priceB
  * create, the move, prices and cancel of one showtime, the manage panel and the timeline.
  *
  * Writes join the request transaction and lock in the order of design §7.1: theater `FOR SHARE`,
- * movie `FOR SHARE`, the showtime `FOR UPDATE`, hall `FOR SHARE`. Each insert and each move runs
+ * movie `FOR SHARE`, the showtime `FOR UPDATE`, hall `FOR SHARE`, then the hall's scheduling
+ * advisory lock, so two creates or moves in one hall run one after the other. Each insert and each move runs
  * in its own savepoint, so a cleaning-gap violation (`23P01` on `ex_showtimes_hall_cleaning_gap`)
  * is caught, named by one follow-up query, and the transaction carries on. Every write records an
  * audit event with field names and scalars only.
@@ -118,6 +119,7 @@ export class ShowtimesService {
       const target = await this.scheduling.resolveForWrite(input.movieId, input.hallId);
       this.scheduling.assertSchedulable(target, input.prices !== undefined);
       const prices = input.prices ?? pricesOrFail(target.theater);
+      await this.showtimes.lockHallSchedule(target.hall.id);
       const now = this.clock.now();
       const checks = await this.scheduling.checkDates(target, input.dates, input.startTime, {
         now,
@@ -243,6 +245,7 @@ export class ShowtimesService {
           const hall = await this.halls.lockForShare(row.hall_id);
           if (!hall) throw new AppError('NOT_FOUND');
           this.scheduling.assertSchedulable({ movie: lockedMovie, hall, theater }, true);
+          await this.showtimes.lockHallSchedule(hall.id);
           if (startsAt.getTime() <= now.getTime()) throw startInPast();
           const span = showtimeSpan(startsAt, runtimeOf(lockedMovie));
           const cinemaDate = cinemaDateOf(startsAt);

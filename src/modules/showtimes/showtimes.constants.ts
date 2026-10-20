@@ -39,3 +39,10 @@ export const SHOWTIME_LIFECYCLE_KEYS = {
   showtimeCapacity: 'showtime_capacity',
   hallInUse: 'hall_in_use',
 } as const;
+
+/**
+ * Prefix of the advisory-lock name that queues the scheduling writes (creates and moves) of one
+ * hall, so concurrent ones see each other's committed rows instead of deadlocking inside the
+ * exclusion constraint's check. The constraint still decides every write.
+ */
+export const HALL_SCHEDULE_LOCK_PREFIX = 'showtimes.hall-schedule:';

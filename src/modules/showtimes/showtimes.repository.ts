@@ -3,6 +3,7 @@ import type { Knex } from 'knex';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
 import type { PageRequest } from '../../common/pagination/types';
+import { HALL_SCHEDULE_LOCK_PREFIX } from './showtimes.constants';
 import type {
   BusySlotRow,
   NewShowtimeRow,
@@ -49,6 +50,16 @@ const BY_START = [
 @Injectable()
 export class ShowtimesRepository {
   constructor(private readonly db: TransactionContext) {}
+
+  /**
+   * Queues this transaction behind any other scheduling write (create or move) of the hall,
+   * until it ends: a transaction-scoped advisory lock, taken after the hall row's `FOR SHARE`.
+   */
+  async lockHallSchedule(hallId: number): Promise<void> {
+    await this.db
+      .executor()
+      .raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`${HALL_SCHEDULE_LOCK_PREFIX}${hallId}`]);
+  }
 
   /** Inserts a showtime; a gap violation raises `23P01` on `ex_showtimes_hall_cleaning_gap`. */
   async insert(row: NewShowtimeRow): Promise<ShowtimeRow> {

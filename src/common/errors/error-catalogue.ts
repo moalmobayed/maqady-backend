@@ -122,7 +122,7 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This movie and hall cannot be scheduled.',
     description:
-      'Only a Now showing movie in an active hall can be scheduled, with prices (the request\'s, or the theater\'s defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.',
+      "Only a Now showing movie in an active hall can be scheduled, with prices (the request's, or the theater's defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.",
   },
   SHOWTIMES_NOT_CREATED: {
     status: 409,
@@ -253,7 +253,7 @@ export const ERROR_CATALOGUE = {
     status: 422,
     message: 'This time is outside the theater opening hours.',
     description:
-      'A showtime must start and end inside the opening hours of its cinema date (its cleaning may run past closing). `details.window` gives that date\'s `{ opensAt, closesAt }` in Cairo time with its offset, or null when the theater is closed or has no hours that date.',
+      "A showtime must start and end inside the opening hours of its cinema date (its cleaning may run past closing). `details.window` gives that date's `{ opensAt, closesAt }` in Cairo time with its offset, or null when the theater is closed or has no hours that date.",
   },
   IMAGE_TOO_MANY_PIXELS: {
     status: 422,
