@@ -293,6 +293,41 @@ describe('Admin theaters (integration)', () => {
       expect(await testApp.knex('theaters').count({ count: 'id' }).first()).toEqual({ count: 1 });
     });
 
+    it('counts text lengths as the database does, so a variation selector past the limit is VALIDATION_FAILED', async () => {
+      // class-validator's Length() does not count U+FE0F (emoji presentation), but Postgres
+      // length() and VARCHAR(n) do: 99 letters and "☺️" are 101 characters there.
+      const tooLong = (max: number) => `${'a'.repeat(max - 1)}☺️`;
+      for (const overrides of [
+        { name: tooLong(100) },
+        { address: tooLong(200) },
+        { transitInfo: tooLong(500) },
+      ]) {
+        const response = await testApp
+          .http()
+          .post(THEATERS)
+          .set('Authorization', admin.authorization)
+          .set('Idempotency-Key', randomUUID())
+          .send(theaterBody(overrides));
+        expectError(response, 400, 'VALIDATION_FAILED');
+        const { fields } = response.body.error.details as { fields: { field: string }[] };
+        expect(fields.map(({ field }) => field)).toEqual(Object.keys(overrides));
+      }
+      const id = await createTheater(testApp, admin.authorization);
+      expectError(await patch(id, { city: tooLong(80) }), 400, 'VALIDATION_FAILED');
+      const phones = await testApp
+        .http()
+        .put(`${THEATERS}/${id}/phones`)
+        .set('Authorization', admin.authorization)
+        .send({ phones: [{ label: tooLong(40), number: '+20227351100' }] });
+      expectError(phones, 400, 'VALIDATION_FAILED');
+
+      // At the limit, counted as the database counts, the text is stored as sent.
+      const atLimit = `${'a'.repeat(98)}☺️`;
+      const renamed = await patch(id, { name: atLimit });
+      expect(renamed.status).toBe(200);
+      expect(renamed.body.name).toBe(atLimit);
+    });
+
     it('answers NOT_FOUND for a missing theater and VALIDATION_FAILED for a bad id', async () => {
       expectError(
         await testApp.http().get(`${THEATERS}/999`).set('Authorization', admin.authorization),

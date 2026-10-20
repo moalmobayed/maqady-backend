@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDefined, IsInt, IsString, Length, Max, Min, ValidateIf } from 'class-validator';
+import { IsDefined, IsInt, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { MAX_GALLERY_PHOTOS, TEXT_LIMITS } from '../theaters.constants';
-import { Trim } from './validators';
+import { HasLength, Trim } from './validators';
 
 /** `PATCH /admin/theaters/{id}/photos/{photoId}`: the caption, the place in the gallery, or both. */
 export class UpdateTheaterPhotoRequest {
@@ -22,7 +22,7 @@ export class UpdateTheaterPhotoRequest {
   @IsDefined({ message: 'send caption, position or both' })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.photoCaption.min, TEXT_LIMITS.photoCaption.max)
+  @HasLength(TEXT_LIMITS.photoCaption.min, TEXT_LIMITS.photoCaption.max)
   caption?: string | null;
 
   @ApiPropertyOptional({

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsString, Length } from 'class-validator';
+import { IsBoolean, IsString } from 'class-validator';
 import { TEXT_LIMITS } from '../theaters.constants';
-import { IsCalendarDate, IsClosesTime, IsOpensTime, Trim } from './validators';
+import { HasLength, IsCalendarDate, IsClosesTime, IsOpensTime, Trim } from './validators';
 
 /** `POST /admin/theaters/{id}/special-dates`: holiday hours for one cinema date. */
 export class CreateSpecialDateRequest {
@@ -26,7 +26,7 @@ export class CreateSpecialDateRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.specialDateLabel.min, TEXT_LIMITS.specialDateLabel.max)
+  @HasLength(TEXT_LIMITS.specialDateLabel.min, TEXT_LIMITS.specialDateLabel.max)
   label!: string;
 
   @ApiProperty({

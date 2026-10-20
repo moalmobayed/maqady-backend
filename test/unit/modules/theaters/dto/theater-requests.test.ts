@@ -277,6 +277,21 @@ describe('theater request DTOs (the global ValidationPipe)', () => {
       ]);
     });
 
+    it('counts caption and label lengths as Postgres does, emoji selectors included', async () => {
+      // 119 letters and "☺️" are 121 characters for Postgres; class-validator's Length counts 120.
+      const caption = `${'a'.repeat(119)}☺️`;
+      expect(await refusedFields(TheaterPhotoFieldsRequest, { usage: 'gallery', caption })).toEqual(
+        ['caption'],
+      );
+      expect(await refusedFields(UpdateTheaterPhotoRequest, { caption })).toEqual(['caption']);
+      expect(
+        await refusedFields(UpdateSpecialDateRequest, { label: `${'a'.repeat(79)}☺️` }),
+      ).toEqual(['label']);
+      await expect(
+        validate(UpdateTheaterPhotoRequest, { caption: `${'a'.repeat(118)}☺️` }),
+      ).resolves.toBeDefined();
+    });
+
     it('changes a caption (null removes it) or a position, at least one', async () => {
       await expect(validate(UpdateTheaterPhotoRequest, { caption: null })).resolves.toBeDefined();
       await expect(validate(UpdateTheaterPhotoRequest, { position: 0 })).resolves.toBeDefined();

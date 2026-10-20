@@ -1,8 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsString, Length, Matches, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsString, Matches, ValidateNested } from 'class-validator';
 import { MAX_PHONES, PHONE_NUMBER_PATTERN, TEXT_LIMITS } from '../theaters.constants';
-import { Trim } from './validators';
+import { HasLength, Trim } from './validators';
 
 /** One labelled phone number. */
 export class PhoneRequest {
@@ -17,7 +17,7 @@ export class PhoneRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.phoneLabel.min, TEXT_LIMITS.phoneLabel.max)
+  @HasLength(TEXT_LIMITS.phoneLabel.min, TEXT_LIMITS.phoneLabel.max)
   label!: string;
 
   @ApiProperty({

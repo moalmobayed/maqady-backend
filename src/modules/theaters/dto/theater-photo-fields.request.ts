@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsString, Length, ValidateBy, ValidateIf } from 'class-validator';
+import { IsIn, IsString, ValidateBy, ValidateIf } from 'class-validator';
 import { PHOTO_USAGES } from '../enums';
 import { TEXT_LIMITS } from '../theaters.constants';
 import type { PhotoUsage } from '../types';
-import { Trim } from './validators';
+import { HasLength, Trim } from './validators';
 
 /** The text fields sent with the file of `POST /admin/theaters/{id}/photos`. */
 export class TheaterPhotoFieldsRequest {
@@ -38,6 +38,6 @@ export class TheaterPhotoFieldsRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.photoCaption.min, TEXT_LIMITS.photoCaption.max)
+  @HasLength(TEXT_LIMITS.photoCaption.min, TEXT_LIMITS.photoCaption.max)
   caption?: string;
 }

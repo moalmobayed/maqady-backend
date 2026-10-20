@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDefined, IsString, Length, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDefined, IsString, ValidateIf } from 'class-validator';
 import { TEXT_LIMITS } from '../theaters.constants';
-import { IsCalendarDate, IsClosesTime, IsOpensTime, Trim } from './validators';
+import { HasLength, IsCalendarDate, IsClosesTime, IsOpensTime, Trim } from './validators';
 
 const FIELDS = ['cinemaDate', 'label', 'closed', 'opens', 'closes'] as const;
 const sent = (_: object, value: unknown): boolean => value !== undefined;
@@ -37,7 +37,7 @@ export class UpdateSpecialDateRequest {
   @ValidateIf(sent)
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.specialDateLabel.min, TEXT_LIMITS.specialDateLabel.max)
+  @HasLength(TEXT_LIMITS.specialDateLabel.min, TEXT_LIMITS.specialDateLabel.max)
   label?: string;
 
   @ApiPropertyOptional({

@@ -5,13 +5,12 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Length,
   Matches,
   Max,
   Min,
 } from 'class-validator';
 import { COORDINATE_DECIMALS, STORED_EMAIL_PATTERN, TEXT_LIMITS } from '../theaters.constants';
-import { HasAtMostDecimals, Trim } from './validators';
+import { HasAtMostDecimals, HasLength, Trim } from './validators';
 
 /** `POST /admin/theaters`: a new theater, created as a draft (PRD A4 "New theater wizard"). */
 export class CreateTheaterRequest {
@@ -26,7 +25,7 @@ export class CreateTheaterRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.name.min, TEXT_LIMITS.name.max)
+  @HasLength(TEXT_LIMITS.name.min, TEXT_LIMITS.name.max)
   name!: string;
 
   @ApiProperty({
@@ -39,7 +38,7 @@ export class CreateTheaterRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.address.min, TEXT_LIMITS.address.max)
+  @HasLength(TEXT_LIMITS.address.min, TEXT_LIMITS.address.max)
   address!: string;
 
   @ApiProperty({
@@ -52,7 +51,7 @@ export class CreateTheaterRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.district.min, TEXT_LIMITS.district.max)
+  @HasLength(TEXT_LIMITS.district.min, TEXT_LIMITS.district.max)
   district!: string;
 
   @ApiProperty({
@@ -65,7 +64,7 @@ export class CreateTheaterRequest {
   })
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.city.min, TEXT_LIMITS.city.max)
+  @HasLength(TEXT_LIMITS.city.min, TEXT_LIMITS.city.max)
   city!: string;
 
   @ApiProperty({
@@ -107,7 +106,7 @@ export class CreateTheaterRequest {
   @IsOptional()
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.transitInfo.min, TEXT_LIMITS.transitInfo.max)
+  @HasLength(TEXT_LIMITS.transitInfo.min, TEXT_LIMITS.transitInfo.max)
   transitInfo?: string | null;
 
   @ApiPropertyOptional({
@@ -121,7 +120,7 @@ export class CreateTheaterRequest {
   @IsOptional()
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.parkingInfo.min, TEXT_LIMITS.parkingInfo.max)
+  @HasLength(TEXT_LIMITS.parkingInfo.min, TEXT_LIMITS.parkingInfo.max)
   parkingInfo?: string | null;
 
   @ApiPropertyOptional({
@@ -136,7 +135,7 @@ export class CreateTheaterRequest {
   @IsOptional()
   @Trim()
   @IsString()
-  @Length(TEXT_LIMITS.email.min, TEXT_LIMITS.email.max)
+  @HasLength(TEXT_LIMITS.email.min, TEXT_LIMITS.email.max)
   @IsEmail({}, { message: 'email must be an email address' })
   @Matches(STORED_EMAIL_PATTERN, { message: 'email must contain one @ and no spaces' })
   email?: string | null;

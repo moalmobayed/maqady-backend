@@ -115,7 +115,7 @@ imports `TheatersModule` after `MediaModule`.
 | `admin-theaters.controller.ts` | `@Controller('admin/theaters')`: list, create, get, patch, delete, the four `PUT`s |
 | `admin-theater-special-dates.controller.ts` | `@Controller('admin/theaters/:id/special-dates')` |
 | `admin-theater-photos.controller.ts` | `@Controller('admin/theaters/:id')`: `photos`, `photos/:photoId`, `cover` |
-| `dto/` | requests: `create-theater.request.ts`, `update-theater.request.ts`, `theater-list.query.ts`, `theater-id.params.ts` (`TheaterIdParams`, `SpecialDateParams`, `TheaterPhotoParams`), `replace-hours.request.ts` (`ReplaceHoursRequest`, `DayHoursRequest`), `replace-phones.request.ts` (`ReplacePhonesRequest`, `PhoneRequest`), `replace-facilities.request.ts`, `replace-prices.request.ts`, `create-special-date.request.ts`, `update-special-date.request.ts`, `theater-photo-fields.request.ts`, `update-theater-photo.request.ts`, `validators.ts` (`Trim`, `IsCalendarDate`, `IsOpensTime`, `IsClosesTime`); responses: `theater.response.ts`, `theater-list-item.response.ts`, `theater-page.response.ts`, `theater-phone.response.ts` (`Phone`), `open-state.response.ts` (`OpenState`), `day-hours.response.ts`, `special-date.response.ts`, `today-hours.response.ts`, `zone-prices.response.ts`, `theater-photo.response.ts` |
+| `dto/` | requests: `create-theater.request.ts`, `update-theater.request.ts`, `theater-list.query.ts`, `theater-id.params.ts` (`TheaterIdParams`, `SpecialDateParams`, `TheaterPhotoParams`), `replace-hours.request.ts` (`ReplaceHoursRequest`, `DayHoursRequest`), `replace-phones.request.ts` (`ReplacePhonesRequest`, `PhoneRequest`), `replace-facilities.request.ts`, `replace-prices.request.ts`, `create-special-date.request.ts`, `update-special-date.request.ts`, `theater-photo-fields.request.ts`, `update-theater-photo.request.ts`, `validators.ts` (`Trim`, `HasLength`, `HasAtMostDecimals`, `IsCalendarDate`, `IsOpensTime`, `IsClosesTime`); responses: `theater.response.ts`, `theater-list-item.response.ts`, `theater-page.response.ts`, `theater-phone.response.ts` (`Phone`), `open-state.response.ts` (`OpenState`), `day-hours.response.ts`, `special-date.response.ts`, `today-hours.response.ts`, `zone-prices.response.ts`, `theater-photo.response.ts` |
 | `theaters.module.ts` | the module |
 
 Shared code added: `src/common/money/dto/money-request.dto.ts` (`MoneyRequest`, U7 reuses it) and
@@ -356,8 +356,9 @@ A special date or photo that belongs to another theater is `NOT_FOUND`.
 - `UpdateTheaterPhotoRequest`: optional nullable `caption`, optional `position` (integer 0–19);
   at least one.
 
-Text fields are trimmed before their length is checked (`Trim()` in `dto/validators.ts`); the
-opening-time rules are the `IsOpensTime()` / `IsClosesTime()` decorators there, which call
+Text fields are trimmed before their length is checked (`Trim()` in `dto/validators.ts`), and
+their length is counted as Postgres counts it, one per code point (`HasLength()`: class-validator's
+`Length` skips the emoji presentation selectors U+FE0E and U+FE0F); the opening-time rules are the `IsOpensTime()` / `IsClosesTime()` decorators there, which call
 `opening-hours.ts`, so the DTOs and the service apply one rule.
 
 **Response DTOs**

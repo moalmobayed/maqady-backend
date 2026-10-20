@@ -41,6 +41,33 @@ export function HasAtMostDecimals(places: number): PropertyDecorator {
   });
 }
 
+/**
+ * A text of `min` to `max` characters, counted as Postgres counts them (`length()` and
+ * `VARCHAR(n)`: one per code point). class-validator's `Length` leaves out U+FE0E and U+FE0F
+ * (emoji presentation selectors), so a text it accepts at the limit could be refused by the
+ * database, which answered `500 INTERNAL`.
+ */
+export function HasLength(min: number, max: number): PropertyDecorator {
+  return ValidateBy({
+    name: 'hasLength',
+    constraints: [min, max],
+    validator: {
+      validate: (value: unknown) => {
+        if (typeof value !== 'string') return false;
+        const length = [...value].length;
+        return length >= min && length <= max;
+      },
+      defaultMessage: (args?: ValidationArguments) => {
+        const property = args?.property ?? 'value';
+        const value: unknown = args?.value;
+        return typeof value === 'string' && [...value].length < min
+          ? `${property} must be longer than or equal to ${min} characters`
+          : `${property} must be shorter than or equal to ${max} characters`;
+      },
+    },
+  });
+}
+
 /** A real calendar date written `YYYY-MM-DD`. */
 export function IsCalendarDate(): PropertyDecorator {
   return ValidateBy({
