@@ -19,6 +19,15 @@ export const API_TAGS = [
     description: 'Staff sign-in, token refresh, sign-out and the signed-in member',
   },
   { name: 'Admin: staff', description: 'Staff accounts: list, roles and status (admins only)' },
+  {
+    name: 'Admin: movies',
+    description:
+      'Movies: details, genres, poster, photos, YouTube videos, cast and crew, publishing and the home carousel (admins only)',
+  },
+  {
+    name: 'Admin: people',
+    description: 'Actors and crew, their photos and filmographies (admins only)',
+  },
 ] as const;
 
 /** Relative first, so Swagger UI's "Try it out" calls whichever host serves the docs. */
