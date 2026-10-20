@@ -292,7 +292,10 @@ describe('loadConfig', () => {
         SUPABASE_SERVICE_ROLE_KEY: 'secret value',
       });
       expect(problems.join('\n')).not.toContain('secret value');
-      expect(problems).toHaveLength(2);
+      expect(problems).toEqual([
+        expect.stringMatching(/^SUPABASE_URL must be the project URL/),
+        'SUPABASE_SERVICE_ROLE_KEY must be the service role key from the Supabase dashboard (at least 20 characters, no spaces)',
+      ]);
     });
   });
 });

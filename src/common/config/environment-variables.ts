@@ -137,8 +137,10 @@ export class EnvironmentVariables {
 
   @ValidateIf(usesSupabaseStorage)
   @IsDefined({ message: 'is required when STORAGE_DRIVER is supabase' })
-  @MinLength(20, { message: 'must be the service role key from the Supabase dashboard' })
-  @Matches(/^\S+$/, { message: 'must be the service role key from the Supabase dashboard' })
+  @Matches(/^\S{20,}$/, {
+    message:
+      'must be the service role key from the Supabase dashboard (at least 20 characters, no spaces)',
+  })
   SUPABASE_SERVICE_ROLE_KEY?: string;
 
   @IsOptional()
