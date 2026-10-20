@@ -1,7 +1,7 @@
 ---
 title: U2a — Staff access core - staff users, sessions, sign-in, refresh, roles
 owner: Mohamed Tarek
-status: Draft
+status: Implemented
 last_verified: 2026-10-20
 tags: [staff, auth, sessions, refresh-tokens, passwords, one-time-tokens, rbac, last-admin]
 ---
@@ -75,7 +75,7 @@ reuse unchanged. Later units get a test helper that hands them a real token of e
 | One-time tokens: issuing deletes the owner's earlier **unused** tokens of the same purpose; consuming is one `UPDATE … WHERE used_at IS NULL AND expires_at > :now RETURNING` | "Invalidates the previous one" (§10.5) without a new column; single use is enforced by the database row. |
 | Refresh success is not audited; sign-in, sign-out, reuse detection and every staff change are | A refresh every 15 minutes would drown the Activity log. |
 | `messages.related_staff_user_id` FK is added by U2b, not here | U2a does not depend on U3 and may merge before `messages` exists. U3's draft says U2a; U2b (deps U2a, U3) owns it instead. |
-| `admin:create` boots the app context like `npm run migrate`, migrates, then takes `pg_advisory_xact_lock(hashtext('maqady:admin-create'))` | Two concurrent runs create one admin. |
+| `admin:create` boots the app context like `npm run migrate`, migrates, then takes `pg_advisory_xact_lock(hashtext('maqady-backend:admin-create'))` | Two concurrent runs create one admin. |
 | `admin:create` does nothing when any `staff_users` row has `role = 'admin'` | "Creates an active admin if none exists"; the last-admin rule keeps at least one active. |
 | Times in responses are `formatCairoIso()` | §11 "ISO 8601 with offset", same as every unit. |
 | Token responses answer `201` | Both routes create a resource (a session, a token). |
@@ -102,9 +102,9 @@ are global).
 | File | Holds |
 |---|---|
 | `enums.ts` | `SESSION_REVOKE_REASONS = ['sign_out','refresh_reuse','account_deactivated','role_changed','password_changed','account_blocked']`, `ONE_TIME_TOKEN_PURPOSES = ['verify_email','customer_password_reset','staff_invite','staff_password_reset']` |
-| `types.ts` | `SessionOwner`, `OpenSessionInput`, `IssuedSession`, `RefreshSessionInput`, `RefreshedSession`, `SessionRow`, `NewSessionRow`, `SessionRevokeReason`, `OneTimeTokenPurpose`, `OneTimeTokenOwner`, `IssueOneTimeTokenInput`, `IssuedOneTimeToken`, `ConsumedOneTimeToken`, `OneTimeTokenRow`, `ScryptParams` |
-| `auth.constants.ts` | `SESSION_LIFETIME_SECONDS = { staff: 43_200, customer: 2_592_000 }`, `REFRESH_REUSE_GRACE_SECONDS = 30`, `ONE_TIME_TOKEN_LIFETIME_SECONDS = { verify_email: 86_400, customer_password_reset: 3_600, staff_invite: 259_200, staff_password_reset: 3_600 }`, `SCRYPT_PARAMS = { N: 16_384, r: 8, p: 5, maxmem: 67_108_864, keyLength: 64, saltBytes: 16 }`, `REFRESH_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/` |
-| `password-policy.ts` | `PASSWORD_MIN_LENGTH = 8`, `PASSWORD_MAX_LENGTH = 128`, `isAllowedPassword(value)`, `@IsAllowedPassword()` (class-validator; message "password must be 8 to 128 characters and include a digit") |
+| `types.ts` | `SessionOwner`, `OpenSessionInput`, `IssuedSession`, `RefreshSessionInput`, `RefreshedSession`, `RefreshOutcome`, `SessionRow`, `NewSessionRow`, `SessionScope`, `SessionRevokeReason`, `OneTimeTokenPurpose`, `OneTimeTokenOwner`, `IssueOneTimeTokenInput`, `IssuedOneTimeToken`, `ConsumeOneTimeTokenInput`, `ConsumedOneTimeToken`, `NewOneTimeTokenRow`, `ConsumedOneTimeTokenRow`, `ScryptProfile`, `ParsedPasswordHash` |
+| `auth.constants.ts` | `SESSION_LIFETIME_SECONDS = { staff: 43_200, customer: 2_592_000 }`, `REFRESH_REUSE_GRACE_SECONDS = 30`, `ONE_TIME_TOKEN_LIFETIME_SECONDS = { verify_email: 86_400, customer_password_reset: 3_600, staff_invite: 259_200, staff_password_reset: 3_600 }`, `ONE_TIME_TOKEN_OWNER_KIND`, `SCRYPT_PROFILE = { N: 16_384, r: 8, p: 5, maxmem: 67_108_864, keyLength: 64, saltBytes: 16 }`, `PASSWORD_HASH_PATTERN`, `DUMMY_PASSWORD_HASH` (a fixed valid hash of a random value), `PASSWORD_MIN_LENGTH = 8`, `PASSWORD_MAX_LENGTH = 128`, `PASSWORD_POLICY_MESSAGE`, `OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/` (refresh and one-time tokens), `OWNER_COLUMN` |
+| `password-policy.ts` | `isAllowedPassword(value)`, `@IsAllowedPassword()` (class-validator; message "password must be 8 to 128 characters and include a digit") |
 | `password.service.ts` | `PasswordService` |
 | `sessions.repository.ts` | `insert`, `findByTokenHashForUpdate`, `markRotated`, `familyOf`, `lockLiveHeads`, `revoke` |
 | `session.service.ts` | `SessionService` |
@@ -114,14 +114,15 @@ are global).
 | `dto/session-tokens.response.ts` | `SessionTokensResponse` |
 | `credentials.module.ts` | the module |
 
-**`src/modules/staff/`** — `StaffModule`, imports `CredentialsModule`; exports `StaffService`.
+**`src/modules/staff/`** — `StaffModule`, imports `CredentialsModule`; exports `StaffService` and `StaffBootstrapService` (for the command).
 
 | File | Holds |
 |---|---|
 | `enums.ts` | `STAFF_STATUSES = ['invited','active','deactivated']`, `SETTABLE_STAFF_STATUSES = ['active','deactivated']` (roles reuse `STAFF_ROLES` from `common/auth/enums.ts`) |
-| `types.ts` | `StaffStatus`, `StaffUserRow`, `StaffMember`, `StaffPrincipalRow`, `StaffListFilter`, `StaffMemberChanges`, `CreateActiveStaffInput`, `StaffSignInInput`, `StaffSignInResult`, `StaffTokens`, `BootstrapAdminInput`, `BootstrapAdminResult` |
-| `staff.constants.ts` | `DUMMY_PASSWORD_HASH` (a fixed valid hash of a random value), `ADMIN_CREATE_LOCK_KEY = 'maqady:admin-create'`, `STAFF_FULL_NAME_MAX_LENGTH = 100` |
-| `staff.repository.ts` | `findById`, `findByIdForUpdate`, `findByEmail`, `lockActiveAdmins`, `list`, `count`, `insert`, `update`, `recordSignIn`, `findPrincipalBySession`, `anyAdminExists`, `takeAdminCreateLock` |
+| `types.ts` | `StaffStatus`, `SettableStaffStatus`, `StaffUserRow`, `NewStaffUserRow`, `StaffUserUpdate`, `StaffMember`, `StaffPrincipalRow`, `StaffListFilter`, `StaffMemberChanges`, `CreateActiveStaffInput`, `StaffSignInInput`, `StaffSignInResult`, `StaffTokens`, `BootstrapAdminInput`, `BootstrapAdminResult`, `BootstrapAdminParse` |
+| `staff.constants.ts` | `STAFF_FULL_NAME_MAX_LENGTH = 100`, `EMAIL_MAX_LENGTH = 320`, `SIGN_IN_PASSWORD_MAX_LENGTH = 128`, `ADMIN_CREATE_LOCK_KEY = 'maqady-backend:admin-create'`, `BOOTSTRAP_ADMIN_VARIABLES`, `EMAIL_SHAPE` |
+| `staff-member.mapper.ts` | `toStaffMember(row)` (never the hash) |
+| `staff.repository.ts` | `findById`, `findByIdForUpdate`, `findByEmail`, `lockActiveAdmins`, `anyActiveAdminExists`, `list`, `count`, `insert` (`ON CONFLICT (email) DO NOTHING`), `update`, `recordSignIn`, `findPrincipalBySession`, `takeAdminCreateLock` |
 | `staff.service.ts` | `StaffService` |
 | `staff-auth.service.ts` | `StaffAuthService` |
 | `staff-principal.resolver.ts` | `StaffPrincipalResolver` (`OnModuleInit` → `registry.register('staff', this)`) |
@@ -130,7 +131,7 @@ are global).
 | `staff-auth.controller.ts` | `@Controller('admin/auth')` |
 | `staff-me.controller.ts` | `@Controller('admin/me')` |
 | `staff.controller.ts` | `@Controller('admin/staff')` |
-| `dto/staff-sign-in.request.ts`, `dto/staff-list.query.ts`, `dto/update-staff-member.request.ts` | request DTOs |
+| `dto/staff-sign-in.request.ts`, `dto/staff-list.query.ts`, `dto/staff-member.params.ts`, `dto/update-staff-member.request.ts` | request DTOs |
 | `dto/staff-profile.response.ts`, `dto/staff-member.response.ts`, `dto/staff-session.response.ts`, `dto/staff-member-page.response.ts` | response DTOs |
 | `staff.module.ts` | the module |
 
@@ -292,9 +293,10 @@ deactivated member without a password → `invited`; update with `updated_at = n
 **`admin:create`**: `parseBootstrapAdminEnv(env)` validates `BOOTSTRAP_ADMIN_EMAIL` (email, ≤ 320),
 `BOOTSTRAP_ADMIN_NAME` (1–100 after trim), `BOOTSTRAP_ADMIN_PASSWORD` (`isAllowedPassword`); a
 failure names only the variable and the rule, never a value. `runAdminCreate` migrates, then
-`StaffBootstrapService.ensureFirstAdmin(input)` (lock, `anyAdminExists` → `{ created: false }`;
-email taken by a non-admin → `EMAIL_TAKEN`; else insert `role = admin, status = active`, audit
-`staff_user.created`). Output: `Created admin #<id>.` or `An admin already exists. Nothing
+`StaffBootstrapService.ensureFirstAdmin(input)` (lock, `anyActiveAdminExists` → `{ created: false }`;
+email taken by anyone → `EMAIL_TAKEN`; else insert `role = admin, status = active`, audit
+`staff_user.created`). Output: `Created admin #<id>. Sign in at /admin/login, then remove
+BOOTSTRAP_ADMIN_PASSWORD from the environment.` or `An active admin already exists. Nothing
 changed.`; exit 0 for both, 1 on failure with a JSON `fatal` line through `serializeError`. Neither
 the email nor the password is printed or logged.
 
@@ -306,7 +308,7 @@ the email nor the password is printed or logged.
 | `session.revoked` | staff (self) | `session`, `sid` | `{ reason: 'sign_out' }` |
 | `session.reuse_detected` | system | `session`, presented id | `{ audience }` |
 | `staff_user.updated` | staff (admin) | `staff_user`, id | changed `role`/`status`; `{ role, status }` (new values) |
-| `staff_user.created` | system | `staff_user`, id | `{ role: 'admin', source: 'bootstrap' }` |
+| `staff_user.created` | system | `staff_user`, id | `{ role, status }` (bootstrap admin, test fixtures) |
 
 ## Endpoints
 
@@ -320,7 +322,7 @@ errors automatically). No new error codes.
 | `POST /admin/auth/tokens` | `@Public()` | `@NoRequestTransaction()`, `@NoIdempotencyStorage()` | `RefreshTokensRequest` | `201 SessionTokensResponse` | `VALIDATION_FAILED`, `UNAUTHENTICATED`, `SESSION_EXPIRED`, `SESSION_REVOKED`, `REFRESH_CONFLICT`, `ACCOUNT_DEACTIVATED` |
 | `DELETE /admin/auth/sessions/current` | `@Staff()` | `@NoIdempotencyStorage()` | — | `204` | access errors |
 | `GET /admin/me` | `@Staff()` | — | — | `200 StaffProfileResponse` | access errors |
-| `GET /admin/staff` | `@Admin()` | — | `StaffListQuery` | `200 StaffMemberPage` | `VALIDATION_FAILED` |
+| `GET /admin/staff` | `@Admin()` | — | `StaffListQuery` | `200 StaffMemberResponsePage` | `VALIDATION_FAILED` |
 | `PATCH /admin/staff/{id}` | `@Admin()` | optional key, stored (not strict) | `UpdateStaffMemberRequest` | `200 StaffMemberResponse` | `VALIDATION_FAILED`, `NOT_FOUND`, `LAST_ADMIN` |
 
 **DTOs**
@@ -328,7 +330,7 @@ errors automatically). No new error codes.
 - `StaffSignInRequest`: `email` (`IsEmail`, max 320), `password` (string, 1–128; the policy is not
   applied at sign-in).
 - `RefreshTokensRequest` (auth module, reused by U9): `refreshToken` (matches
-  `REFRESH_TOKEN_PATTERN`).
+  `OPAQUE_TOKEN_PATTERN`).
 - `SessionTokensResponse` (auth module, reused by U9): `accessToken`, `accessTokenExpiresAt`,
   `refreshToken`, `refreshTokenExpiresAt` (ISO with offset).
 - `StaffSessionResponse`: `SessionTokensResponse` fields plus `staff: StaffProfileResponse`.
@@ -337,7 +339,7 @@ errors automatically). No new error codes.
   `deactivated`). Order `full_name, id`; cursor sort key `full_name`; `total` with the same filters.
 - `StaffMemberResponse`: `id`, `fullName`, `email`, `role`, `status`, `lastSignInAt` (nullable),
   `createdAt`.
-- `StaffMemberPage` = `PageResponseOf(StaffMemberResponse)`.
+- `StaffMemberResponsePage` = `PageResponseOf(StaffMemberResponse)`.
 - `UpdateStaffMemberRequest`: optional `role` (`IsIn(STAFF_ROLES)`), optional `status`
   (`IsIn(SETTABLE_STAFF_STATUSES)`); at least one present, else `VALIDATION_FAILED`. `id` path param
   `ParseIntPipe`-equivalent positive integer, else `VALIDATION_FAILED`.
@@ -363,7 +365,7 @@ class SessionService {
     refreshToken: string;
     assertOwnerLive(ownerId: number): Promise<void>;
   }): Promise<RefreshedSession>; // { sessionId; ownerId; refreshToken; expiresAt }; own transaction
-  revokeFamilyOf(sessionId: number, reason: SessionRevokeReason): Promise<void>;
+  revokeFamilyOf(sessionId: number, reason: SessionRevokeReason): Promise<number>;
   revokeAllFor(owner: SessionOwner, reason: SessionRevokeReason): Promise<number>;
 }
 
@@ -423,24 +425,34 @@ and `.isActive()`, `AccessTokenService.sign()`, `ACCESS_TOKEN_TTL_SECONDS`,
 - `test/integration/common/swagger/openapi-document.test.ts`: the paths list now holds the admin
   routes, and the per-operation checks iterate every method, not only `get`.
 - `src/common/swagger/swagger.constants.ts`: the `Admin: auth` and `Admin: staff` tags.
-- `test/support/database.ts` unchanged (`TRUNCATE … CASCADE` covers the new tables).
+- `src/common/swagger/cross-cutting-docs.ts`: staff and admin routes also document
+  `SESSION_EXPIRED`, which the staff resolver answers once a session is past its 12 hours
+  (guest and customer routes are left to U9).
+- `test/support/database.ts`: `resetDatabase` unchanged (`TRUNCATE … CASCADE` covers the new
+  tables); `waitForLockWaiters` added.
+- Long suites set `jest.setTimeout(60_000)`: the project-level `testTimeout` in
+  `jest.config.js` is not applied by Jest (follow-up).
 
 ## Test support for later units
 
 `test/support/staff-auth.ts`:
 
 ```ts
-createStaffMember(app: TestApp, input: { role: StaffRole; email?: string; fullName?: string;
-  password?: string }): Promise<{ id: number; email: string; password: string }>;
-// StaffService.createActiveMember in TransactionRepository.run; unique default email
-// `staff-<role>-<n>@test.maqady.local`, default password `Passw0rd-<n>`
-signInStaff(app: TestApp, email: string, password: string): Promise<StaffTokens>;
-// StaffAuthService.signIn in TransactionRepository.run (no HTTP, so no rate limit)
-staffToken(app: TestApp, role: StaffRole): Promise<{ staffUserId: number; accessToken: string;
-  refreshToken: string; authorization: string /* 'Bearer …' */ }>;
+createStaffMember(testApp: TestApp, fixture: { role: StaffRole; email?: string; fullName?: string;
+  password?: string }): Promise<CreatedStaffMember>; // { id, email, password, role }
+// StaffService.createActiveMember; unique default email `staff-<role>-<8 hex>@test.maqady.local`,
+// default password DEFAULT_STAFF_PASSWORD ('Passw0rd-staff')
+signInStaff(testApp: TestApp, email: string, password: string): Promise<StaffSession>;
+// StaffAuthService.signIn (no HTTP, so no rate limit)
+staffSession(testApp: TestApp, role: StaffRole, fixture?): Promise<StaffSession>;
+// StaffSession = { staffUserId, sessionId, email, password, accessToken, refreshToken,
+//   authorization: 'Bearer …' }
 ```
 
-`test/support/routes.ts`: `listHttpRoutes(app): { method; path; access: AccessLevel; handler }[]`
+`test/support/database.ts` also gains `waitForLockWaiters(knex, count)`, for race tests that
+release a lock only once every contender queues on it.
+
+`test/support/routes.ts`: `listHttpRoutes(testApp): HttpRoute[]` (`{ method; path; access; handler }`)
 from `DiscoveryService.getControllers()`, `MetadataScanner`, `PATH_METADATA`, `METHOD_METADATA`,
 U1's `accessDeclarationsOf()` and the global prefix; `samplePath(path)` replaces `:param` with `1`.
 
