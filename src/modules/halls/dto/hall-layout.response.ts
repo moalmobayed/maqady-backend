@@ -35,7 +35,13 @@ export class HallLayoutRowResponse {
 /** A cell that is not a plain seat. */
 @ApiSchema({ name: 'SeatMark' })
 export class SeatMarkResponse {
-  @ApiProperty({ type: String, nullable: false, example: 'A', description: 'Row letter.' })
+  @ApiProperty({
+    type: String,
+    nullable: false,
+    pattern: '^[A-HJ-P]$',
+    example: 'A',
+    description: 'The row letter, A to P without I: one of the rows of the layout.',
+  })
   rowLabel!: string;
 
   @ApiProperty({

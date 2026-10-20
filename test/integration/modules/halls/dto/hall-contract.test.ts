@@ -91,6 +91,10 @@ describe('Hall schemas and operations in the OpenAPI document', () => {
     expect(schema('HallLayoutRow').properties?.zone).toEqual(
       expect.objectContaining({ allOf: [{ $ref: '#/components/schemas/SeatZone' }] }),
     );
+    // A mark's row letter is documented the same way as the row's own label.
+    expect(schema('SeatMark').properties?.rowLabel).toEqual(
+      expect.objectContaining({ pattern: '^[A-HJ-P]$' }),
+    );
     expect(document.components!.schemas!.SeatZone).toEqual(
       expect.objectContaining({ enum: ['front', 'middle', 'back'] }),
     );

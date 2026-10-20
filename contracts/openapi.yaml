@@ -19965,8 +19965,9 @@ components:
         rowLabel:
           type: string
           nullable: false
+          pattern: ^[A-HJ-P]$
           example: A
-          description: Row letter.
+          description: 'The row letter, A to P without I: one of the rows of the layout.'
         seatNumber:
           type: integer
           minimum: 1
