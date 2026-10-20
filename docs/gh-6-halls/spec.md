@@ -337,60 +337,76 @@ authorization, theaterId)`.
 
 ## Tests
 
-**Unit** (`test/unit/modules/halls/`):
+**Unit** (`test/unit/modules/halls/`, collaborators mocked):
 
 - `hall-layout.test.ts` (pure): `aisleAfter` 8 → `[4]`, 9 → `[4, 5]`, 12 → `[4, 8]`, 16 →
-  `[4, 12]`, 20 → `[4, 16]`; `rowLabelAt` 0 → `A`, 7 → `H`, 8 → `J`, 14 → `P`, and `I` never
-  appears; `DEFAULT_LAYOUT` is 12 × 16 with A–C/D–H/J–M and 192 seats; `seatCounts` with
-  wheelchair (counted) and `no_seat` (not counted) marks per zone; `layoutSeats` labels and
-  zones; `validateLayout` refuses each rule in Behaviour step 2 with the right field path, and
-  accepts an all-`back` hall and a hall with an empty middle band.
-- `halls.service.test.ts` (repositories, theater services, audit mocked): the transition table;
-  retirement and deletion `reasons` list the objecting keys in registration order; a no-op
-  `PATCH` writes no audit row; rename plus retire writes two.
-- `hall-layout.service.test.ts`: participants run in the order `beforeLock` → lock →
-  `blockingShowtimes` → replace → `afterSave`; a retired hall is refused before any lock.
-- `hall-lifecycle.registry.test.ts`: duplicate key throws; order kept.
-- DTO validation (global `ValidationPipe` options): `rowCount` 3 and 16, `seatsPerRow` 7 and 21,
-  unknown zone, row label `I`, seat 0 and 21, unknown kind, 301 marks, empty `PATCH`.
+  `[4, 12]`, 20 → `[4, 16]`; `rowLabelAt` 0 → `A`, 7 → `H`, 8 → `J`, 14 → `P`, `I` never
+  appears; `seatLabel` and `parseSeatLabel` (refusing `I3`, `F0`, `F21`, `F07`, lower case);
+  `DEFAULT_LAYOUT` is 12 × 16 with A–C/D–H/J–M and 192 seats; `seatCounts` with wheelchair
+  (counted) and `no_seat` (not counted) marks per zone; `layoutSeats` order and numbering across
+  gaps; `layoutErrors` refuses each rule with its field path (rows and seats out of range,
+  zones per row, bands, unknown zone, marks outside the grid, row `I`, seat 0, duplicates, no seat
+  left), reports every problem at once, and accepts an all-`back` hall, an empty middle band and
+  the 15 × 20 grid.
+- `hall-lifecycle.registry.test.ts`: a duplicate key throws within one list but not across
+  lists; order kept; reasons for many halls with one call per blocker; no call for no halls.
+- `halls.service.test.ts`: `active_hall` registered and answered by the repository; create locks
+  the theater and writes the default rows; the transition table (allowed and `CONFLICT`
+  `{ from, to }`); retirement reasons in registration order; activating asks no retirement
+  blocker; a no-op `PATCH` writes nothing; rename plus retire is one update and two audit rows; a
+  case-only rename counts; `NOT_FOUND` for a missing or vanished hall; delete under both locks and
+  `HALL_NOT_DELETABLE`; `deletable` from one blocker call per page.
+- `hall-layout.service.test.ts`: the order theater lock → `beforeLock` → hall lock →
+  `blockingShowtimes` → update → replace → `afterSave` → audit; `HALL_IN_USE` details sorted and
+  in Cairo time, at most 20; retired and invalid layouts refused before any lock; a hall retired
+  while the save waited; `NOT_FOUND`.
+- `dto/hall-requests.test.ts` (global `ValidationPipe`): name trimmed, blank, 41 characters,
+  unknown field; empty and `null` `PATCH`; `rowCount` 3 and 16, `seatsPerRow` 7 and 21, unknown
+  zone, row `I`, lower case, seat 0 and 21, unknown kind, extra mark field, 301 marks; path id and
+  list status.
+- `test/unit/common/errors/error-catalogue.test.ts` lists the two new codes.
 
-**Integration** (`test/integration/modules/halls/`, real app and Postgres, `TestClock`, admin
-and box-office sessions from `staffSession()`, theaters created and published through U4b's routes):
+**Integration** (`test/integration/modules/halls/`, real app and Postgres, `TestClock`, admin and
+box-office sessions from `staffSession()`, theaters through U4b's routes, the seams through
+`HallsProbeModule` in `test/support/halls-probe.module.ts`):
 
-- Create and edit: `POST` → `201` draft 12 × 16, 192 seats, `aisleAfter [4, 12]`, audit
-  `hall.created`; same name in another case → `409 CONFLICT`; same name in another theater → `201`;
-  unknown theater → `404`; no key → `IDEMPOTENCY_KEY_REQUIRED`; same key → replay. `PATCH` rename;
-  `draft → active`; `active → retired`; `retired → active` and `active → draft` → `409 CONFLICT
-  { from, to }`; list of 25 halls → pages of 20 and 5 with `total` and the `status` filter.
-- Layout: `PUT` 4 × 8 (zones front/middle/middle/back, `A1` wheelchair, `D8` no seat) → `GET`
-  returns it with `aisleAfter [4]`, `seatCount 31`, `wheelchairCount 1`, zone counts; `PUT`
-  15 × 20 → rows `A…P` without `I`, `aisleAfter [4, 16]`, 300 seats; shrinking to 4 × 8 removes
-  the old rows and marks. Invalid layouts (mark `N5` in a 12-row hall, seat 17 in a 16-seat row,
-  `rowZones` of 11 for 12 rows, zones `middle, front`, a duplicate mark, all gaps) → `VALIDATION_FAILED` and
-  the stored layout is unchanged. A retired hall → `409 CONFLICT`.
-- Atomic: a test participant whose `afterSave` throws → `500 INTERNAL`, and rows, marks, `row_count`
-  and `seats_per_row` are exactly the previous layout; no audit row.
-- In use (seam): a test participant returning one blocking showtime → `409 HALL_IN_USE` with
-  `details.showtimes[0]` = `{ id, startsAt (+03:00 or +02:00), movieTitle }`, layout unchanged.
-- Hall lock: a transaction holding the hall through `HallReadService.lockForShare()` makes a
-  concurrent `PUT` wait until it commits (the `PUT` finishes after the release, by a recorded
-  order of events), then succeeds.
-- Delete and retire (seam): a hall with no blockers → `204`, its rows and marks gone, audit
-  `hall.deleted`; a test deletion blocker → `409 HALL_NOT_DELETABLE ['has_showtimes']` and
-  `deletable: false` in the list; a test retirement blocker → `409 HALL_NOT_RETIRABLE
-  ['has_future_showtimes']`. Deleting a draft theater (U4b) removes its halls.
-- Publishing: a theater with prices and hours and no hall → publish `409 THEATER_NOT_PUBLISHABLE
-  missing: ['active_hall']`; with only a draft hall → same; with only a retired hall → same;
-  after activating a hall → `200 active`. `GET /admin/theaters/{id}` `publishBlockers` includes
-  `active_hall` until then.
-- Reads: `listByTheaters()` and `findLayouts()` issue the same number of queries (Knex `query`
-  event) for 1 and 10 halls; `listByTheaters(ids, ['active'])` filters.
-- Access: every route from `listHttpRoutes()` under `/api/v1/admin/halls` and
-  `/api/v1/admin/theaters/:id/halls` (asserted to be the 7 above) answers `403 FORBIDDEN` to a
-  box-office token and `401 UNAUTHENTICATED` to none.
-- Audit: each write leaves its row, with field names and counts only.
-- Contract: `npm run contract` regenerates `contracts/openapi.yaml` with the 7 operations, the
-  `HallLayout` schema and the two codes.
+- `admin-halls.controller.test.ts`:
+  - create: `201` draft 12 × 16, 192 seats, the default layout with `aisleAfter [4, 12]`, audit
+    `hall.created`; `HALL 1` beside `Hall 1` → `409 CONFLICT uq_halls_theater_id_name`, the same
+    name in another theater → `201`; unknown theater `404`; no key `IDEMPOTENCY_KEY_REQUIRED`; a
+    repeated key replays with one row;
+  - edit: rename, `draft → active`, `active → draft` and `retired → active` → `CONFLICT { from,
+    to }`, rename plus retire, rename while retired, a no-op, an empty `PATCH`, unknown hall, and
+    the audit rows of all of it;
+  - list: 25 halls → pages of 20 and 5 by name with `total`, the `status` filter, a bad status,
+    an unknown theater, and `GET /admin/halls/{id}`;
+  - layout: 4 × 8 with `A1` wheelchair and `D8` no seat read back with `aisleAfter [4]`, 31
+    seats, zone counts, audit counts and the participant called in order; 15 × 20 lettered
+    `ABCDEFGHJKLMNOP` with `aisleAfter [4, 16]` and 300 seats; shrinking removes the old rows and
+    marks; seven invalid layouts and an all-gap layout → `VALIDATION_FAILED` with their field
+    paths and the stored layout unchanged; a retired hall → `CONFLICT { status: 'retired' }`;
+  - atomic: a participant whose `afterSave` throws → `500 INTERNAL`, rows, marks and size exactly
+    as before, no audit row;
+  - in use: a participant reporting two showtimes → `409 HALL_IN_USE` with `{ id, startsAt,
+    movieTitle }` soonest first, in `+03:00` and `+02:00`, layout unchanged;
+  - delete and retire: `204` with rows and marks gone and audit `hall.deleted`; a deletion
+    blocker → `HALL_NOT_DELETABLE ['has_showtimes']` and `deletable: false` in the list; a
+    retirement blocker → `HALL_NOT_RETIRABLE ['has_future_showtimes']` with the rename rolled
+    back; deleting a draft theater removes its halls;
+  - publishing: no hall, a draft hall, a retired hall → `THEATER_NOT_PUBLISHABLE ['active_hall']`
+    and `publishBlockers`; after activating → `200 active`; retiring the last active hall leaves
+    the theater active;
+  - access: exactly the 7 routes, every one Admin; each answers `403 FORBIDDEN` to a box-office
+    token and `401` to none, and nothing changes.
+- `hall-read.service.test.ts`: `findById` and `findLayout` in any status (and `layoutSeats` on
+  it), null for unknown; `listByTheaters` by name ignoring case, the status filter, an empty
+  theater, 3 queries for 1 hall and for 10, `findLayouts` the same for 1 and 10; a transaction
+  holding `lockForShare()` makes a concurrent `PUT` wait until it commits (recorded order
+  `released` → `saved 200`); `lockForShare()` outside a transaction throws.
+- `dto/hall-contract.test.ts`: the 7 operations tagged `Admin: halls` with summary, description
+  and their error examples; the `HallLayout`, `HallLayoutRow`, `HallResponse` and
+  `HallResponsePage` schemas and the `HallStatus`, `SeatZone`, `SeatMarkKind` enums.
+- U4b's theater suites publish with a real active hall (`addActiveHall()`).
 
 ## Acceptance
 
@@ -405,4 +421,22 @@ and box-office sessions from `staffSession()`, theaters created and published th
   §14.3 (two codes) updated; follow-ups recorded for U7 (the two blockers, the `beforeLock` and
   `afterSave` capacity participant, the `showtimes (hall_id, theater_id)` FK to
   `uq_halls_id_theater_id`) and U10 (the live-claim `blockingShowtimes` participant, seat
-  validation through `lockForShare` and `layoutSeats`); `docs/gh-6-halls/spec.md` is this draft.
+  validation through `lockForShare` and `layoutSeats`); this spec is the draft corrected against the code as built.
+
+## Follow-ups
+
+- **U7 (#8)**: register the `has_showtimes` deletion blocker, the `has_future_showtimes`
+  retirement blocker and the `showtime_capacity` layout participant (`beforeLock`: lock the
+  hall's future showtimes `FOR UPDATE` in id order; `afterSave`: refresh their `seat_capacity`);
+  add the composite FK `showtimes (hall_id, theater_id)` → `uq_halls_id_theater_id`; schedule only
+  into `active` halls, reading the status under `HallReadService.lockForShare()`. When it does,
+  drop the `has_showtimes` and `has_future_showtimes` stand-ins from
+  `test/support/halls-probe.module.ts` (the keys would clash) and keep the layout participant.
+- **U10**: register the live-claim layout participant whose `blockingShowtimes` answers the
+  unended showtimes with a live seat claim (`HALL_IN_USE`); validate held seats against
+  `layoutSeats()` of the layout read under `HallReadService.lockForShare()`, after the showtime
+  lock.
+- **Merging**: a branch built before this unit that still calls `TheaterLifecycleProbe`'s
+  `withActiveHall` (removed here) adds a real active hall with `addActiveHall()` instead, and a
+  "16 theater routes" check must leave out the `…/theaters/{id}/halls` routes.
+
