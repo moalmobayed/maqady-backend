@@ -187,7 +187,7 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `customers` | Customer accounts | `email CITEXT`, unique among rows where `deleted_at IS NULL`; `password_hash`; `phone`; `email_verified_at`; `status` (`active`, `blocked`); `deleted_at`. An anonymised row has no email or phone (CHECK). |
+| `customers` | Customer accounts | `email CITEXT`, unique among rows where `deleted_at IS NULL`; `full_name`; `password_hash`; `phone` (E.164, optional); `email_verified_at`; `status` (`active`, `blocked`); `last_sign_in_at`; `created_at`, `updated_at`; `deleted_at`. A live row has an email, name and hash; an anonymised row has no email, name, phone or hash (CHECK) (U9). |
 | `staff_users` | Staff accounts | `email CITEXT UNIQUE`; `role` (`admin`, `box_office`); `status` (`invited`, `active`, `deactivated`); `password_hash` is NULL until a password is set; `last_sign_in_at` |
 | `sessions` | Refresh-token sessions, one row per refresh token | Exactly one of `customer_id`, `staff_user_id` (CHECK `num_nonnulls(…) = 1`); `family_id UUID` (one sign-in's chain); `token_hash` UNIQUE; `rotated_at`; `expires_at` (the family's, copied on rotation); `revoked_at` with `revoked_reason`; `replaced_by_id` |
 | `one_time_tokens` | Single-use links | `purpose` (`verify_email`, `customer_password_reset`, `staff_invite`, `staff_password_reset`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
@@ -755,7 +755,14 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
   usable once.
 - Requesting a new token invalidates the previous one of the same purpose.
-- Both "Forgot password" routes always answer `202`, whether or not the email exists.
+- Both "Forgot password" routes always answer `202`, whether or not the email exists. The
+  customer route sends a link only to a live, active customer; a blocked one gets the same answer
+  and nothing else, and a link used after a block answers `ACCOUNT_BLOCKED` without being spent
+  (U9).
+- A customer password reset also marks the email verified (the link proved the mailbox), revokes
+  every session and opens none: the customer signs in with the new password (U9).
+- "Resend the verification link" answers `202` with no body, and sends nothing to a customer
+  already verified (U9).
 - Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
   registering is useless without the password, so the usability gain outweighs the small
   enumeration risk. See §20.
@@ -773,7 +780,9 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 |---|---|---|
 | Customer and staff sign-in | 5 per minute per email, and 20 per minute per IP address | IP address plus email; IP address |
 | Registration | 5 per hour | IP address |
-| Both forgot-password routes, resend verification | 3 per hour per email, and 20 per hour per IP address | Email; IP address |
+| Both forgot-password routes | 3 per hour per email, and 20 per hour per IP address | Email; IP address |
+| Resend verification | 3 per hour per customer, and 20 per hour per IP address | Signed-in customer (the route has no email in its body; a customer's email is fixed, so this is per email); IP address (U9) |
+| Email verification, customer password reset, customer password change | 20 per minute per IP address, shared with sign-in | IP address (U9) |
 | Create a hold | 30 per 10 minutes per IP address, and 10 per 10 minutes per signed-in customer | IP address; customer |
 | Pay | 10 per 5 minutes | Booking |
 | Customer "Email again" | 3 per hour | Booking |
@@ -859,6 +868,13 @@ customer by account rather than address for the same shared-address reason (U1,
 | `POST /auth/email-verifications` (with the emailed token) · `POST /auth/password-reset-requests` · `POST /auth/password-resets` (with the emailed token) | Public | |
 | `POST /auth/email-verification-requests` (resend) | Customer | |
 | `GET /me` · `PATCH /me` · `PUT /me/password` | Customer | |
+
+Customer auth (U9): registration and sign-in answer `201` with the token pair and the customer, so
+the booking flow can claim its hold next; refresh `201`; sign-out, verification, reset and the
+password change `204`; the forgot-password and resend routes `202` with no body. A wrong current
+password on `PUT /me/password` is `VALIDATION_FAILED` on `currentPassword`, not a 401, and the
+change keeps the caller's session while signing out every other one. `PATCH /me` takes an
+E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 
 **Admin routes** (`/api/v1/admin`)
 
@@ -1319,6 +1335,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-25 | A `@Guest()` route accepts no token or a valid customer token; an invalid token is `UNAUTHENTICATED`, never a silent guest | Builder (U1) |
 | D-26 | Only `2xx` responses are stored for an idempotency key, with their status and body (not other headers); errors roll the key back | Builder (U1, §14.1) |
 | D-27 | Outbox retries: at most 10 attempts with a 1 min to 6 h backoff; `failed` is terminal; a quota 429 holds email until the next 00:00 UTC; the message id is the Resend idempotency key, so one sending environment per Resend team; templates registered by their owning modules | Builder (U3, `docs/gh-3-messaging/spec.md`) |
+| D-28 | Customer accounts: registration signs in; a phone is E.164 or an Egyptian local mobile, stored as E.164; sessions end 30 days after sign-in, never extended; a password change keeps the caller's session and ends the others; a reset verifies the email and opens no session; customer self-service writes no audit rows (§13.5); resend verification is limited per customer | Builder (U9, `docs/gh-10-customer-accounts/spec.md`) |
 
 ## 19. Kit and process reconciliations
 

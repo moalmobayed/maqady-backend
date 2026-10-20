@@ -154,6 +154,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   'admin')` creates an active member through `StaffService` and signs them in through
   `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
   `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`
+  registers a customer through `CustomerAuthService` (signed in, a verification email queued),
+  `signInCustomer()` opens another session, `blockCustomer()` blocks through `CustomerService`,
+  and `customerLinkToken(text, '/verify-email')` reads a link's token from an email the
+  recording sender caught.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -187,8 +192,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - **Credentials** (`modules/auth`, `CredentialsModule`): `PasswordService` (scrypt),
   `@IsAllowedPassword()`, `SessionService` (refresh-token sessions with rotation; call `refresh()`
   from a `@NoRequestTransaction()` route) and `OneTimeTokenService` (single-use links). Staff
-  use them now; customers (U9) pass their own lifetime and account check.
+  and customers (U9) pass their own lifetime and account check.
 - **Staff** (`modules/staff`): `StaffService` reads members (`findById`, `findByEmail`, `list`).
+- **Customers** (`modules/customers`): `CustomerService` reads a customer (`findById`, or
+  `findByIdForUpdate` to lock the row), blocks or unblocks one (`setStatus`, which signs a blocked
+  customer out everywhere) and sends a password reset link (`issuePasswordReset`).
 
 ## Database and migrations
 
@@ -236,7 +244,7 @@ src/
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
-                                         (credentials), staff
+                                         (credentials), staff, customers
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

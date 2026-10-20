@@ -103,8 +103,8 @@ on the next request. Customer and staff tokens never open each other's routes.
 | File | Holds |
 |---|---|
 | `enums.ts` | `CUSTOMER_STATUSES = ['active', 'blocked']` |
-| `types.ts` | `CustomerStatus`, `CustomerRow`, `NewCustomerRow`, `CustomerPrincipalRow`, `CustomerProfileUpdate`, `Customer`, `RegisterCustomerInput`, `CustomerSignInInput`, `CustomerTokens`, `CustomerSession`, `ProfileChanges`, `ChangePasswordInput`, `ResetPasswordInput`, `CustomerVerifyEmailParams`, `CustomerPasswordResetParams` |
-| `customers.constants.ts` | `CUSTOMER_FULL_NAME_MAX_LENGTH`, `EMAIL_MAX_LENGTH`, `SIGN_IN_PASSWORD_MAX_LENGTH`, `ONE_TIME_TOKEN_MAX_LENGTH`, `E164_PHONE_PATTERN`, `EGYPT_LOCAL_MOBILE_PATTERN`, `VERIFY_EMAIL_PATH`, `RESET_PASSWORD_PATH` |
+| `types.ts` | `CustomerStatus`, `CustomerRow`, `NewCustomerRow`, `CustomerProfileUpdate`, `CustomerRowChanges`, `CustomerPrincipalRow`, `Customer`, `RegisterCustomerInput`, `CustomerSignInInput`, `CustomerTokens`, `CustomerSession`, `ProfileChanges`, `ChangePasswordInput`, `ResetPasswordInput`, `CustomerVerifyEmailParams`, `CustomerPasswordResetParams` |
+| `customers.constants.ts` | `CUSTOMER_FULL_NAME_MAX_LENGTH`, `EMAIL_MAX_LENGTH`, `SIGN_IN_PASSWORD_MAX_LENGTH`, `ONE_TIME_TOKEN_MAX_LENGTH`, `E164_PHONE_PATTERN`, `EGYPT_LOCAL_MOBILE_PATTERN`, `EGYPT_COUNTRY_CODE`, `ACCEPTED_PHONE_PATTERN_SOURCE` (the published `phone` pattern), `VERIFY_EMAIL_PATH`, `RESET_PASSWORD_PATH`, `CURRENT_PASSWORD_WRONG_MESSAGE` |
 | `customers.repository.ts` | `insertIfEmailFree`, `findById`, `findByIdForUpdate`, `findLiveByEmail`, `findPrincipalBySession`, `recordSignIn`, `updateProfile`, `setPasswordHash`, `markEmailVerified`, `setStatus`; named columns, through `TransactionContext.executor()` |
 | `customer.mapper.ts` | `toCustomer(row)` |
 | `customer.service.ts` | `CustomerService` (exported) |
@@ -272,9 +272,9 @@ and `ACCOUNT_BLOCKED`.
 - `EmailVerificationRequest`: `token` (string, 1–128).
 - `ForgotPasswordRequest`: `email` (`IsEmail`, ≤ 320).
 - `ResetPasswordRequest`: `token` (string, 1–128), `password` (`@IsAllowedPassword()`).
-- `UpdateProfileRequest`: optional `fullName` (trimmed, 1–100); optional `phone` (E.164 or an
-  Egyptian local mobile, normalised to E.164; `null` clears it); at least one present, else
-  `VALIDATION_FAILED`. `email` or any other field → `VALIDATION_FAILED` (`forbidNonWhitelisted`).
+- `UpdateProfileRequest`: optional `fullName` (trimmed, 1–100, one message per problem); optional
+  `phone` (E.164 or an Egyptian local mobile, normalised to E.164; `null` clears it); at least one
+  present, else `VALIDATION_FAILED` with `send fullName, phone or both` on `fullName`. `email` or any other field → `VALIDATION_FAILED` (`forbidNonWhitelisted`).
 - `ChangePasswordRequest`: `currentPassword` (string, 1–128), `newPassword`
   (`@IsAllowedPassword()`).
 - `CustomerProfileResponse`: `id`, `fullName`, `email`, `phone` (nullable), `emailVerified`,
@@ -354,7 +354,9 @@ customerLinkToken(text: string, path: string): string; // the token of FRONTEND_
 - `modules/auth/session.service.test.ts`: `revokeAllFor` passes the excepted family to the
   repository.
 
-**Integration** (`test/integration/modules/customers/`, the real app and Postgres, `EmailSender`
+**Integration** (`test/integration/modules/customers/` — `customer-auth.controller.test.ts`,
+`me.controller.test.ts`, `audiences.test.ts`, `rate-limit.test.ts`, `logging.test.ts` — and
+`test/integration/migrations/0100_customers.test.ts`; the real app and Postgres, `EmailSender`
 replaced by `RecordingEmailSender`, a `TestClock`):
 
 - Registration then verification: `201`, the tokens open `GET /me` (`emailVerified: false`); one
@@ -422,3 +424,18 @@ replaced by `RecordingEmailSender`, a `TestClock`):
 - Follow-ups recorded: U10 claims a hold with a token from these routes; U12 adds `bookingCount`
   to `GET /me`; merge `customerLinkToken` with U2b's helper; whether customer password changes
   belong in the Activity log (product owner).
+
+## Follow-ups
+
+- **U10**: claim the anonymous hold after `POST /auth/sessions` or `POST /auth/registrations`
+  (`POST /holds/{ref}/claims`); its test should sign in through these routes.
+- **U12**: add `bookingCount` to `GET /me` (recommended: Confirmed and Completed bookings).
+- **U15**: the admin block, unblock and "send a reset email" routes call
+  `CustomerService.setStatus()` and `issuePasswordReset()`; anonymisation deletes the customer's
+  sessions, one-time tokens and messages before clearing the row (the new foreign keys require
+  that order).
+- **After U2b merges**: fold `customerLinkToken` and U2b's link helper into one test helper.
+- **Product owner**: whether customer password changes and resets should appear in the admin
+  Activity log (§13.5 currently excludes them).
+- `signInIp` is shared by sign-in, the two token routes and the password change; a busy shared
+  address (carrier NAT) meets it sooner. Revisit with real traffic.
