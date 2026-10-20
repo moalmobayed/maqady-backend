@@ -48,7 +48,7 @@ export class AccessTokenService {
         exp: issuedAt + ACCESS_TOKEN_TTL_SECONDS,
       },
       this.secrets[subject.audience],
-      { algorithm: ACCESS_TOKEN_ALGORITHM, noTimestamp: true },
+      { algorithm: ACCESS_TOKEN_ALGORITHM },
     );
   }
 
