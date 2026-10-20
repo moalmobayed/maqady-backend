@@ -10,6 +10,7 @@ import {
   ACCEPTED_PHONE_PATTERN_SOURCE,
   CUSTOMER_FULL_NAME_MAX_LENGTH,
   E164_PHONE_PATTERN,
+  NUL_CHARACTER,
 } from '../customers.constants';
 import { NormalisePhone, TrimString } from './transforms';
 
@@ -51,6 +52,7 @@ function fullNameProblem(value: unknown, body: UpdateProfileRequest): string | n
   if (value === undefined) return body.phone === undefined ? NOTHING_TO_CHANGE : null;
   if (typeof value !== 'string') return 'fullName must be a string';
   if (value === '') return 'fullName must not be empty';
+  if (value.includes(NUL_CHARACTER)) return 'fullName must not contain a NUL character';
   if (value.length > CUSTOMER_FULL_NAME_MAX_LENGTH) {
     return `fullName must be at most ${CUSTOMER_FULL_NAME_MAX_LENGTH} characters`;
   }

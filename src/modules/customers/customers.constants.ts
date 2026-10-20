@@ -4,6 +4,15 @@ export const CUSTOMER_FULL_NAME_MAX_LENGTH = 100;
 /** The longest email address accepted (RFC 5321's path limit, as `customers` checks it). */
 export const EMAIL_MAX_LENGTH = 320;
 
+/**
+ * What `chk_customers_email` stores: no whitespace and exactly one `@`. `IsEmail` also passes
+ * RFC 5322 quoted local parts such as `"a b"@example.com`, which the CHECK refuses.
+ */
+export const STORED_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+
+/** Postgres text cannot hold NUL, so a name holding one is refused before it reaches SQL. */
+export const NUL_CHARACTER = '\u0000';
+
 /** Sign-in and the current password compare at most this many characters (design §10.1). */
 export const SIGN_IN_PASSWORD_MAX_LENGTH = 128;
 

@@ -271,7 +271,12 @@ describe('Customer auth routes (integration)', () => {
         { ...base, password: 'nodigits' },
         { ...base, password: 'Sh0rt' },
         { ...base, email: 'not-an-email' },
+        // Valid to RFC 5322 (and to IsEmail), refused by chk_customers_email: a 400, not a 500.
+        { ...base, email: '"weak user"@example.com' },
+        { ...base, email: '"weak@user"@example.com' },
         { ...base, fullName: '   ' },
+        // Postgres text can't hold NUL: refused by validation, not a 500 from the insert.
+        { ...base, fullName: 'Layla\u0000Hassan' },
         { ...base, phone: '+201012345678' },
       ]) {
         expectError(await register(body), 400, 'VALIDATION_FAILED');

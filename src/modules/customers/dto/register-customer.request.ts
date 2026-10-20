@@ -1,7 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsString, Matches, MaxLength, MinLength, NotContains } from 'class-validator';
 import { IsAllowedPassword } from '../../auth/password-policy';
-import { CUSTOMER_FULL_NAME_MAX_LENGTH, EMAIL_MAX_LENGTH } from '../customers.constants';
+import {
+  CUSTOMER_FULL_NAME_MAX_LENGTH,
+  EMAIL_MAX_LENGTH,
+  NUL_CHARACTER,
+  STORED_EMAIL_PATTERN,
+} from '../customers.constants';
 import { TrimString } from './transforms';
 
 /** `POST /auth/registrations` (PRD C7 Create account). */
@@ -18,6 +23,7 @@ export class RegisterCustomerRequest {
   @IsString()
   @MinLength(1, { message: 'fullName must not be empty' })
   @MaxLength(CUSTOMER_FULL_NAME_MAX_LENGTH)
+  @NotContains(NUL_CHARACTER, { message: 'fullName must not contain a NUL character' })
   fullName!: string;
 
   @ApiProperty({
@@ -33,6 +39,7 @@ export class RegisterCustomerRequest {
   @IsString()
   @MaxLength(EMAIL_MAX_LENGTH)
   @IsEmail({}, { message: 'email must be an email address' })
+  @Matches(STORED_EMAIL_PATTERN, { message: 'email must be an email address' })
   email!: string;
 
   @ApiProperty({

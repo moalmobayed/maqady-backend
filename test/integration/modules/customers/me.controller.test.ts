@@ -102,6 +102,7 @@ describe('Profile routes (integration)', () => {
         { phone: '0101234567' },
         { phone: 201012345678 },
         { fullName: '  ' },
+        { fullName: 'Layla\u0000Hassan' },
         {},
       ]) {
         expectError(await patch(body), 400, 'VALIDATION_FAILED');
