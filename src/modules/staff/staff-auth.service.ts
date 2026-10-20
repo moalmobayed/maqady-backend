@@ -40,16 +40,26 @@ export class StaffAuthService {
    * - The sign-in is recorded first, by an update that matches only an active member. It waits for
    *   a deactivation in flight and then sees its result, so a session never opens for a member who
    *   was deactivated in the meantime (and would come back to life on reactivation).
+   * - That update also matches only the password hash the password was checked against, so a
+   *   sign-in with the old password that waited on a password reset opens no session after the
+   *   reset revoked them all: it is `INVALID_CREDENTIALS`.
    */
   async signIn(input: StaffSignInInput): Promise<StaffSignInResult> {
     return this.transactions.run(async () => {
       const row = await this.staff.findByEmail(input.email.trim());
       const matches = await this.passwords.verify(input.password, row?.password_hash ?? null);
-      if (!row || !matches) throw new AppError('INVALID_CREDENTIALS');
+      if (!row || !matches || row.password_hash === null) {
+        throw new AppError('INVALID_CREDENTIALS');
+      }
       if (row.status !== 'active') throw new AppError('ACCOUNT_DEACTIVATED');
 
-      const signedIn = await this.staff.recordSignIn(row.id, this.clock.now());
-      if (!signedIn) throw new AppError('ACCOUNT_DEACTIVATED');
+      const signedIn = await this.staff.recordSignIn(row.id, row.password_hash, this.clock.now());
+      if (!signedIn) {
+        const current = await this.staff.findById(row.id);
+        throw new AppError(
+          current?.status === 'active' ? 'INVALID_CREDENTIALS' : 'ACCOUNT_DEACTIVATED',
+        );
+      }
       const session = await this.sessions.open({
         owner: { audience: 'staff', id: row.id },
         lifetimeSeconds: SESSION_LIFETIME_SECONDS.staff,

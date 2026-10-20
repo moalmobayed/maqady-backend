@@ -506,6 +506,43 @@ describe('Staff invites, password resets and setups (integration)', () => {
       clock.advance({ hours: 1, seconds: 1 });
       expectError(await setUp(token), 400, 'INVALID_TOKEN');
     });
+
+    it('opens no session for the old password when a sign-in checked it while the reset was in flight', async () => {
+      const member = await createStaffMember(testApp, {
+        role: 'box_office',
+        email: 'racing@maqady.example',
+      });
+      await requestReset(member.email);
+      const token = await lastLinkTo(member.email);
+
+      // Hold the member's row so both contenders queue on it: the setup first, then a sign-in
+      // that has already checked the old password against the old hash.
+      const holder = await testApp.knex.transaction();
+      let setup: Promise<Response>;
+      let signIn: Promise<Response>;
+      try {
+        await holder.raw('SELECT id FROM staff_users WHERE id = ? FOR NO KEY UPDATE', [member.id]);
+        setup = setUp(token).then((response) => response);
+        await waitForLockWaiters(testApp.knex, 1);
+        signIn = testApp
+          .http()
+          .post(SIGN_IN)
+          .send({ email: member.email, password: member.password })
+          .then((response) => response);
+        await waitForLockWaiters(testApp.knex, 2);
+      } finally {
+        await holder.rollback();
+      }
+
+      expect((await setup).status).toBe(204);
+      expectError(await signIn, 401, 'INVALID_CREDENTIALS');
+      const live = await testApp
+        .knex('sessions')
+        .where({ staff_user_id: member.id })
+        .whereNull('revoked_at')
+        .count<{ count: string }[]>({ count: 'id' });
+      expect(Number(live[0]!.count)).toBe(0);
+    });
   });
 
   it('refuses a message that names a staff member who does not exist (fk_messages_related_staff_user_id)', async () => {

@@ -126,14 +126,19 @@ export class StaffRepository {
   }
 
   /**
-   * Records a sign-in of an active member and returns the row as it now is; undefined when the
-   * member is no longer active. The update waits for a staff change in flight and re-checks the
-   * status against its result.
+   * Records a sign-in of an active member whose password hash is still the one the password was
+   * checked against, and returns the row as it now is; undefined when the member is no longer
+   * active or their password changed meanwhile. The update waits for a staff change or password
+   * setup in flight and re-checks both against its result.
    */
-  async recordSignIn(id: number, signedInAt: Date): Promise<StaffUserRow | undefined> {
+  async recordSignIn(
+    id: number,
+    checkedPasswordHash: string,
+    signedInAt: Date,
+  ): Promise<StaffUserRow | undefined> {
     const [row] = await this.staff()
       .update({ last_sign_in_at: signedInAt, updated_at: signedInAt })
-      .where({ id, status: 'active' })
+      .where({ id, status: 'active', password_hash: checkedPasswordHash })
       .returning<StaffUserRow[]>(STAFF_COLUMNS);
     return row;
   }
