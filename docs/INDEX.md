@@ -21,7 +21,7 @@ gate (G5) checks it.
 | `docs/gh-2-foundations/review.md` | U1 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-3-messaging/spec.md` | U3 spec: the messages outbox, templates and redacted one-time links, MessagingService.queue, the Resend and simulated senders, the opportunistic drain; the exported services later units call | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-3-messaging/qa.md` | U3 manual QA: curl evidence for the migration, readiness and its description, email config refusal, and (through a QA-only harness of the probe routes) send after commit, redaction, rollback, SMS, retries and the drain triggers | Mohamed Tarek | 2026-10-20 |
-| `docs/gh-3-messaging/review.md` | U3 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-3-messaging/review.md` | U3 adversarial review, two rounds: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
 | `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |
