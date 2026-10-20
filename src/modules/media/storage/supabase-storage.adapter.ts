@@ -75,7 +75,7 @@ export class SupabaseStorageAdapter extends StorageAdapter {
   }
 
   private async listPage(prefix: string, offset: number): Promise<SupabaseListItem[]> {
-    const response = await this.request('list', `object/list/${this.bucket()}`, {
+    const text = await this.request('list', `object/list/${this.bucket()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -85,12 +85,13 @@ export class SupabaseStorageAdapter extends StorageAdapter {
         sortBy: { column: 'name', order: 'asc' },
       }),
     });
-    const body = await response.json();
-    if (!Array.isArray(body)) {
-      throw new AppError('INTERNAL', undefined, null, {
-        cause: new Error('Supabase Storage answered a list with something other than an array'),
-      });
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw malformedListing();
     }
+    if (!Array.isArray(body)) throw malformedListing();
     return body as SupabaseListItem[];
   }
 
@@ -98,10 +99,14 @@ export class SupabaseStorageAdapter extends StorageAdapter {
     return encodeURIComponent(this.config.bucket);
   }
 
-  private async request(operation: string, path: string, init: RequestInit): Promise<Response> {
-    let response: Response;
+  /**
+   * Sends one request and returns its body as text. A successful body is always read to the end:
+   * an unread one keeps its connection out of the pool until garbage collection.
+   */
+  private async request(operation: string, path: string, init: RequestInit): Promise<string> {
+    let status: number;
     try {
-      response = await fetch(`${this.storageUrl}/${path}`, {
+      const response = await fetch(`${this.storageUrl}/${path}`, {
         ...init,
         headers: {
           ...(init.headers as Record<string, string>),
@@ -110,21 +115,30 @@ export class SupabaseStorageAdapter extends StorageAdapter {
         },
         signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS),
       });
+      // The timeout covers the body too, so a body cut off part-way is a missing answer.
+      if (response.ok) return await response.text();
+      status = response.status;
+      // The body may echo the request; only the status is kept.
+      await response.body?.cancel();
     } catch (error) {
       // A network failure or the timeout. The error names neither the key nor the URL's query.
       throw new AppError('STORAGE_UNAVAILABLE', undefined, null, {
         cause: new Error(`Supabase Storage ${operation} got no answer (${describeFailure(error)})`),
       });
     }
-    if (response.ok) return response;
-    // The body may echo the request; only the status is kept.
-    await response.body?.cancel();
-    const cause = new Error(`Supabase Storage ${operation} answered ${response.status}`);
-    if (response.status === 429 || response.status >= 500) {
+    const cause = new Error(`Supabase Storage ${operation} answered ${status}`);
+    if (status === 429 || status >= 500) {
       throw new AppError('STORAGE_UNAVAILABLE', undefined, null, { cause });
     }
     throw new AppError('INTERNAL', undefined, null, { cause });
   }
+}
+
+/** A listing Supabase should never send (not JSON, or not an array): a bug, not an outage. */
+function malformedListing(): AppError {
+  return new AppError('INTERNAL', undefined, null, {
+    cause: new Error('Supabase Storage answered a list with something other than an array'),
+  });
 }
 
 function listEntryOf(path: string, item: SupabaseListItem): StorageListEntry {

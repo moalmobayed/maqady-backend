@@ -224,6 +224,42 @@ describe('SupabaseStorageAdapter', () => {
       },
     );
 
+    it('reads every successful answer to the end, so its connection goes back to the pool', async () => {
+      const uploaded = json({ Key: `media/${PATH}` });
+      const removed = json([]);
+      mockFetch(uploaded, removed);
+
+      await adapter.put({ path: PATH, body: Buffer.alloc(1), contentType: 'image/webp' });
+      await adapter.remove([PATH]);
+
+      expect(uploaded.bodyUsed).toBe(true);
+      expect(removed.bodyUsed).toBe(true);
+    });
+
+    it('answers a body cut off by the timeout with STORAGE_UNAVAILABLE', async () => {
+      const cutOff = new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(timeout);
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+      mockFetch(cutOff);
+
+      const error = await failure(adapter.list('poster'));
+
+      expect(error.code).toBe('STORAGE_UNAVAILABLE');
+      expect((error.cause as Error).message).toBe(
+        'Supabase Storage list got no answer (TimeoutError)',
+      );
+    });
+
+    it('treats a listing that is not JSON as a bug', async () => {
+      mockFetch(new Response('<html>gateway</html>', { status: 200 }));
+      expect((await failure(adapter.list('poster'))).code).toBe('INTERNAL');
+    });
+
     it('names the kind of network failure in the cause', async () => {
       mockFetch(refused);
       const error = await failure(adapter.remove([PATH]));
