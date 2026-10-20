@@ -14815,6 +14815,1800 @@ paths:
         - 'Admin: people'
       security:
         - staff: []
+  /admin/theaters/{id}/halls:
+    get:
+      description: 'Admin only: the theater''s Halls tab. Every hall in any status, optionally filtered by status, ordered by name, with its layout size, seat counts and whether it can be deleted (else it can only be retired). Cursor-paginated: pass `nextCursor` back as `cursor`. An unknown theater is `NOT_FOUND`.'
+      operationId: listHalls
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Theater id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: status
+          required: false
+          in: query
+          description: Only halls in this status.
+          schema:
+            $ref: '#/components/schemas/HallStatus'
+      responses:
+        '200':
+          description: One page of halls
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallResponsePage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: List a theater's halls
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+    post:
+      description: 'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. A theater is published only with an active hall. The name is unique among the theater''s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.'
+      operationId: createHall
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Theater id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHallRequest'
+      responses:
+        '201':
+          description: The new draft hall
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallResponse'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`CONFLICT`: A database constraint refused the change. `details.constraint` names the constraint, never the values.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                CONFLICT:
+                  summary: CONFLICT
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: The request conflicts with existing data.
+                      details:
+                        constraint: uq_movies_featured_position
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Add a hall
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+  /admin/halls/{id}:
+    get:
+      description: 'Admin only: the hall layout editor header. The hall in any status, with its layout size, seat counts and whether it can be deleted.'
+      operationId: getHall
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Hall id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+      responses:
+        '200':
+          description: The hall
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Get a hall
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+    patch:
+      description: |-
+        Admin only: renames the hall and changes its status, in one transaction (name first).
+
+        - `status: active` on a draft makes it schedulable; a theater is published only with an active hall.
+        - `status: retired` (from draft or active) keeps the hall for history and hides it from scheduling. It needs no scheduled showtime that has not ended (`HALL_NOT_RETIRABLE`, with `details.reasons`). Retiring is final. Retiring the last active hall of a published theater is allowed: the theater stays published.
+        - Any other status change (back to draft, out of retired) is `CONFLICT` with `details.from` and `details.to`.
+        - The name is unique among the theater's halls, ignoring letter case (`CONFLICT`).
+        - A request that changes nothing answers `200` and records nothing.
+        - Recorded in the activity log.
+      operationId: updateHall
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Hall id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHallRequest'
+      responses:
+        '200':
+          description: The hall after the change
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `CONFLICT`: A database constraint refused the change. `details.constraint` names the constraint, never the values.
+
+            `HALL_NOT_RETIRABLE`: Retiring hides a hall from scheduling, so it needs no scheduled showtime that has not ended. `details.reasons` says why, for example `["has_future_showtimes"]`.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                CONFLICT:
+                  summary: CONFLICT
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: The request conflicts with existing data.
+                      details:
+                        constraint: uq_movies_featured_position
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                HALL_NOT_RETIRABLE:
+                  summary: HALL_NOT_RETIRABLE
+                  value:
+                    error:
+                      code: HALL_NOT_RETIRABLE
+                      message: A hall with upcoming showtimes can't be retired; move or cancel them first.
+                      details:
+                        reasons:
+                          - has_future_showtimes
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Rename, activate or retire a hall
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+    delete:
+      description: Admin only. Only a hall that never had a showtime can be deleted, in any status; any other is retired instead (`HALL_NOT_DELETABLE`, with `details.reasons`). Its layout goes with it. Recorded in the activity log.
+      operationId: deleteHall
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Hall id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '204':
+          description: Deleted
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`HALL_NOT_DELETABLE`: Only a hall that never had a showtime is deleted; any other is retired (`PATCH` `status: retired`) and kept for history. `details.reasons` says why, for example `["has_showtimes"]`.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                HALL_NOT_DELETABLE:
+                  summary: HALL_NOT_DELETABLE
+                  value:
+                    error:
+                      code: HALL_NOT_DELETABLE
+                      message: A hall that ever had a showtime can't be deleted; retire it instead.
+                      details:
+                        reasons:
+                          - has_showtimes
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Delete a hall
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+  /admin/halls/{id}/layout:
+    get:
+      description: 'Admin only: the hall layout editor. The grid size, the zone of each row (front to back), the wheelchair spaces and gaps, the aisles (`aisleAfter`, computed) and the seat summary. Every cell not in `seatMarks` is a seat.'
+      operationId: getLayout
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Hall id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+      responses:
+        '200':
+          description: The layout
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallLayout'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Get a hall's layout
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
+    put:
+      description: |-
+        Admin only: "Save" in the hall layout editor. Replaces the whole layout (row count, seats per row, row zones, seat marks) in one transaction: it all applies or nothing does.
+
+        - Rows 4–15, lettered A to P without I from the screen back; seats per row 8–20, numbered from 1 on the left. Aisles fall after seat 4 and 4 seats before the end; they are reported in `aisleAfter`, never sent.
+        - `rowZones` holds one zone per row and runs in bands from the screen back (front, then middle, then back; any band may be empty).
+        - Each seat mark lies inside the new grid, at most one per seat, and at least one seat remains. Every problem is reported at once in `VALIDATION_FAILED` `details.fields`, with paths such as `seatMarks.3.seatNumber`.
+        - The save waits for seat holds in progress, then is refused with `HALL_IN_USE` while a showtime in the hall that has not ended has seats held or sold; `details.showtimes` names them.
+        - A retired hall's layout cannot change (`CONFLICT`, `details.status: retired`).
+        - Upcoming showtimes take the new seat count. Recorded in the activity log.
+      operationId: replaceLayout
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Hall id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceHallLayoutRequest'
+      responses:
+        '200':
+          description: The saved layout
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallLayout'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `CONFLICT`: A database constraint refused the change. `details.constraint` names the constraint, never the values.
+
+            `HALL_IN_USE`: The layout cannot change while a showtime that has not ended has a live seat claim. `details.showtimes` lists them, soonest first and at most 20, each as `{ id, startsAt, movieTitle }` (`startsAt` in Cairo time with its offset).
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                CONFLICT:
+                  summary: CONFLICT
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: The request conflicts with existing data.
+                      details:
+                        constraint: uq_movies_featured_position
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                HALL_IN_USE:
+                  summary: HALL_IN_USE
+                  value:
+                    error:
+                      code: HALL_IN_USE
+                      message: This hall has seats held or sold in upcoming showtimes.
+                      details:
+                        showtimes:
+                          - id: 81
+                            startsAt: '2026-10-16T19:30:00+03:00'
+                            movieTitle: The Nile Light
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Replace a hall's layout
+      tags:
+        - 'Admin: halls'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -17964,6 +19758,384 @@ components:
             $ref: '#/components/schemas/PersonCreditRequest'
       required:
         - credits
+    HallStatus:
+      type: string
+      enum:
+        - draft
+        - active
+        - retired
+    ZoneSeatCountsResponse:
+      type: object
+      properties:
+        front:
+          type: integer
+          minimum: 0
+          example: 48
+          description: Seats in front rows.
+        middle:
+          type: integer
+          minimum: 0
+          example: 80
+          description: Seats in middle rows.
+        back:
+          type: integer
+          minimum: 0
+          example: 64
+          description: Seats in back rows.
+      required:
+        - front
+        - middle
+        - back
+    HallResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Hall id.
+        theaterId:
+          type: integer
+          example: 1
+          description: The theater the hall belongs to.
+        name:
+          type: string
+          nullable: false
+          example: Hall 3
+          description: Unique among the theater's halls, ignoring letter case.
+        status:
+          nullable: false
+          example: active
+          description: '`draft`: being set up, not schedulable. `active`: schedulable; a theater needs one to be published. `retired`: kept for history, hidden from scheduling; final.'
+          allOf:
+            - $ref: '#/components/schemas/HallStatus'
+        rowCount:
+          type: integer
+          minimum: 4
+          maximum: 15
+          example: 12
+          description: Rows of the grid (the "12" of "12 × 16").
+        seatsPerRow:
+          type: integer
+          minimum: 8
+          maximum: 20
+          example: 16
+          description: Seats per row (the "16" of "12 × 16").
+        seatCount:
+          type: integer
+          minimum: 1
+          example: 190
+          description: Seats in the layout, wheelchair spaces included and gaps left out.
+        wheelchairCount:
+          type: integer
+          minimum: 0
+          example: 2
+          description: Wheelchair spaces among the seats.
+        zoneSeatCounts:
+          description: Seats per zone.
+          allOf:
+            - $ref: '#/components/schemas/ZoneSeatCountsResponse'
+        deletable:
+          type: boolean
+          example: true
+          description: 'Whether the hall can be deleted: true while it never had a showtime. Otherwise the Halls tab offers Retire instead of Delete.'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-10-16T14:52:00+03:00'
+          description: When the hall was added, in Cairo time.
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-10-16T14:52:00+03:00'
+          description: When the hall or its layout last changed, in Cairo time.
+      required:
+        - id
+        - theaterId
+        - name
+        - status
+        - rowCount
+        - seatsPerRow
+        - seatCount
+        - wheelchairCount
+        - zoneSeatCounts
+        - deletable
+        - createdAt
+        - updatedAt
+    HallResponsePage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, in list order. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/HallResponse'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 42
+          description: How many items the whole list has, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
+    CreateHallRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: false
+          minLength: 1
+          maxLength: 40
+          example: Hall 3
+          description: 'Shown on showtimes and tickets ("Hall 3 · 186 seats"). Unique among the theater''s halls in any status, ignoring letter case: a taken name is `CONFLICT` (`uq_halls_theater_id_name`). Trimmed.'
+      required:
+        - name
+    UpdateHallRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: false
+          minLength: 1
+          maxLength: 40
+          example: Hall 3
+          description: Unique among the theater's halls, ignoring letter case (`CONFLICT` when taken). A retired hall can still be renamed. Trimmed.
+        status:
+          nullable: false
+          example: active
+          description: '`active` makes a draft hall schedulable and counts for publishing its theater. `retired` hides a draft or active hall from scheduling and keeps it for history; it needs no upcoming showtimes (`HALL_NOT_RETIRABLE`) and is final. Any other change is `CONFLICT`.'
+          allOf:
+            - $ref: '#/components/schemas/HallStatus'
+    SeatZone:
+      type: string
+      enum:
+        - front
+        - middle
+        - back
+      description: 'The row''s zone: every seat in the row costs this zone''s price.'
+    HallLayoutRow:
+      type: object
+      properties:
+        label:
+          type: string
+          nullable: false
+          enum:
+            - A
+            - B
+            - C
+            - D
+            - E
+            - F
+            - G
+            - H
+            - J
+            - K
+            - L
+            - M
+            - 'N'
+            - O
+            - P
+          example: A
+          description: The row letter, A nearest the screen; I is skipped.
+        zone:
+          nullable: false
+          example: front
+          description: 'The row''s zone: every seat in the row costs this zone''s price.'
+          allOf:
+            - $ref: '#/components/schemas/SeatZone'
+      required:
+        - label
+        - zone
+    SeatMarkKind:
+      type: string
+      enum:
+        - wheelchair
+        - no_seat
+      description: '`wheelchair`: a wheelchair space (a seat). `no_seat`: a gap, not a seat.'
+    SeatMark:
+      type: object
+      properties:
+        rowLabel:
+          type: string
+          nullable: false
+          example: A
+          description: Row letter.
+        seatNumber:
+          type: integer
+          minimum: 1
+          maximum: 20
+          example: 1
+          description: Seat number from the left; the seat label is the row letter and this (`A1`).
+        kind:
+          nullable: false
+          example: wheelchair
+          description: '`wheelchair`: a wheelchair space (a seat). `no_seat`: a gap, not a seat.'
+          allOf:
+            - $ref: '#/components/schemas/SeatMarkKind'
+      required:
+        - rowLabel
+        - seatNumber
+        - kind
+    HallLayout:
+      type: object
+      properties:
+        hallId:
+          type: integer
+          example: 3
+          description: Hall id.
+        rowCount:
+          type: integer
+          minimum: 4
+          maximum: 15
+          example: 12
+          description: Rows of the grid.
+        seatsPerRow:
+          type: integer
+          minimum: 8
+          maximum: 20
+          example: 16
+          description: Seats per row, numbered 1 to `seatsPerRow` from the left.
+        aisleAfter:
+          example:
+            - 4
+            - 12
+          description: 'Seat numbers an aisle follows: `[4, seatsPerRow − 4]`, deduplicated and in order (8 seats: `[4]`; 16: `[4, 12]`; 20: `[4, 16]`). Computed, never stored.'
+          type: array
+          items:
+            type: integer
+        rows:
+          description: Every row, front to back (`rowCount` items).
+          type: array
+          items:
+            $ref: '#/components/schemas/HallLayoutRow'
+        seatMarks:
+          description: Wheelchair spaces and gaps, by row then seat; empty for a full grid.
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatMark'
+        seatCount:
+          type: integer
+          minimum: 1
+          example: 190
+          description: Seats, wheelchair spaces included and gaps left out.
+        wheelchairCount:
+          type: integer
+          minimum: 0
+          example: 2
+          description: Wheelchair spaces.
+        zoneSeatCounts:
+          description: Seats per zone.
+          allOf:
+            - $ref: '#/components/schemas/ZoneSeatCountsResponse'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-10-16T14:52:00+03:00'
+          description: When the hall or its layout last changed, in Cairo time.
+      required:
+        - hallId
+        - rowCount
+        - seatsPerRow
+        - aisleAfter
+        - rows
+        - seatMarks
+        - seatCount
+        - wheelchairCount
+        - zoneSeatCounts
+        - updatedAt
+    SeatMarkRequest:
+      type: object
+      properties:
+        rowLabel:
+          type: string
+          nullable: false
+          pattern: ^[A-HJ-P]$
+          example: F
+          description: The row letter, A to P without I; it must be one of the rows of the layout.
+        seatNumber:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 20
+          example: 7
+          description: 'The seat number, counted from 1 on the left; at most `seatsPerRow`. A gap keeps its number: seats never renumber.'
+        kind:
+          nullable: false
+          example: wheelchair
+          description: '`wheelchair`: a wheelchair space, sold at the zone price of its row. `no_seat`: a gap, not a seat.'
+          allOf:
+            - $ref: '#/components/schemas/SeatMarkKind'
+      required:
+        - rowLabel
+        - seatNumber
+        - kind
+    ReplaceHallLayoutRequest:
+      type: object
+      properties:
+        rowCount:
+          type: integer
+          nullable: false
+          minimum: 4
+          maximum: 15
+          example: 12
+          description: 'Rows, 4 to 15, lettered from the screen back: A to P without I.'
+        seatsPerRow:
+          type: integer
+          nullable: false
+          minimum: 8
+          maximum: 20
+          example: 16
+          description: Seats in every row, 8 to 20. Aisles follow seat 4 and the 4th seat from the end; they are not cells.
+        rowZones:
+          type: array
+          nullable: false
+          minItems: 4
+          maxItems: 15
+          example:
+            - front
+            - front
+            - front
+            - middle
+            - middle
+            - middle
+            - middle
+            - middle
+            - back
+            - back
+            - back
+            - back
+          description: 'One zone per row, front to back: item 0 is row A. Exactly `rowCount` items. Zones form bands from the screen back: `front` rows, then `middle`, then `back`; any band may be empty, and a row is never in a zone in front of the row before it.'
+          items:
+            $ref: '#/components/schemas/SeatZone'
+        seatMarks:
+          nullable: false
+          maxItems: 300
+          example:
+            - rowLabel: A
+              seatNumber: 1
+              kind: wheelchair
+            - rowLabel: A
+              seatNumber: 2
+              kind: wheelchair
+            - rowLabel: M
+              seatNumber: 16
+              kind: no_seat
+          description: Wheelchair spaces and gaps; every other cell is a seat. Each inside the grid (`rowLabel` a row of this layout, `seatNumber` at most `seatsPerRow`), at most one per seat, and at least one seat must remain. Empty for a full grid.
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatMarkRequest'
+      required:
+        - rowCount
+        - seatsPerRow
+        - rowZones
+        - seatMarks
     ErrorResponse:
       type: object
       properties:
