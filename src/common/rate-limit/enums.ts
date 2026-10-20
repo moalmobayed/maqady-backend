@@ -9,6 +9,7 @@ export const RATE_LIMIT_NAMES = [
   'registrationIp',
   'emailRequestEmail',
   'emailRequestIp',
+  'verificationResendCustomer',
   'holdIp',
   'holdCustomer',
   'payment',

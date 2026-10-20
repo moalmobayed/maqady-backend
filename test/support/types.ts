@@ -139,3 +139,22 @@ export interface FakeContextOptions {
   readonly handler?: (...args: never[]) => unknown;
   readonly controller?: abstract new (...args: never[]) => unknown;
 }
+
+/** What `registerCustomer()` takes; everything has a unique or fixed default. */
+export interface CustomerFixture {
+  readonly email?: string;
+  readonly fullName?: string;
+  readonly password?: string;
+}
+
+/** A signed-in customer: real tokens from the real registration or sign-in. */
+export interface CustomerSessionFixture {
+  readonly customerId: number;
+  readonly sessionId: number;
+  readonly email: string;
+  readonly password: string;
+  readonly accessToken: string;
+  readonly refreshToken: string;
+  /** `Bearer <accessToken>`, for `.set('Authorization', …)`. */
+  readonly authorization: string;
+}

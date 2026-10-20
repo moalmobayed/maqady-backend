@@ -40,6 +40,7 @@ const DEFAULT_RATE_LIMITS = {
   registrationIp: { limit: 5, windowSeconds: 3600 },
   emailRequestEmail: { limit: 3, windowSeconds: 3600 },
   emailRequestIp: { limit: 20, windowSeconds: 3600 },
+  verificationResendCustomer: { limit: 3, windowSeconds: 3600 },
   holdIp: { limit: 30, windowSeconds: 600 },
   holdCustomer: { limit: 10, windowSeconds: 600 },
   payment: { limit: 10, windowSeconds: 300 },
@@ -143,10 +144,12 @@ describe('loadConfig', () => {
       RATE_LIMIT_DEFAULT: '1000/90s',
       RATE_LIMIT_HOLD_IP: '7/10m',
       RATE_LIMIT_TICKET_EMAIL: '2/2h',
+      RATE_LIMIT_VERIFICATION_RESEND_CUSTOMER: '5/30m',
     });
     expect(rateLimits.default).toEqual({ limit: 1000, windowSeconds: 90 });
     expect(rateLimits.holdIp).toEqual({ limit: 7, windowSeconds: 600 });
     expect(rateLimits.ticketEmail).toEqual({ limit: 2, windowSeconds: 7200 });
+    expect(rateLimits.verificationResendCustomer).toEqual({ limit: 5, windowSeconds: 1800 });
     expect(rateLimits.search).toEqual(DEFAULT_RATE_LIMITS.search);
   });
 

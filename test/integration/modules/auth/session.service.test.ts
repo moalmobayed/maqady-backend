@@ -2,6 +2,7 @@ import { sha256Hex } from '../../../../src/common/crypto/hashing';
 import { SessionService } from '../../../../src/modules/auth/session.service';
 import { TestClock } from '../../../support/clock';
 import { waitForLockWaiters } from '../../../support/database';
+import { registerCustomer } from '../../../support/customer-auth';
 import { createStaffMember } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { TestApp } from '../../../support/types';
@@ -139,9 +140,11 @@ describe('SessionService (integration)', () => {
   });
 
   it('keeps customer sessions in their own column, refreshable only for the customer audience', async () => {
+    // `sessions.customer_id` references customers (U9), so the owner is a real customer.
+    const { customerId } = await registerCustomer(testApp);
     const sessions = testApp.app.get(SessionService);
     const opened = await sessions.open({
-      owner: { audience: 'customer', id: 77 },
+      owner: { audience: 'customer', id: customerId },
       lifetimeSeconds: 2_592_000,
     });
     await expect(
@@ -157,6 +160,6 @@ describe('SessionService (integration)', () => {
         refreshToken: opened.refreshToken,
         assertOwnerLive: () => Promise.resolve(),
       }),
-    ).resolves.toMatchObject({ ownerId: 77, expiresAt: opened.expiresAt });
+    ).resolves.toMatchObject({ ownerId: customerId, expiresAt: opened.expiresAt });
   });
 });

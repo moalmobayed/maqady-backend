@@ -18,6 +18,12 @@ export const RATE_LIMIT_DEFINITIONS: Readonly<Record<RateLimitName, RateLimitDef
     variable: 'RATE_LIMIT_EMAIL_REQUEST_EMAIL',
   },
   emailRequestIp: { defaultRule: '20/1h', key: 'ip', variable: 'RATE_LIMIT_EMAIL_REQUEST_IP' },
+  // Resend verification has no body.email; a customer's email is fixed, so per customer is per email.
+  verificationResendCustomer: {
+    defaultRule: '3/1h',
+    key: 'customer',
+    variable: 'RATE_LIMIT_VERIFICATION_RESEND_CUSTOMER',
+  },
   holdIp: { defaultRule: '30/10m', key: 'ip', variable: 'RATE_LIMIT_HOLD_IP' },
   holdCustomer: { defaultRule: '10/10m', key: 'customer', variable: 'RATE_LIMIT_HOLD_CUSTOMER' },
   payment: { defaultRule: '10/5m', key: 'bookingRef', variable: 'RATE_LIMIT_PAYMENT' },

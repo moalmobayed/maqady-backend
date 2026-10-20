@@ -3,6 +3,7 @@ import { TransactionRepository } from '../../../../src/common/database/transacti
 import { AppError } from '../../../../src/common/errors/app-error';
 import { TestClock } from '../../../support/clock';
 import { FoundationsProbeModule } from '../../../support/foundations-probe.module';
+import { registerCustomer } from '../../../support/customer-auth';
 import { createStaffMember } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { TestApp } from '../../../support/types';
@@ -67,8 +68,9 @@ describe('AuditService (integration)', () => {
   });
 
   it('records staff and customer actors in their own columns, inside a service transaction', async () => {
-    // The staff actor column references staff_users (U2a), so the actor is a real member.
+    // The actor columns reference staff_users (U2a) and customers (U9), so the actors are real.
     const staff = await createStaffMember(testApp, { role: 'admin' });
+    const { customerId } = await registerCustomer(testApp);
     await testApp.knex('audit_events').truncate();
     const audit = testApp.app.get(AuditService);
     await testApp.app.get(TransactionRepository).run(async () => {
@@ -79,7 +81,7 @@ describe('AuditService (integration)', () => {
         bookingId: 12,
       });
       await audit.record({
-        actor: { kind: 'customer', id: 9 },
+        actor: { kind: 'customer', id: customerId },
         action: 'booking.claimed',
         entity: { type: 'booking', id: 12 },
         bookingId: 12,
@@ -96,7 +98,12 @@ describe('AuditService (integration)', () => {
         actor_customer_id: null,
         booking_id: 12,
       },
-      { actor_kind: 'customer', actor_staff_user_id: null, actor_customer_id: 9, booking_id: 12 },
+      {
+        actor_kind: 'customer',
+        actor_staff_user_id: null,
+        actor_customer_id: customerId,
+        booking_id: 12,
+      },
     ]);
   });
 

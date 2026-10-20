@@ -78,7 +78,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | for `supabase` | The project URL (`https://<ref>.supabase.co`, no trailing slash) and the service role key, which never leaves the server |
 | `STORAGE_BUCKET` | yes, optional | The public-read Supabase bucket. Default `media` |
 | `LOCAL_STORAGE_DIR`, `LOCAL_STORAGE_PUBLIC_URL` | for `local`, optional | The directory the files go to (default `.media`, created on the first upload) and its public URL (default `http://localhost:<PORT>/media`) |
-| `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all eleven |
+| `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all twelve |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
@@ -170,6 +170,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `createStaffMember()` and `signInStaff()` do one half each.
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
+- `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`
+  registers a customer through `CustomerAuthService` (signed in, a verification email queued),
+  `signInCustomer()` opens another session, `blockCustomer()` blocks through `CustomerService`,
+  and `customerLinkToken(text, '/verify-email')` reads a link's token from an email the
+  recording sender caught.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -203,7 +208,7 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - **Credentials** (`modules/auth`, `CredentialsModule`): `PasswordService` (scrypt),
   `@IsAllowedPassword()`, `SessionService` (refresh-token sessions with rotation; call `refresh()`
   from a `@NoRequestTransaction()` route) and `OneTimeTokenService` (single-use links). Staff
-  use them now; customers (U9) pass their own lifetime and account check.
+  and customers (U9) pass their own lifetime and account check.
 - **Staff** (`modules/staff`): `StaffService` reads members (`findById`, `findByEmail`, `list`).
   Invites, staff "Forgot password" and the set-password page are `StaffOnboardingService`'s,
   inside the module. `OneTimeTokenService.findLive()` reads a live link without using it, so a
@@ -215,6 +220,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   pictures with `findByIds()` (one query) and `toImageResponse(image, alt)`; `delete()` removes
   the row now and the files after commit. Kinds: `poster` (2:3), `backdrop` (16:9, cropped),
   `person` (square, 600 × 600), `gallery` (any shape).
+- **Customers** (`modules/customers`): `CustomerService` reads a customer (`findById`, or
+  `findByIdForUpdate` to lock the row), blocks or unblocks one (`setStatus`, which signs a blocked
+  customer out everywhere) and sends a password reset link (`issuePasswordReset`).
 
 ## Database and migrations
 
@@ -268,7 +276,7 @@ src/
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
-                                         (credentials), staff, media
+                                         (credentials), staff, media, customers
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)
