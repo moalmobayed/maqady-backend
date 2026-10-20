@@ -65,6 +65,10 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
     extraModels: [ErrorResponse],
     operationIdFactory: (_controllerKey: string, methodKey: string) => methodKey,
   });
+  // DocumentBuilder always adds an empty contact object; there is no contact to publish.
+  if (document.info.contact && Object.keys(document.info.contact).length === 0) {
+    delete document.info.contact;
+  }
   assertUniqueOperationIds(document);
   return document;
 }
