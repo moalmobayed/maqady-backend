@@ -72,7 +72,7 @@ on the next request. Customer and staff tokens never open each other's routes.
 | Registration inserts with `INSERT … ON CONFLICT (email) WHERE deleted_at IS NULL DO NOTHING RETURNING …`; no row → `409 EMAIL_TAKEN` | §10.5; a taken email never raises `23505` inside the request transaction. A blocked account's email is also taken; an anonymised one's is free again. |
 | Email is stored trimmed as typed; `CITEXT` makes every lookup and the unique index case-insensitive | §6.2. |
 | Sign-in: an unknown or anonymised email runs `PasswordService.verify(password, null)` (dummy scrypt) and answers `INVALID_CREDENTIALS`; `ACCOUNT_BLOCKED` only after the password matched | Same as U2a: neither timing nor answer reveals the account or its state to a wrong password. |
-| Sign-in records itself with an update that matches only a live, active customer, before it opens the session | As U2a for staff: the update waits for a block in flight and is refused by it, so no session escapes a block's revocation. |
+| Sign-in records itself with an update that matches only a live, active customer whose `password_hash` is still the one the password was checked against, before it opens the session | As U2a for staff: the update waits for a block, password change or reset in flight and is refused by it, so no session escapes their revocation. A changed hash answers `INVALID_CREDENTIALS`, a block alone `ACCOUNT_BLOCKED` (review R1). |
 | Unverified customers can do everything | PRD Accounts 2: "Verification blocks nothing". |
 | Resolver order: no row, another customer's session, or `deleted_at` set → `null` (`UNAUTHENTICATED`); `status = 'blocked'` → `ACCOUNT_BLOCKED`; session revoked → `SESSION_REVOKED`; `expires_at <= now` → `SESSION_EXPIRED` | Blocking also revokes the sessions; checking status first gives the PRD's "Account blocked" screen instead of a generic sign-out. Mirrors U2a. |
 | Guest and customer routes document `SESSION_EXPIRED` among their access errors | The customer resolver answers it in the last 15 minutes of a session; U2a left this documentation change to U9. |
@@ -192,7 +192,8 @@ last_sign_in_at = created_at = updated_at = now })`, `null` → `EMAIL_TAKEN`; i
 
 **Sign-in**: `findLiveByEmail` → `verify(password, row?.password_hash ?? null)`; no row or false
 → `INVALID_CREDENTIALS`; `blocked` → `ACCOUNT_BLOCKED`; `recordSignIn` (matches only a live,
-active row) → none → `ACCOUNT_BLOCKED`; open the session; sign.
+active row with the checked hash) → none → re-read: the hash changed → `INVALID_CREDENTIALS`,
+else `ACCOUNT_BLOCKED`; open the session; sign.
 
 **Refresh**: `SessionService.refresh({ audience: 'customer', refreshToken, assertOwnerLive })`,
 then sign a new access token. Unknown → `UNAUTHENTICATED`, revoked → `SESSION_REVOKED`,
@@ -265,14 +266,15 @@ and `ACCOUNT_BLOCKED`.
 
 **DTOs**
 
-- `RegisterCustomerRequest`: `fullName` (trimmed, 1–100), `email` (trimmed, `IsEmail`, ≤ 320),
+- `RegisterCustomerRequest`: `fullName` (trimmed, 1–100, no NUL), `email` (trimmed, `IsEmail`,
+  ≤ 320, and the stored shape `^[^\s@]+@[^\s@]+$`, so a quoted local part is refused),
   `password` (`@IsAllowedPassword()`).
 - `CustomerSignInRequest`: `email` (`IsEmail`, ≤ 320), `password` (string, 1–128; the policy is
   not applied at sign-in).
 - `EmailVerificationRequest`: `token` (string, 1–128).
 - `ForgotPasswordRequest`: `email` (`IsEmail`, ≤ 320).
 - `ResetPasswordRequest`: `token` (string, 1–128), `password` (`@IsAllowedPassword()`).
-- `UpdateProfileRequest`: optional `fullName` (trimmed, 1–100, one message per problem); optional
+- `UpdateProfileRequest`: optional `fullName` (trimmed, 1–100, no NUL, one message per problem); optional
   `phone` (E.164 or an Egyptian local mobile, normalised to E.164; `null` clears it); at least one
   present, else `VALIDATION_FAILED` with `send fullName, phone or both` on `fullName`. `email` or any other field → `VALIDATION_FAILED` (`forbidNonWhitelisted`).
 - `ChangePasswordRequest`: `currentPassword` (string, 1–128), `newPassword`
