@@ -21,6 +21,7 @@
     "contract": "nest build && node --enable-source-maps dist/cli/contract.js",
     "admin:create": "nest build && node --enable-source-maps dist/cli/admin-create.js",
     "media:orphans": "nest build && node --enable-source-maps dist/cli/media-orphans.js",
+    "seed": "nest build && node --enable-source-maps dist/cli/seed.js",
     "db:local": "bash scripts/db-local.sh"
   },
   "dependencies": {
