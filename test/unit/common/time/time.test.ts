@@ -7,6 +7,7 @@ import {
   cinemaMinuteToInstant,
   formatCairoIso,
   isCalendarDate,
+  isIsoInstant,
   subtractFromInstant,
   wallClockToInstant,
   weekdayOfCinemaDate,
@@ -148,6 +149,15 @@ describe('calendar and instant arithmetic', () => {
     expect(isCalendarDate('2026-10-16')).toBe(true);
     expect(isCalendarDate('2026-02-30')).toBe(false);
     expect(isCalendarDate('2026-1-5')).toBe(false);
+  });
+
+  it('recognises an instant written in ISO 8601 with its offset, and nothing looser', () => {
+    expect(isIsoInstant('2026-10-16T19:30:00+03:00')).toBe(true);
+    expect(isIsoInstant(new Date('2026-10-16T16:30:00Z').toISOString())).toBe(true);
+    expect(isIsoInstant('2026-10-16')).toBe(false);
+    expect(isIsoInstant('2026-10-16T19:30:00')).toBe(false);
+    expect(isIsoInstant('2026-02-30T10:00:00Z')).toBe(false);
+    expect(isIsoInstant('2026-W42-5')).toBe(false);
   });
 
   it('adds and subtracts real durations, unaffected by summer time', () => {

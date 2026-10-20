@@ -13,6 +13,10 @@ export const CAIRO_ISO_FORMAT = "yyyy-MM-dd'T'HH:mm:ssZZ";
 /** `YYYY-MM-DD`, a calendar or cinema date. */
 export const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** An instant as the API and `Date.toISOString()` write it: date, time, offset or `Z`. */
+export const ISO_INSTANT_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 /** `HH:mm`, a 24-hour wall-clock time as an admin types it. */
 export const WALL_CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 

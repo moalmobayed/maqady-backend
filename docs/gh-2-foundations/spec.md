@@ -59,7 +59,7 @@ exercised through test-only controllers registered by the integration tests.
 | `crypto/` | `crypto.module.ts`, `data-encryption.service.ts`, `hashing.ts`, `keyring.ts`, `crypto.constants.ts`, `types.ts` |
 | `time/` | `time.module.ts`, `clock.ts`, `time.ts`, `time.constants.ts`, `types.ts` |
 | `money/` | `money.ts`, `enums.ts`, `types.ts`, `dto/money-response.dto.ts` |
-| `pagination/` | `cursor.ts`, `pagination.constants.ts`, `types.ts`, `dto/page-query.dto.ts`, `dto/page-response.dto.ts` |
+| `pagination/` | `cursor.ts`, `pagination.constants.ts`, `enums.ts`, `types.ts`, `dto/page-query.dto.ts`, `dto/page-response.dto.ts` |
 | `auth/` | `auth.module.ts`, `access.decorators.ts`, `access-metadata.ts`, `access-token.service.ts`, `principal-resolver.registry.ts`, `jwt-auth.guard.ts`, `access.guard.ts`, `access-declaration.check.ts`, `auth.constants.ts`, `enums.ts`, `types.ts` |
 | `rate-limit/` | `rate-limit.module.ts`, `rate-limit.guard.ts`, `rate-limit.decorators.ts`, `throttler-options.ts`, `trackers.ts`, `rate-limit.constants.ts`, `enums.ts`, `types.ts` |
 | `audit/` | `audit.module.ts`, `audit.repository.ts`, `audit.service.ts`, `audit.constants.ts`, `enums.ts`, `types.ts` |
@@ -82,9 +82,9 @@ and `IdempotencyModule`, and registers `APP_GUARD` `JwtAuthGuard`, `RateLimitGua
 | `DataEncryptionService` | `common/crypto/data-encryption.service` | `encrypt(plaintext, associatedData?)`, `decrypt(ciphertext, associatedData?)` |
 | `sha256Hex`, `hmacSha256`, `randomToken`, `safeEqual` | `common/crypto/hashing` | Token hashes (U2, U9), QR signatures (U11) |
 | `Clock` | `common/time/clock` | Inject it; `now(): Date`. Tests replace it with `TestClock` |
-| `cinemaDateOf`, `cinemaDayBounds`, `weekdayOfCinemaDate`, `addDays`, `wallClockToInstant`, `cinemaMinuteToInstant`, `formatCairoIso`, `addToInstant`, `subtractFromInstant`, `isCalendarDate`, `CAIRO_TIME_ZONE` | `common/time/time`, `time.constants` | The only wall-clock and instant conversions (design §8) |
+| `cinemaDateOf`, `cinemaDayBounds`, `weekdayOfCinemaDate`, `addDays`, `wallClockToInstant`, `cinemaMinuteToInstant`, `formatCairoIso`, `addToInstant`, `subtractFromInstant`, `isCalendarDate`, `isIsoInstant`, `CAIRO_TIME_ZONE` | `common/time/time`, `time.constants` | The only wall-clock and instant conversions (design §8) |
 | `Money`, `money()`, `zeroMoney`, `addMoney`, `subtractMoney`, `multiplyMoney`, `sumMoney`, `isSameMoney`, `MoneyResponse` | `common/money` | Integer piastres |
-| `PageQuery`, `toPageRequest()`, `toPage()`, `encodeCursor`, `decodeCursor`, `PageResponseOf(Item)` | `common/pagination` | Cursor lists `{ items, nextCursor, total }` |
+| `PageQuery`, `toPageRequest(query, kind)`, `toPage()`, `encodeCursor`, `decodeCursor(cursor, kind)`, `PageResponseOf(Item)`, `SortKeyKind` | `common/pagination` | Cursor lists `{ items, nextCursor, total }`. Pass the list's sort-key kind (`instant`, `text` or `number`), so a tampered sort key is `400` here, not a failed query |
 | `Public`, `Guest`, `Customer`, `Staff`, `Admin`, `CurrentPrincipal` | `common/auth/access.decorators` | One access decorator per route |
 | `AccessTokenService` | `common/auth/access-token.service` | `sign({ audience, subjectId, sessionId }): string`, `verify(token, audience): VerifiedAccessToken` |
 | `PrincipalResolverRegistry` | `common/auth/principal-resolver.registry` | `register(audience, { resolve(token): Promise<Principal \| null> })`, once per audience: staff in U2, customer in U9, in `onModuleInit` |
@@ -232,7 +232,11 @@ first), `formatCairoIso(instant)` (`2026-10-16T19:30:00+03:00`), `addToInstant` 
 `subtractFromInstant` (absolute durations).
 
 **Pagination.** `PageQuery { cursor?, limit? }` (limit 1–100, default 20); the cursor is
-base64url JSON `[sortKey, id]`; an unreadable one is `400 VALIDATION_FAILED` on `cursor`.
+base64url JSON `[sortKey, id]`; an unreadable one is `400 VALIDATION_FAILED` on `cursor`. So is
+one whose sort key is not of the kind the list passes to `toPageRequest(query, kind)`: an
+`instant` must be ISO 8601 with its offset, `text` a string, `number` a finite number; null is
+accepted for every kind, and no string may hold a NUL character (review finding R2). Without
+the kind, any string or number passes and a wrong type fails the query as `500`.
 `PageResponseOf(Item)` documents `{ items, nextCursor, total }`.
 
 **Audit.** `AuditService.record({ actor, action, entity, bookingId?, changedFields?, metadata? })`

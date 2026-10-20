@@ -1,11 +1,19 @@
 import { AppError } from '../errors/app-error';
+import { isIsoInstant } from '../time/time';
 import {
   DEFAULT_PAGE_SIZE,
   INVALID_CURSOR_MESSAGE,
   MAX_CURSOR_LENGTH,
   MAX_PAGE_SIZE,
 } from './pagination.constants';
-import type { CursorPosition, Page, PageQueryInput, PageRequest, SortKey } from './types';
+import type {
+  CursorPosition,
+  Page,
+  PageQueryInput,
+  PageRequest,
+  SortKey,
+  SortKeyKind,
+} from './types';
 
 /**
  * Cursor pagination (design §11). A cursor is the opaque base64url encoding of the last row's
@@ -17,8 +25,12 @@ export function encodeCursor(position: CursorPosition): string {
   return Buffer.from(JSON.stringify([position.sortKey, position.id]), 'utf8').toString('base64url');
 }
 
-/** The position a cursor encodes; `VALIDATION_FAILED` on `cursor` when it was tampered with. */
-export function decodeCursor(cursor: string): CursorPosition {
+/**
+ * The position a cursor encodes; `VALIDATION_FAILED` on `cursor` when it was tampered with.
+ * Pass the list's sort-key `kind`, so a sort key of the wrong type is refused here instead of
+ * failing the query (a 500).
+ */
+export function decodeCursor(cursor: string, kind?: SortKeyKind): CursorPosition {
   if (
     cursor.length === 0 ||
     cursor.length > MAX_CURSOR_LENGTH ||
@@ -34,14 +46,17 @@ export function decodeCursor(cursor: string): CursorPosition {
   }
   if (!Array.isArray(parsed) || parsed.length !== 2) throw invalidCursor();
   const [sortKey, id] = parsed as [unknown, unknown];
-  if (!isSortKey(sortKey) || typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1) {
+  if (!isSortKey(sortKey, kind) || typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1) {
     throw invalidCursor();
   }
   return { sortKey, id };
 }
 
-/** The page request for a list query: the decoded cursor and the page size (default 20). */
-export function toPageRequest(query: PageQueryInput): PageRequest {
+/**
+ * The page request for a list query: the decoded cursor and the page size (default 20). Pass the
+ * list's sort-key `kind` (see `decodeCursor`).
+ */
+export function toPageRequest(query: PageQueryInput, kind?: SortKeyKind): PageRequest {
   const limit = query.limit ?? DEFAULT_PAGE_SIZE;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
     throw new AppError('VALIDATION_FAILED', undefined, {
@@ -50,7 +65,10 @@ export function toPageRequest(query: PageQueryInput): PageRequest {
       ],
     });
   }
-  return { after: query.cursor === undefined ? null : decodeCursor(query.cursor), limit };
+  return {
+    after: query.cursor === undefined ? null : decodeCursor(query.cursor, kind),
+    limit,
+  };
 }
 
 /**
@@ -74,12 +92,21 @@ export function toPage<Row, Item>(
   };
 }
 
-function isSortKey(value: unknown): value is SortKey {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  );
+/** Null, or a value of the list's kind. Postgres text can't hold NUL, so no string may. */
+function isSortKey(value: unknown, kind: SortKeyKind | undefined): value is SortKey {
+  if (value === null) return true;
+  const isText = typeof value === 'string' && !value.includes('\u0000');
+  const isNumber = typeof value === 'number' && Number.isFinite(value);
+  switch (kind) {
+    case undefined:
+      return isText || isNumber;
+    case 'text':
+      return isText;
+    case 'number':
+      return isNumber;
+    case 'instant':
+      return isText && isIsoInstant(value);
+  }
 }
 
 function invalidCursor(): AppError {

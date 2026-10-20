@@ -44,6 +44,55 @@ describe('cursor', () => {
   ])('refuses a cursor that is %s, as VALIDATION_FAILED on cursor', (_case, cursor) => {
     expect(validationField(() => decodeCursor(cursor))).toBe('cursor');
   });
+
+  it('refuses a text sort key holding a NUL character, which Postgres text cannot store', () => {
+    const cursor = encodeCursor({ sortKey: 'a\u0000b', id: 1 });
+    expect(validationField(() => decodeCursor(cursor))).toBe('cursor');
+    expect(validationField(() => decodeCursor(cursor, 'text'))).toBe('cursor');
+  });
+
+  describe("checked against the list's sort-key kind", () => {
+    const cursorWith = (sortKey: string | number | null): string =>
+      encodeCursor({ sortKey, id: 7 });
+
+    it.each([
+      ['instant', '2026-10-16T19:30:00+03:00'],
+      ['instant', '2026-10-16T16:30:00.123Z'],
+      ['text', 'Café — ممر'],
+      ['number', 1500],
+      ['number', -2.5],
+      ['instant', null],
+      ['text', null],
+      ['number', null],
+    ] as const)('accepts a %s sort key %p', (kind, sortKey) => {
+      expect(decodeCursor(cursorWith(sortKey), kind)).toEqual({ sortKey, id: 7 });
+    });
+
+    it.each([
+      ['instant', 'not-a-time'],
+      ['instant', '2026-10-16'],
+      ['instant', '2026-W42-5'],
+      ['instant', '2026-02-30T10:00:00Z'],
+      ['instant', '2026-10-16T19:30:00'],
+      ['instant', 42],
+      ['text', 42],
+      ['number', '42'],
+    ] as const)(
+      'refuses a %s sort key %p as VALIDATION_FAILED, not a database error',
+      (kind, sortKey) => {
+        expect(validationField(() => decodeCursor(cursorWith(sortKey), kind))).toBe('cursor');
+      },
+    );
+
+    it('is checked by toPageRequest too', () => {
+      const query = { cursor: cursorWith('not-a-time') };
+      expect(validationField(() => toPageRequest(query, 'instant'))).toBe('cursor');
+      expect(toPageRequest({ cursor: cursorWith(1500) }, 'number').after).toEqual({
+        sortKey: 1500,
+        id: 7,
+      });
+    });
+  });
 });
 
 describe('toPageRequest', () => {

@@ -5,6 +5,7 @@ import {
   CAIRO_TIME_ZONE,
   CALENDAR_DATE_PATTERN,
   CINEMA_DAY_START_HOUR,
+  ISO_INSTANT_PATTERN,
   MAX_CINEMA_MINUTE,
   MAX_GAP_MINUTES,
   WALL_CLOCK_TIME_PATTERN,
@@ -26,6 +27,15 @@ export function isCalendarDate(value: string): boolean {
   if (!CALENDAR_DATE_PATTERN.test(value)) return false;
   const parsed = DateTime.fromISO(value, { zone: 'utc' });
   return parsed.isValid && parsed.toISODate() === value;
+}
+
+/**
+ * True for a real instant written in ISO 8601 with its offset, such as
+ * `2026-10-16T19:30:00+03:00` or `2026-10-16T16:30:00.000Z`; false for a bare date, a time
+ * without an offset, or an impossible date.
+ */
+export function isIsoInstant(value: string): boolean {
+  return ISO_INSTANT_PATTERN.test(value) && DateTime.fromISO(value, { setZone: true }).isValid;
 }
 
 /** Calendar arithmetic on a date, independent of any time zone. */
