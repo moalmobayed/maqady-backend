@@ -8,6 +8,7 @@ import {
   formatCairoIso,
   isCalendarDate,
   isIsoInstant,
+  startOfNextUtcDay,
   subtractFromInstant,
   wallClockToInstant,
   weekdayOfCinemaDate,
@@ -166,5 +167,26 @@ describe('calendar and instant arithmetic', () => {
     expect(subtractFromInstant(at('2026-10-17T00:00:00Z'), { hours: 24 })).toEqual(
       at('2026-10-16T00:00:00Z'),
     );
+  });
+});
+
+describe('startOfNextUtcDay (provider quota resets)', () => {
+  it('is 00:00 UTC of the next UTC date, whatever the time in Cairo', () => {
+    expect(startOfNextUtcDay(at('2026-10-20T09:15:00Z'))).toEqual(at('2026-10-21T00:00:00Z'));
+    // 01:30 in Cairo on the 21st is still the 20th in UTC.
+    expect(startOfNextUtcDay(at('2026-10-21T01:30:00+03:00'))).toEqual(at('2026-10-21T00:00:00Z'));
+  });
+
+  it('moves a refusal one second before midnight to that midnight', () => {
+    expect(startOfNextUtcDay(at('2026-10-20T23:59:59.999Z'))).toEqual(at('2026-10-21T00:00:00Z'));
+  });
+
+  it('moves an instant exactly at midnight to the following midnight', () => {
+    expect(startOfNextUtcDay(at('2026-10-21T00:00:00Z'))).toEqual(at('2026-10-22T00:00:00Z'));
+  });
+
+  it('crosses month and year ends', () => {
+    expect(startOfNextUtcDay(at('2026-12-31T18:00:00Z'))).toEqual(at('2027-01-01T00:00:00Z'));
+    expect(startOfNextUtcDay(at('2028-02-28T12:00:00Z'))).toEqual(at('2028-02-29T00:00:00Z'));
   });
 });

@@ -107,3 +107,72 @@ export function IsRateLimitRule(): PropertyDecorator {
     },
   });
 }
+
+/**
+ * Where email links point (design §13.1): an absolute `http(s)://` URL, optionally with a path,
+ * and no credentials, query or fragment, because paths and `?token=` are appended to it.
+ */
+export function isFrontendBaseUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return (
+      WEB_PROTOCOLS.has(url.protocol) &&
+      url.hostname !== '' &&
+      url.username === '' &&
+      url.password === '' &&
+      url.search === '' &&
+      url.hash === '' &&
+      !value.includes('?') &&
+      !value.includes('#')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The base URL without its trailing slashes, so `${base}${path}` never doubles one. */
+export function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+const EMAIL_ADDRESS = '[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+';
+const EMAIL_FROM_PATTERN = new RegExp(`^(${EMAIL_ADDRESS}|[^<>]+ <${EMAIL_ADDRESS}>)$`);
+
+/** A sender as Resend takes it: `addr@domain` or `Name <addr@domain>`. */
+export function isEmailFrom(value: unknown): boolean {
+  return typeof value === 'string' && EMAIL_FROM_PATTERN.test(value);
+}
+
+export function IsFrontendBaseUrl(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isFrontendBaseUrl',
+    validator: {
+      validate: isFrontendBaseUrl,
+      defaultMessage: () =>
+        'must be an http:// or https:// URL such as https://maqady.example, with no query or fragment',
+    },
+  });
+}
+
+export function IsEmailFrom(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isEmailFrom',
+    validator: {
+      validate: isEmailFrom,
+      defaultMessage: () =>
+        'must be an address such as tickets@maqady.example or Maqady <tickets@maqady.example>',
+    },
+  });
+}
+
+/** An API key: non-empty, no whitespace. The value is never echoed. */
+export function IsApiKey(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isApiKey',
+    validator: {
+      validate: (value: unknown) => typeof value === 'string' && /^\S+$/.test(value),
+      defaultMessage: () => 'must be an API key with no spaces',
+    },
+  });
+}

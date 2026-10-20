@@ -129,6 +129,14 @@ export function subtractFromInstant(instant: Date, duration: InstantDuration): D
   return DateTime.fromJSDate(instant, { zone: 'utc' }).minus(duration).toJSDate();
 }
 
+/**
+ * 00:00 UTC of the day after the instant's UTC date: when a provider's daily quota resets
+ * (Resend counts days in UTC). An instant exactly at midnight gives the next midnight.
+ */
+export function startOfNextUtcDay(instant: Date): Date {
+  return DateTime.fromJSDate(instant, { zone: 'utc' }).startOf('day').plus({ days: 1 }).toJSDate();
+}
+
 /** Midnight of a calendar date in UTC: a zone-free day for calendar arithmetic. */
 function calendarDay(date: CalendarDate): DateTime {
   if (!isCalendarDate(date)) {
