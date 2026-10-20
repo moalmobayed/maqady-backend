@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import {
   ConfigValidationError,
   DEFAULT_LOG_LEVEL,
@@ -18,6 +19,15 @@ const VALID_ENV = {
   DATA_ENCRYPTION_KEY: ENCRYPTION_KEY,
   FRONTEND_BASE_URL: 'https://maqady.example',
   EMAIL_DRIVER: 'simulated',
+  STORAGE_DRIVER: 'local',
+};
+
+const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiJ9.service-role.signature-part';
+const SUPABASE_ENV = {
+  ...VALID_ENV,
+  STORAGE_DRIVER: 'supabase',
+  SUPABASE_URL: 'https://abcd.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
 };
 
 const RESEND_KEY = 're_TopSecretResendKey42';
@@ -59,6 +69,11 @@ describe('loadConfig', () => {
       rateLimits: DEFAULT_RATE_LIMITS,
       frontendBaseUrl: 'https://maqady.example',
       email: { driver: 'simulated' },
+      storage: {
+        driver: 'local',
+        directory: resolve('.media'),
+        publicBaseUrl: 'http://localhost:3000/media',
+      },
     });
     expect(DEFAULT_PORT).toBe(3000);
     expect(DEFAULT_LOG_LEVEL).toBe('info');
@@ -89,7 +104,7 @@ describe('loadConfig', () => {
   });
 
   it('ignores variables it does not own', () => {
-    expect(() => loadConfig({ ...VALID_ENV, PATH: '/usr/bin', SUPABASE_URL: 'x' })).not.toThrow();
+    expect(() => loadConfig({ ...VALID_ENV, PATH: '/usr/bin', HOME: '/root' })).not.toThrow();
   });
 
   it('reports each missing required variable as required', () => {
@@ -102,6 +117,7 @@ describe('loadConfig', () => {
       'DATA_ENCRYPTION_KEY is required',
       'FRONTEND_BASE_URL is required',
       'EMAIL_DRIVER is required',
+      'STORAGE_DRIVER is required',
     ]);
   });
 
@@ -267,6 +283,95 @@ describe('loadConfig', () => {
     it('never echoes the Resend key when another variable is wrong', () => {
       const problems = problemsFor({ ...RESEND_ENV, PORT: 'x' });
       expect(problems.join('\n')).not.toContain(RESEND_KEY);
+    });
+  });
+
+  describe('storage (design 9, 14.5)', () => {
+    it('reads the Supabase driver with the default bucket', () => {
+      expect(loadConfig(SUPABASE_ENV).storage).toEqual({
+        driver: 'supabase',
+        supabaseUrl: 'https://abcd.supabase.co',
+        serviceRoleKey: SERVICE_ROLE_KEY,
+        bucket: 'media',
+      });
+      expect(loadConfig({ ...SUPABASE_ENV, STORAGE_BUCKET: 'maqady-media' }).storage).toEqual(
+        expect.objectContaining({ bucket: 'maqady-media' }),
+      );
+    });
+
+    it('requires the Supabase variables only for the supabase driver', () => {
+      expect(problemsFor({ ...VALID_ENV, STORAGE_DRIVER: 'supabase' })).toEqual([
+        'SUPABASE_URL is required when STORAGE_DRIVER is supabase',
+        'SUPABASE_SERVICE_ROLE_KEY is required when STORAGE_DRIVER is supabase',
+      ]);
+      expect(() => loadConfig(VALID_ENV)).not.toThrow();
+    });
+
+    it('reads the local driver: directory resolved, public URL from LOCAL_STORAGE_PUBLIC_URL or PORT', () => {
+      expect(
+        loadConfig({
+          ...VALID_ENV,
+          LOCAL_STORAGE_DIR: 'tmp/uploads',
+          LOCAL_STORAGE_PUBLIC_URL: 'http://192.168.1.5:3105/media',
+        }).storage,
+      ).toEqual({
+        driver: 'local',
+        directory: resolve('tmp/uploads'),
+        publicBaseUrl: 'http://192.168.1.5:3105/media',
+      });
+      expect(loadConfig({ ...VALID_ENV, PORT: '3105' }).storage).toEqual(
+        expect.objectContaining({ publicBaseUrl: 'http://localhost:3105/media' }),
+      );
+    });
+
+    it.each([
+      ['STORAGE_DRIVER', 's3', 'STORAGE_DRIVER must be one of supabase, local'],
+      ['SUPABASE_URL', 'http://abcd.supabase.co', 'SUPABASE_URL must be the project URL'],
+      ['SUPABASE_URL', 'https://abcd.supabase.co/', 'SUPABASE_URL must be the project URL'],
+      ['SUPABASE_URL', 'https://abcd.supabase.co/rest', 'SUPABASE_URL must be the project URL'],
+      ['SUPABASE_SERVICE_ROLE_KEY', 'short-key', 'SUPABASE_SERVICE_ROLE_KEY must be the service'],
+      [
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'a key with spaces in the middle',
+        'SUPABASE_SERVICE_ROLE_KEY must be the service',
+      ],
+      ['STORAGE_BUCKET', 'Media', 'STORAGE_BUCKET must be a bucket name'],
+      ['STORAGE_BUCKET', '-bucket', 'STORAGE_BUCKET must be a bucket name'],
+    ])('refuses %s=%s', (variable, value, message) => {
+      const problems = problemsFor({ ...SUPABASE_ENV, [variable]: value });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain(message);
+      // Values can be secrets: the problem names the variable, never the value.
+      expect(problems[0]).not.toContain(value);
+    });
+
+    it('accepts plain http for a Supabase stack on the loopback host', () => {
+      const config = loadConfig({ ...SUPABASE_ENV, SUPABASE_URL: 'http://127.0.0.1:54321' });
+      expect(config.storage).toEqual(
+        expect.objectContaining({ supabaseUrl: 'http://127.0.0.1:54321' }),
+      );
+    });
+
+    it.each(['http://localhost:3000/media/', 'ftp://files.example/media', 'http://x/media?a=1'])(
+      'refuses LOCAL_STORAGE_PUBLIC_URL=%s',
+      (value) => {
+        expect(problemsFor({ ...VALID_ENV, LOCAL_STORAGE_PUBLIC_URL: value })).toEqual([
+          expect.stringContaining('LOCAL_STORAGE_PUBLIC_URL must be an http(s) URL'),
+        ]);
+      },
+    );
+
+    it('never echoes the service role key in a problem', () => {
+      const problems = problemsFor({
+        ...SUPABASE_ENV,
+        SUPABASE_URL: 'not a url',
+        SUPABASE_SERVICE_ROLE_KEY: 'secret value',
+      });
+      expect(problems.join('\n')).not.toContain('secret value');
+      expect(problems).toEqual([
+        expect.stringMatching(/^SUPABASE_URL must be the project URL/),
+        'SUPABASE_SERVICE_ROLE_KEY must be the service role key from the Supabase dashboard (at least 20 characters, no spaces)',
+      ]);
     });
   });
 });

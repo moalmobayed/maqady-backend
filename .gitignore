@@ -4,6 +4,9 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Images stored by the local storage driver (STORAGE_DRIVER=local)
+.media/
+
 # Local environment: never commit secrets
 .env
 .env.*

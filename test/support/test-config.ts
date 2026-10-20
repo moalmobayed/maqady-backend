@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { loadDotenv } from '../../src/common/config/dotenv';
 import { loadConfig } from '../../src/common/config/load-config';
 import type { AppConfig } from '../../src/common/config/types';
@@ -21,6 +23,13 @@ export const TEST_DATA_ENCRYPTION_KEY = Buffer.alloc(32, 0x33).toString('base64'
 /** Design §15: limits are raised in tests, so concurrency tests aren't throttled. */
 export const TEST_RATE_LIMIT_RULE = '100000/1m';
 
+/**
+ * Where uploaded test images go unless a suite picks its own directory: the local storage driver
+ * under the system temp directory, one per test process. Nothing is written there until a suite
+ * uploads, and the media suites use (and remove) a directory of their own.
+ */
+export const TEST_LOCAL_STORAGE_DIR = join(tmpdir(), 'maqady-test-media', String(process.pid));
+
 /** The environment variables of a valid test configuration, for tests that tweak one. */
 export function testEnvironment(): Record<string, string> {
   const rateLimits = Object.fromEntries(
@@ -36,6 +45,8 @@ export function testEnvironment(): Record<string, string> {
     DATA_ENCRYPTION_KEY: TEST_DATA_ENCRYPTION_KEY,
     FRONTEND_BASE_URL: TEST_FRONTEND_BASE_URL,
     EMAIL_DRIVER: 'simulated',
+    STORAGE_DRIVER: 'local',
+    LOCAL_STORAGE_DIR: TEST_LOCAL_STORAGE_DIR,
     ...rateLimits,
   };
 }

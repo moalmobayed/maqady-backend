@@ -27,6 +27,8 @@ const CONTRACT_CONFIG = loadConfig({
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
   FRONTEND_BASE_URL: 'http://localhost:5173',
   EMAIL_DRIVER: 'simulated',
+  // The local driver writes nothing until an upload, and the document never uploads.
+  STORAGE_DRIVER: 'local',
 });
 
 /** `npm run contract`: writes `contracts/openapi.yaml` from the controllers and DTOs. */

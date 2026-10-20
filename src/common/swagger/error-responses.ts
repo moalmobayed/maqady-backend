@@ -25,6 +25,17 @@ const EXAMPLE_DETAILS: Partial<Record<ErrorCode, ErrorDetails>> = {
     fields: [{ field: 'seats.0.label', messages: ['label must be a string'] }],
   },
   CONFLICT: { constraint: 'uq_movies_featured_position' },
+  IMAGE_TOO_LARGE: { maxBytes: 10485760 },
+  UNSUPPORTED_IMAGE_TYPE: { allowed: ['jpeg', 'png'] },
+  IMAGE_TOO_MANY_PIXELS: { maxPixels: 40000000, width: 8000, height: 6000 },
+  IMAGE_WRONG_SHAPE: {
+    kind: 'poster',
+    aspect: '2:3',
+    minWidth: 400,
+    minHeight: 600,
+    width: 1200,
+    height: 1200,
+  },
 };
 
 export function exampleErrorBody(code: ErrorCode): ErrorResponseBody {

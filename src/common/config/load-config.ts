@@ -1,14 +1,17 @@
+import { resolve } from 'node:path';
 import { plainToInstance } from 'class-transformer';
 import { type ValidationError, validateSync } from 'class-validator';
 import { RATE_LIMIT_NAMES } from '../rate-limit/enums';
 import { parseRateLimitRule, RATE_LIMIT_DEFINITIONS } from '../rate-limit/rate-limit.constants';
 import type { RateLimitName, RateLimitRule, RateLimitsConfig } from '../rate-limit/types';
 import { EnvironmentVariables } from './environment-variables';
-import type { AppConfig, EmailConfig, LogLevel } from './types';
+import type { AppConfig, EmailConfig, LogLevel, StorageConfig } from './types';
 import { decodeSecret, splitList, trimTrailingSlashes } from './validators';
 
 export const DEFAULT_PORT = 3000;
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
+export const DEFAULT_STORAGE_BUCKET = 'media';
+export const DEFAULT_LOCAL_STORAGE_DIR = '.media';
 
 /** Thrown at boot when the environment is incomplete or malformed. Lists names, never values. */
 export class ConfigValidationError extends Error {
@@ -44,8 +47,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     throw new ConfigValidationError(problems);
   }
 
+  const port = variables.PORT ?? DEFAULT_PORT;
   return {
-    port: variables.PORT ?? DEFAULT_PORT,
+    port,
     logLevel: variables.LOG_LEVEL ?? DEFAULT_LOG_LEVEL,
     corsOrigins: splitList(variables.CORS_ORIGINS),
     database: { url: variables.DATABASE_URL, schema: variables.DB_SCHEMA },
@@ -62,6 +66,24 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     rateLimits: rateLimitsFrom(present),
     frontendBaseUrl: trimTrailingSlashes(variables.FRONTEND_BASE_URL),
     email: emailFrom(variables),
+    storage: storageFrom(variables, port),
+  };
+}
+
+/** The storage driver and its settings; the driver's own variables were validated above. */
+function storageFrom(variables: EnvironmentVariables, port: number): StorageConfig {
+  if (variables.STORAGE_DRIVER === 'supabase') {
+    return {
+      driver: 'supabase',
+      supabaseUrl: variables.SUPABASE_URL ?? '',
+      serviceRoleKey: variables.SUPABASE_SERVICE_ROLE_KEY ?? '',
+      bucket: variables.STORAGE_BUCKET ?? DEFAULT_STORAGE_BUCKET,
+    };
+  }
+  return {
+    driver: 'local',
+    directory: resolve(variables.LOCAL_STORAGE_DIR ?? DEFAULT_LOCAL_STORAGE_DIR),
+    publicBaseUrl: variables.LOCAL_STORAGE_PUBLIC_URL ?? `http://localhost:${port}/media`,
   };
 }
 
