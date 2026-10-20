@@ -1,11 +1,19 @@
 // The environment is validated before Nest loads, so the decorators' metadata API is loaded here.
 import 'reflect-metadata';
 import { Type } from 'class-transformer';
-import { IsDefined, IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
-import { LOG_LEVELS } from './enums';
-import type { LogLevel } from './types';
+import { IsDefined, IsIn, IsInt, IsOptional, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { EMAIL_DRIVERS, LOG_LEVELS } from './enums';
+import type { EmailDriver, LogLevel } from './types';
 import { ACCESS_TOKEN_SECRET_MIN_BYTES, DATA_ENCRYPTION_KEY_BYTES } from './config.constants';
-import { IsOriginList, IsPostgresUrl, IsRateLimitRule, IsSecret } from './validators';
+import {
+  IsApiKey,
+  IsEmailFrom,
+  IsFrontendBaseUrl,
+  IsOriginList,
+  IsPostgresUrl,
+  IsRateLimitRule,
+  IsSecret,
+} from './validators';
 
 /**
  * The raw environment variables this service reads, as validated at boot.
@@ -102,4 +110,24 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsRateLimitRule()
   RATE_LIMIT_SEARCH?: string;
+
+  // Email (design §13.1, ADR 0004). The key is a secret: messages never echo it.
+
+  @IsDefined({ message: 'is required' })
+  @IsFrontendBaseUrl()
+  FRONTEND_BASE_URL!: string;
+
+  @IsDefined({ message: 'is required' })
+  @IsIn(EMAIL_DRIVERS, { message: `must be one of ${EMAIL_DRIVERS.join(', ')}` })
+  EMAIL_DRIVER!: EmailDriver;
+
+  @ValidateIf((variables: EnvironmentVariables) => variables.EMAIL_DRIVER === 'resend')
+  @IsDefined({ message: 'is required when EMAIL_DRIVER is resend' })
+  @IsApiKey()
+  RESEND_API_KEY?: string;
+
+  @ValidateIf((variables: EnvironmentVariables) => variables.EMAIL_DRIVER === 'resend')
+  @IsDefined({ message: 'is required when EMAIL_DRIVER is resend' })
+  @IsEmailFrom()
+  EMAIL_FROM?: string;
 }

@@ -16,7 +16,11 @@ const VALID_ENV = {
   JWT_SECRET_CUSTOMER: CUSTOMER_SECRET,
   JWT_SECRET_STAFF: STAFF_SECRET,
   DATA_ENCRYPTION_KEY: ENCRYPTION_KEY,
+  FRONTEND_BASE_URL: 'https://maqady.example',
+  EMAIL_DRIVER: 'simulated',
 };
+
+const RESEND_KEY = 're_TopSecretResendKey42';
 
 /** Design §10.6 defaults, as `loadConfig` returns them when no variable overrides one. */
 const DEFAULT_RATE_LIMITS = {
@@ -53,6 +57,8 @@ describe('loadConfig', () => {
       auth: { customerTokenSecret: CUSTOMER_SECRET, staffTokenSecret: STAFF_SECRET },
       encryption: { key: ENCRYPTION_KEY },
       rateLimits: DEFAULT_RATE_LIMITS,
+      frontendBaseUrl: 'https://maqady.example',
+      email: { driver: 'simulated' },
     });
     expect(DEFAULT_PORT).toBe(3000);
     expect(DEFAULT_LOG_LEVEL).toBe('info');
@@ -94,6 +100,8 @@ describe('loadConfig', () => {
       'JWT_SECRET_CUSTOMER is required',
       'JWT_SECRET_STAFF is required',
       'DATA_ENCRYPTION_KEY is required',
+      'FRONTEND_BASE_URL is required',
+      'EMAIL_DRIVER is required',
     ]);
   });
 
@@ -163,6 +171,12 @@ describe('loadConfig', () => {
     ['RATE_LIMIT_DEFAULT', '300', 'must be <count>/<window>'],
     ['RATE_LIMIT_SEARCH', '0/1m', 'must be <count>/<window>'],
     ['RATE_LIMIT_PAYMENT', '10/5d', 'must be <count>/<window>'],
+    ['FRONTEND_BASE_URL', 'maqady.example', 'must be an http:// or https:// URL'],
+    ['FRONTEND_BASE_URL', 'ftp://maqady.example', 'must be an http:// or https:// URL'],
+    ['FRONTEND_BASE_URL', 'https://maqady.example/?ref=mail', 'with no query or fragment'],
+    ['FRONTEND_BASE_URL', 'https://maqady.example/#top', 'with no query or fragment'],
+    ['FRONTEND_BASE_URL', 'https://user:pw@maqady.example', 'must be an http:// or https:// URL'],
+    ['EMAIL_DRIVER', 'smtp', 'must be one of resend, simulated'],
   ])('rejects %s=%p', (name, value, message) => {
     const problems = problemsFor({ ...VALID_ENV, [name]: value });
     expect(problems).toHaveLength(1);
@@ -192,5 +206,67 @@ describe('loadConfig', () => {
     expect(message).not.toContain('hunter2');
     expect(message).toContain('JWT_SECRET_STAFF');
     expect(message).not.toContain(shortSecret);
+  });
+
+  describe('email', () => {
+    const RESEND_ENV = {
+      ...VALID_ENV,
+      EMAIL_DRIVER: 'resend',
+      RESEND_API_KEY: RESEND_KEY,
+      EMAIL_FROM: 'Maqady <tickets@maqady.example>',
+    };
+
+    it('removes trailing slashes from FRONTEND_BASE_URL and keeps a path', () => {
+      expect(
+        loadConfig({ ...VALID_ENV, FRONTEND_BASE_URL: 'https://maqady.example/' }).frontendBaseUrl,
+      ).toBe('https://maqady.example');
+      expect(
+        loadConfig({ ...VALID_ENV, FRONTEND_BASE_URL: 'http://localhost:5173/app//' })
+          .frontendBaseUrl,
+      ).toBe('http://localhost:5173/app');
+    });
+
+    it('needs neither the key nor the sender with the simulated driver, and ignores them if set', () => {
+      expect(loadConfig({ ...VALID_ENV, RESEND_API_KEY: RESEND_KEY }).email).toEqual({
+        driver: 'simulated',
+      });
+    });
+
+    it('reads the Resend key and sender with the resend driver', () => {
+      expect(loadConfig(RESEND_ENV).email).toEqual({
+        driver: 'resend',
+        apiKey: RESEND_KEY,
+        from: 'Maqady <tickets@maqady.example>',
+      });
+      expect(
+        loadConfig({ ...RESEND_ENV, EMAIL_FROM: 'tickets@maqady.example' }).email,
+      ).toMatchObject({ from: 'tickets@maqady.example' });
+    });
+
+    it('refuses the resend driver without its key or sender', () => {
+      expect(problemsFor({ ...VALID_ENV, EMAIL_DRIVER: 'resend' })).toEqual([
+        'RESEND_API_KEY is required when EMAIL_DRIVER is resend',
+        'EMAIL_FROM is required when EMAIL_DRIVER is resend',
+      ]);
+    });
+
+    it('refuses a malformed key or sender without echoing either', () => {
+      const badKey = 're_Top Secret';
+      const problems = problemsFor({
+        ...RESEND_ENV,
+        RESEND_API_KEY: badKey,
+        EMAIL_FROM: 'tickets',
+      });
+      expect(problems).toEqual([
+        'RESEND_API_KEY must be an API key with no spaces',
+        'EMAIL_FROM must be an address such as tickets@maqady.example or Maqady <tickets@maqady.example>',
+      ]);
+      expect(problems.join('\n')).not.toContain(badKey);
+    });
+
+    it('never echoes the Resend key when another variable is wrong', () => {
+      const problems = problemsFor({ ...RESEND_ENV, PORT: 'x' });
+      expect(problems.join('\n')).not.toContain(RESEND_KEY);
+    });
   });
 });

@@ -5,6 +5,7 @@ import {
   ApiErrorResponses,
   REQUEST_ID_RESPONSE_HEADER,
 } from '../../common/swagger/error-responses';
+import { DrainOutboxAfterResponse } from '../messaging/drain-after-response.decorator';
 import { HealthResponse } from './dto/health-response.dto';
 import { HealthService } from './health.service';
 
@@ -32,10 +33,11 @@ export class HealthController {
 
   @Get('ready')
   @Header('Cache-Control', 'no-store')
+  @DrainOutboxAfterResponse()
   @ApiOperation({
     summary: 'Readiness, including the database',
     description:
-      'Public; anyone may call it. Runs one trivial query. Answers `200` when the database responds, and `503 SERVICE_UNAVAILABLE` when it is unreachable or times out (within about 10 seconds).',
+      'Public; anyone may call it. Runs one trivial query. Answers `200` when the database responds, and `503 SERVICE_UNAVAILABLE` when it is unreachable or times out (within about 10 seconds). After a `200` it starts sending queued email and SMS in the background; the answer never waits for that.',
   })
   @ApiOkResponse({
     type: HealthResponse,

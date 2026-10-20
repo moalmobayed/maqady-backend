@@ -4,8 +4,8 @@ import { RATE_LIMIT_NAMES } from '../rate-limit/enums';
 import { parseRateLimitRule, RATE_LIMIT_DEFINITIONS } from '../rate-limit/rate-limit.constants';
 import type { RateLimitName, RateLimitRule, RateLimitsConfig } from '../rate-limit/types';
 import { EnvironmentVariables } from './environment-variables';
-import type { AppConfig, LogLevel } from './types';
-import { decodeSecret, splitList } from './validators';
+import type { AppConfig, EmailConfig, LogLevel } from './types';
+import { decodeSecret, splitList, trimTrailingSlashes } from './validators';
 
 export const DEFAULT_PORT = 3000;
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
@@ -60,7 +60,19 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
         : {}),
     },
     rateLimits: rateLimitsFrom(present),
+    frontendBaseUrl: trimTrailingSlashes(variables.FRONTEND_BASE_URL),
+    email: emailFrom(variables),
   };
+}
+
+/** The email driver and, for Resend, its key and sender (both validated as present above). */
+function emailFrom(variables: EnvironmentVariables): EmailConfig {
+  if (variables.EMAIL_DRIVER === 'simulated') return { driver: 'simulated' };
+  const { RESEND_API_KEY: apiKey, EMAIL_FROM: from } = variables;
+  if (apiKey === undefined || from === undefined) {
+    throw new ConfigValidationError(['RESEND_API_KEY and EMAIL_FROM are required for Resend']);
+  }
+  return { driver: 'resend', apiKey, from };
 }
 
 function sameSecret(first: string, second: string): boolean {

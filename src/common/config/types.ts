@@ -1,7 +1,9 @@
 import type { RateLimitsConfig } from '../rate-limit/types';
-import type { LOG_LEVELS } from './enums';
+import type { EMAIL_DRIVERS, LOG_LEVELS } from './enums';
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export type EmailDriver = (typeof EMAIL_DRIVERS)[number];
 
 export interface DatabaseConfig {
   /** Postgres connection URL (Supabase: the session pooler, port 5432). */
@@ -24,6 +26,20 @@ export interface EncryptionConfig {
   readonly previousKey?: string;
 }
 
+/**
+ * How email is sent (ADR 0004). `simulated` records every email as sent without contacting
+ * anyone (local runs, CI); `resend` sends through Resend's HTTP API.
+ */
+export type EmailConfig =
+  | { readonly driver: 'simulated' }
+  | {
+      readonly driver: 'resend';
+      /** Resend API key; never logged. */
+      readonly apiKey: string;
+      /** `addr@domain` or `Name <addr@domain>`, on the domain verified in Resend. */
+      readonly from: string;
+    };
+
 /** The validated environment, built once at boot by `loadConfig()`. */
 export interface AppConfig {
   readonly port: number;
@@ -34,6 +50,9 @@ export interface AppConfig {
   readonly auth: AuthConfig;
   readonly encryption: EncryptionConfig;
   readonly rateLimits: RateLimitsConfig;
+  /** Where links in emails point, without a trailing slash, for example `https://maqady.example`. */
+  readonly frontendBaseUrl: string;
+  readonly email: EmailConfig;
 }
 
 /** How long a base64 secret must decode to: at least `minBytes`, or exactly `exactBytes`. */

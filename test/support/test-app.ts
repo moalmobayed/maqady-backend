@@ -12,8 +12,9 @@ import type { TestApp, TestAppOptions } from './types';
 
 /**
  * Boots the real app (every module, the global pipe, filter, guards and interceptor,
- * `configureApp()`) against the test database, for supertest. Nothing is mocked; only the
- * `Clock` can be replaced, so a test can move time. Data is truncated on start and on `close()`.
+ * `configureApp()`) against the test database, for supertest. Nothing of ours is mocked: the
+ * `Clock` can be replaced, so a test can move time, and `overrides` replace genuinely external
+ * services at their adapter boundary (the email sender). Data is truncated on start and on `close()`.
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const config = options.config ?? buildTestConfig();
@@ -29,6 +30,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     ],
   });
   if (options.clock) builder.overrideProvider(Clock).useValue(options.clock);
+  for (const { provide, useValue } of options.overrides ?? []) {
+    builder.overrideProvider(provide).useValue(useValue);
+  }
   const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });

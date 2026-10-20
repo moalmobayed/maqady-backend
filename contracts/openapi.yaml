@@ -71,7 +71,7 @@ paths:
       security: []
   /health/ready:
     get:
-      description: Public; anyone may call it. Runs one trivial query. Answers `200` when the database responds, and `503 SERVICE_UNAVAILABLE` when it is unreachable or times out (within about 10 seconds).
+      description: Public; anyone may call it. Runs one trivial query. Answers `200` when the database responds, and `503 SERVICE_UNAVAILABLE` when it is unreachable or times out (within about 10 seconds). After a `200` it starts sending queued email and SMS in the background; the answer never waits for that.
       operationId: getReadiness
       parameters: []
       responses:
