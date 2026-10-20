@@ -21,6 +21,7 @@ gate (G5) checks it.
 | `docs/gh-2-foundations/review.md` | U1 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-5-media/spec.md` | U4a spec: the `images` table, the storage adapter (Supabase Storage and local), the image pipeline, the upload decorator and `MediaService` other units call, media error codes and `npm run media:orphans` | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-5-media/qa.md` | U4a manual QA: curl evidence for the migration, storage config refusal, and (through a QA-only harness of the probe upload routes) uploads, refusals, replays, metadata stripping, failed links, deletes after commit, `/media` serving and `npm run media:orphans` | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-5-media/review.md` | U4a adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
 | `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
 | `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |
