@@ -335,8 +335,9 @@ and statuses of §14.3); `database/postgres-errors` (retryable SQLSTATEs);
 
 ## Follow-ups
 
-- The request log line does not yet carry the principal kind and id (design §14.4); U2 adds it
-  with the first real resolver.
+- `@NoRequestTransaction()` routes (U4's uploads) are documented with an `Idempotency-Key`
+  that replays, but U1 neither stores nor replays their keys: U4 records the key in its short
+  transaction, or changes the published description (review finding R5).
 - U0 review finding R4 (preflights and Swagger routes without `X-Request-Id`) stays open.
 - Invalid tokens are refused by `JwtAuthGuard` before the rate-limit guard counts them, so a
   flood of bad tokens is not throttled; revisit if abuse appears.
