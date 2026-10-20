@@ -4,11 +4,8 @@ import { TheaterReadService } from '../../../../src/modules/theaters/theater-rea
 import { TestClock } from '../../../support/clock';
 import { waitForLockWaiters } from '../../../support/database';
 import { staffSession } from '../../../support/staff-auth';
+import { addActiveHall } from '../../../support/halls';
 import { createTestApp } from '../../../support/test-app';
-import {
-  TheaterLifecycleProbe,
-  TheaterLifecycleProbeModule,
-} from '../../../support/theaters-probe.module';
 import {
   createTheater,
   DEFAULT_PRICES,
@@ -24,12 +21,11 @@ describe('TheaterReadService (integration)', () => {
   let testApp: TestApp;
   let admin: StaffSession;
   let reads: TheaterReadService;
-  let probe: TheaterLifecycleProbe;
   const clock = new TestClock(new Date('2026-10-16T12:00:00+03:00'));
 
   const publish = async (id: number) => {
     await prepareTheater(testApp, admin.authorization, id);
-    probe.withActiveHall.add(id);
+    await addActiveHall(testApp, admin.authorization, id);
     await setTheaterStatus(testApp, admin.authorization, id, 'active');
   };
 
@@ -50,9 +46,8 @@ describe('TheaterReadService (integration)', () => {
   };
 
   beforeAll(async () => {
-    testApp = await createTestApp({ clock, imports: [TheaterLifecycleProbeModule] });
+    testApp = await createTestApp({ clock });
     reads = testApp.app.get(TheaterReadService);
-    probe = testApp.app.get(TheaterLifecycleProbe);
     admin = await staffSession(testApp, 'admin');
   });
 
@@ -127,7 +122,7 @@ describe('TheaterReadService (integration)', () => {
   it('holds the theater FOR SHARE, so a theater write waits for the lock holder', async () => {
     const id = await createTheater(testApp, admin.authorization);
     await prepareTheater(testApp, admin.authorization, id);
-    probe.withActiveHall.add(id);
+    await addActiveHall(testApp, admin.authorization, id);
     const transactions = testApp.app.get(TransactionRepository);
     await expect(reads.lockForShare(id)).rejects.toThrow(/open transaction/);
 

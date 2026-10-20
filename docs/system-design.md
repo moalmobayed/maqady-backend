@@ -126,7 +126,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `staff` | `staff_users` | auth, messaging, audit |
 | `media` | `images`; the Supabase Storage adapter and image pipeline | — |
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
-| `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters, seating |
+| `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters. Showtimes and seating plug their rules into its `HallLifecycleRegistry`, so it imports neither (U5) |
 | `catalog` | `genres`, `movies`, `movie_genres`, `people`, `person_roles`, `movie_credits`, `movie_photos`, `movie_videos` | media |
 | `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, bookings (cancellation) |
 | `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
@@ -221,9 +221,9 @@ Rules:
 | `theater_photos` | Gallery | `image_id` (UNIQUE, kind `gallery`), optional `caption` (the photo's alt text), `sort_order` kept contiguous from 0; at most 20 per theater |
 | `theater_hours` | Weekly hours, by cinema-day weekday | PK (`theater_id`, `weekday`); `is_closed`, or `opens_minute` and `closes_minute` counted from midnight at the start of the cinema date, with CHECK `360 <= opens_minute < closes_minute <= 1800` (06:00 to 06:00 next day) |
 | `theater_special_dates` | Holiday hours | UNIQUE (`theater_id`, `cinema_date`); `label`; hours as above, or closed |
-| `halls` | Halls | UNIQUE (`theater_id`, `name`); `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes` |
-| `hall_rows` | One zone per row | PK (`hall_id`, `row_index`); `row_label` (A–P without I); `zone` (`front`, `middle`, `back`) |
-| `hall_seat_marks` | Exceptions to the full grid | PK (`hall_id`, `row_label`, `seat_number`); `kind` (`wheelchair`, `no_seat`) |
+| `halls` | Halls | `name CITEXT`, UNIQUE (`theater_id`, `name`), so unique per theater ignoring case, in any status; `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes`. Hard-deleted, children cascading: only a hall that never had a showtime goes (U5, `docs/gh-6-halls/spec.md`) |
+| `hall_rows` | One zone per row | PK (`hall_id`, `row_index`); `row_label` (A–P without I), CHECKed to be the letter at `row_index`, UNIQUE (`hall_id`, `row_label`); `zone` (`front`, `middle`, `back`) |
+| `hall_seat_marks` | Exceptions to the full grid | PK (`hall_id`, `row_label`, `seat_number`); FK (`hall_id`, `row_label`) → `hall_rows`, so a mark sits in an existing row and goes with it; `kind` (`wheelchair`, `no_seat`) |
 
 **Showtimes, bookings and payments**
 
@@ -628,14 +628,29 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
     through `POST /admin/theaters/{id}/photos` (`usage`); `DELETE /admin/theaters/{id}/cover`
     removes the cover.
 - **Hall layouts.**
+  - A new hall is a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M
+    back). Status changes: `draft → active`, `draft → retired`, `active → retired`; `retired`
+    is final. Every hall write locks the theater `FOR SHARE` first, then the hall `FOR UPDATE`.
   - `PUT /admin/halls/{id}/layout` replaces the whole layout (row count, seats per row, row
     zones and seat marks) in one transaction.
-  - It locks the hall `FOR UPDATE`, so it waits for in-flight holds that hold it `FOR SHARE`.
-    It is then refused with `HALL_IN_USE`, listing the blocking showtimes, if any showtime in
-    the hall that hasn't ended has a live claim.
+    - Rows are lettered from the screen back (A to P without I). Seats are numbered 1 to
+      `seatsPerRow` from the left, and a gap keeps its number, so a seat's label (`F7`) never
+      moves. Wheelchair spaces are seats; `no_seat` cells are not.
+    - Zones form bands from the screen back (front, then middle, then back; any may be empty),
+      every mark lies inside the grid, and at least one seat remains (`VALIDATION_FAILED`).
+    - Lock order: the theater `FOR SHARE`, then the layout participants' `beforeLock` (U7 locks
+      the hall's future showtimes `FOR UPDATE` here, keeping "showtime before hall" of §7.1),
+      then the hall `FOR UPDATE`, so it waits for in-flight holds that hold it `FOR SHARE`.
+    - It is then refused with `HALL_IN_USE`, listing the blocking showtimes, if any showtime in
+      the hall that hasn't ended has a live claim. A retired hall's layout is `CONFLICT`.
+    - The showtime and claim rules plug into U5's `HallLifecycleRegistry`: layout participants
+      (U7's capacity refresh, U10's live-claim check), deletion blockers (U7 `has_showtimes`)
+      and retirement blockers (U7 `has_future_showtimes`) (`docs/gh-6-halls/spec.md`).
   - Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`, deduplicated.
   - A hall that ever had a showtime can only be retired (`PATCH` with `status: retired`), which
-    requires no future scheduled showtimes.
+    requires no future scheduled showtimes (`HALL_NOT_RETIRABLE`); deleting it is
+    `HALL_NOT_DELETABLE`. Retiring the last active hall of a published theater is allowed: the
+    publish check is a one-time gate.
 - **Catalog.**
   - Movies, people, credits and genres follow PRD §A2–A3. A movie that ever had a booking
     can't be deleted, and deleting a person removes their credits.
@@ -947,7 +962,7 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 | `POST /admin/people` | Admin | S |
 | `GET /admin/theaters` · `GET`, `PATCH`, `DELETE /admin/theaters/{id}` (`PATCH` covers publish and selling) · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `PATCH`, `DELETE` a special date or photo · `DELETE /admin/theaters/{id}/cover` | Admin | |
 | `POST /admin/theaters` · `POST /admin/theaters/{id}/special-dates` · `POST /admin/theaters/{id}/photos` (upload) · `POST /admin/theaters/{id}/halls` | Admin | S |
-| `PATCH`, `DELETE /admin/halls/{id}` (`PATCH` covers retire) · `GET`, `PUT /admin/halls/{id}/layout` | Admin | |
+| `GET /admin/theaters/{id}/halls` (the Halls tab) · `GET`, `PATCH`, `DELETE /admin/halls/{id}` (`PATCH` covers activate and retire) · `GET`, `PUT /admin/halls/{id}/layout` | Admin | |
 | `GET /admin/showtimes?theaterId&date` · `GET /admin/showtimes/{id}` (manage panel) · `GET /admin/showtimes/{id}/cancellation-preview` · `POST /admin/showtime-checks` (dry run) | Admin | |
 | `POST /admin/showtimes` (batch) · `PATCH /admin/showtimes/{id}` (move, prices, cancel) | Admin | S |
 | `GET /admin/bookings` · `GET /admin/bookings/summary` (the four cards) · `GET /admin/bookings/{ref}` · `GET /admin/bookings/{ref}/ticket.pdf` | Staff | |
@@ -1238,6 +1253,8 @@ Codes added by later units (`src/common/errors/error-catalogue.ts` holds the ful
 | `MOVIE_NOT_DELETABLE` | 409 | U6: deleting a movie another unit still depends on |
 | `THEATER_NOT_PUBLISHABLE` | 409 | U4b: publishing a theater that lacks a requirement; `details.missing` lists them |
 | `THEATER_NOT_DELETABLE` | 409 | U4b: deleting a theater that is not a draft or has a blocker; `details.reasons` lists them |
+| `HALL_NOT_DELETABLE` | 409 | U5: deleting a hall a blocker keeps (one that ever had a showtime); `details.reasons` lists them |
+| `HALL_NOT_RETIRABLE` | 409 | U5: retiring a hall a blocker keeps (one with upcoming showtimes); `details.reasons` lists them |
 
 ### 14.4 Logging and observability
 

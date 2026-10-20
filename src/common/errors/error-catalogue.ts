@@ -122,7 +122,19 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This hall has seats held or sold in upcoming showtimes.',
     description:
-      'The layout cannot change while a showtime that has not ended has a live seat claim. `details.showtimes` lists them.',
+      'The layout cannot change while a showtime that has not ended has a live seat claim. `details.showtimes` lists them, soonest first and at most 20, each as `{ id, startsAt, movieTitle }` (`startsAt` in Cairo time with its offset).',
+  },
+  HALL_NOT_DELETABLE: {
+    status: 409,
+    message: "A hall that ever had a showtime can't be deleted; retire it instead.",
+    description:
+      'Only a hall that never had a showtime is deleted; any other is retired (`PATCH` `status: retired`) and kept for history. `details.reasons` says why, for example `["has_showtimes"]`.',
+  },
+  HALL_NOT_RETIRABLE: {
+    status: 409,
+    message: "A hall with upcoming showtimes can't be retired; move or cancel them first.",
+    description:
+      'Retiring hides a hall from scheduling, so it needs no scheduled showtime that has not ended. `details.reasons` says why, for example `["has_future_showtimes"]`.',
   },
   BOOKING_NOT_EDITABLE: {
     status: 409,

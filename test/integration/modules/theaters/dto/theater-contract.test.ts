@@ -59,7 +59,8 @@ describe('Theater schemas and operations in the OpenAPI document', () => {
 
   it('documents the 16 admin theater operations, with their tag and error codes', () => {
     const operations = Object.entries(document.paths)
-      .filter(([path]) => path.startsWith('/admin/theaters'))
+      // The theater's halls are U5's routes (`Admin: halls`).
+      .filter(([path]) => path.startsWith('/admin/theaters') && !path.endsWith('/halls'))
       .flatMap(([path, item]) =>
         Object.entries(
           item as Record<string, { tags?: string[]; summary?: string; description?: string }>,
