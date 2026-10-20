@@ -331,7 +331,7 @@ describe('Customer auth routes (integration)', () => {
 
       await blockCustomer(testApp, customer.customerId);
       expectError(await me(customer.accessToken), 403, 'ACCOUNT_BLOCKED');
-      expectError(await refresh(customer.refreshToken), 401, 'SESSION_REVOKED');
+      expectError(await refresh(customer.refreshToken), 403, 'ACCOUNT_BLOCKED');
       const audit = await testApp
         .knex('audit_events')
         .select('actor_kind', 'action', 'entity_type', 'entity_id', 'changed_fields', 'metadata')

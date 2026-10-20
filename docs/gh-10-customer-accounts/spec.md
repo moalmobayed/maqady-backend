@@ -78,7 +78,7 @@ on the next request. Customer and staff tokens never open each other's routes.
 | Guest and customer routes document `SESSION_EXPIRED` among their access errors | The customer resolver answers it in the last 15 minutes of a session; U2a left this documentation change to U9. |
 | `POST /auth/tokens` is `@NoRequestTransaction()` + `@NoIdempotencyStorage()`; `SessionService.refresh()` runs its own transactions | U2a's decision: a `SESSION_REVOKED` after reuse must commit the family revocation. |
 | A staff refresh token at `/auth/tokens` (or a customer one at `/admin/auth/tokens`) answers `401 UNAUTHENTICATED` | Audiences never mix (§10.1). U2a's `SessionService.refresh({ audience })` already treats the other audience's row as unknown; U9 tests it through both routes. |
-| Refresh's owner check: missing or anonymised → `UNAUTHENTICATED`; blocked → `ACCOUNT_BLOCKED` | Same rule as the resolver. In practice a blocked customer's family is already revoked, so refresh answers `SESSION_REVOKED`, and the next sign-in answers `ACCOUNT_BLOCKED`. |
+| Refresh's owner check: missing or anonymised → `UNAUTHENTICATED`; blocked → `ACCOUNT_BLOCKED` | Same rule as the resolver. `SessionService.refresh()` runs the owner check before the session's own checks (U2a second review round), so a blocked customer, whose family the block revoked, gets `ACCOUNT_BLOCKED`, not `SESSION_REVOKED`. |
 | Blocking (`CustomerService.setStatus(…, 'blocked')`) revokes every live session (`account_blocked`) in the same transaction | §10.2, PRD Accounts 5. Built here because the tests need it; U15 calls it from its admin route. |
 | Email verification consumes `verify_email`, sets `email_verified_at = now` only when NULL, answers `204`; it works for blocked customers too | It records a fact about the address. Anonymised customers have no tokens (U15 deletes them), so their links are `INVALID_TOKEN`. |
 | Resend verification answers `202` with no body; an already verified customer gets nothing sent | Idempotent and simple; the frontend offers the link only while unverified. |
@@ -196,7 +196,8 @@ active row with the checked hash) → none → re-read: the hash changed → `IN
 else `ACCOUNT_BLOCKED`; open the session; sign.
 
 **Refresh**: `SessionService.refresh({ audience: 'customer', refreshToken, assertOwnerLive })`,
-then sign a new access token. Unknown → `UNAUTHENTICATED`, revoked → `SESSION_REVOKED`,
+then sign a new access token. Unknown → `UNAUTHENTICATED`, blocked → `ACCOUNT_BLOCKED` (checked
+first), revoked → `SESSION_REVOKED`,
 expired → `SESSION_EXPIRED`, within 30 s of rotation → `REFRESH_CONFLICT`, later reuse → family
 revoked, `SESSION_REVOKED`.
 
@@ -374,7 +375,7 @@ replaced by `RecordingEmailSender`, a `TestClock`):
 - Sign-in: success `201` (`last_sign_in_at` set); a wrong password and an unknown email →
   `401 INVALID_CREDENTIALS`; a blocked customer with the right password → `403 ACCOUNT_BLOCKED`,
   with a wrong one → `INVALID_CREDENTIALS`; no session row on any failure; blocking a signed-in
-  customer makes their access token answer `ACCOUNT_BLOCKED` and their refresh fail.
+  customer makes their access token and their refresh answer `ACCOUNT_BLOCKED`.
 - Refresh: rotation (new pair, old row `rotated_at` and `replaced_by_id`, the new access token
   works, `refreshTokenExpiresAt` unchanged); the old token at +10 s → `409 REFRESH_CONFLICT`,
   family live; at +31 s → `401 SESSION_REVOKED`, every family row revoked and committed; a staff
