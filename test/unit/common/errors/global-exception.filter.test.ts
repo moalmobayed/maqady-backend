@@ -257,6 +257,31 @@ describe('GlobalExceptionFilter', () => {
         'INTERNAL',
       );
     });
+
+    it('writes the request line for a request the logging middleware never saw', () => {
+      const request = fakeRequest({
+        method: 'POST',
+        id: undefined,
+        log: undefined,
+        headers: { 'x-request-id': REQUEST_ID },
+      });
+      const { logger } = run(
+        bodyParserError('entity.too.large', 413, 'request entity too large'),
+        request,
+      );
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        { correlationId: REQUEST_ID, method: 'POST', route: null, statusCode: 413 },
+        'request completed',
+      );
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('writes no request line of its own when the logging middleware will write it', () => {
+      const { logger } = run(bodyParserError('entity.too.large', 413, 'request entity too large'));
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    });
   });
 
   it('aborts a response whose headers were already sent instead of writing a second one', () => {

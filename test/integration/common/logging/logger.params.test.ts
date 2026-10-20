@@ -105,6 +105,50 @@ describe('Request logging (integration)', () => {
     expect(line).toMatchObject({ level: 'warn', method: 'GET', route: null, statusCode: 404 });
   });
 
+  it.each([
+    [
+      'malformed JSON',
+      () =>
+        testApp
+          .http()
+          .post('/api/v1/test-probe/echo')
+          .set('Content-Type', 'application/json')
+          .send('{"name":'),
+      'POST',
+      400,
+    ],
+    [
+      'a body over 1 MB',
+      () =>
+        testApp
+          .http()
+          .post('/api/v1/test-probe/echo')
+          .set('Content-Type', 'application/json')
+          .send(JSON.stringify({ name: 'x'.repeat(1024 * 1024), seats: [] })),
+      'POST',
+      413,
+    ],
+    ['an unknown route outside /api/v1', () => testApp.http().get('/nope'), 'GET', 404],
+  ])(
+    'writes the one request line for %s, which never reaches the logging middleware',
+    async (_case, send, method, statusCode) => {
+      const response = await send();
+      expect(response.status).toBe(statusCode);
+      const correlationId = response.headers['x-request-id'] as string;
+
+      expect(await requestLine(capture, correlationId)).toMatchObject({
+        level: 'warn',
+        correlationId,
+        method,
+        route: null,
+        statusCode,
+      });
+      expect(
+        capture.entries().filter((entry) => entry.correlationId === correlationId),
+      ).toHaveLength(1);
+    },
+  );
+
   it('logs an unexpected error with its stack and the request correlationId', async () => {
     const response = await testApp.http().get('/api/v1/test-probe/internal-error');
     const correlationId = response.headers['x-request-id'] as string;

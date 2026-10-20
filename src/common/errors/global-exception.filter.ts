@@ -14,6 +14,9 @@ import type { ErrorResponseBody, ResolvedError } from './types';
  * Unexpected errors are logged with their stack; database errors are logged by SQLSTATE and
  * constraint only. Client errors (4xx) are not logged again: the request line records them.
  * The error goes to the logger as `err`, whose serializer (`serializeError`) makes it log-safe.
+ *
+ * A request that failed before the logging middleware ran (an unreadable body, or an unknown
+ * route outside `/api/v1`) has no request line of its own, so the filter writes it.
  */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -57,6 +60,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       },
     };
     response.status(resolved.status).json(body);
+
+    if (request.log === undefined) this.logRequestLine(request, resolved.status, correlationId);
+  }
+
+  /** The one request line (design §14.4) for a request the logging middleware never saw. */
+  private logRequestLine(request: Request, statusCode: number, correlationId: string): void {
+    const line = { correlationId, method: request.method, route: null, statusCode };
+    if (statusCode >= 500) {
+      this.logger.error(line, 'request failed');
+    } else {
+      this.logger.warn(line, 'request completed');
+    }
   }
 
   private log(
