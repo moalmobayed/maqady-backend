@@ -639,11 +639,24 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   3. sharp, with `concurrency(1)` and its cache off, rotates by EXIF, strips metadata and writes
      WebP variants per use: posters 2:3, backdrops 16:9, people photos square and at least
      600 × 600, galleries.
-  4. The variants are uploaded under one storage prefix.
-  5. Only then does a short transaction insert the `images` row and link it.
+     - Every kind yields `small`, `medium` and `large`, never upscaled. A poster or person photo
+       may be up to 2 % off its ratio and is centre-cropped; further off is refused
+       (`IMAGE_WRONG_SHAPE`). A backdrop (the theater cover) is always centre-cropped to 16:9. A
+       gallery photo keeps its shape. Minimums after any crop: poster 400 × 600, backdrop
+       1280 × 720, person 600 × 600, gallery 320 on the shorter side (U4a,
+       `docs/gh-5-media/spec.md`).
+     - A movie's backdrop is one of its gallery photos, shown at 16:9 by the frontend with a
+       cover crop, so stills keep their own shape in the media viewer.
+  4. The variants are uploaded under one storage prefix, `<kind>/<uuid>`.
+  5. Only then does a short transaction insert the `images` row and link it. It also claims and
+     completes the request's `Idempotency-Key` (§14.1), so the key commits with the row.
   - If that insert fails, the uploaded files are deleted. Replacing or deleting an image
     deletes its files after commit.
-  - A maintenance script lists and removes any orphaned storage paths. It only tidies up.
+  - A maintenance script (`npm run media:orphans`) lists and removes any orphaned storage paths.
+    It only tidies up.
+  - Development and tests use a local storage driver instead (`STORAGE_DRIVER=local`): files in
+    a directory the app serves read-only at `/media`. Supabase Storage is the only external
+    service the media tests replace, at its adapter.
 - **Image links.** The `media` bucket is public-read. The API returns full public URLs for
   each variant, and only the server holds the service key.
 
@@ -1111,7 +1124,9 @@ Environment variables are validated at boot, and a missing or malformed value st
 
 - `DATABASE_URL`, `DB_SCHEMA` (`maqady`);
 - `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`;
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET`;
+- `STORAGE_DRIVER` (`supabase` or `local`, no default), `SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY` (both required for `supabase`), `STORAGE_BUCKET`, and for `local`
+  `LOCAL_STORAGE_DIR` and `LOCAL_STORAGE_PUBLIC_URL`;
 - `FRONTEND_BASE_URL`, `CORS_ORIGINS`;
 - `RESEND_API_KEY`, `EMAIL_FROM`;
 - the rate limits;
@@ -1264,6 +1279,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-24 | The default rate limit counts per route, by signed-in customer else IP; named limits count across the routes that declare them | Builder (U1, `docs/gh-2-foundations/spec.md`) |
 | D-25 | A `@Guest()` route accepts no token or a valid customer token; an invalid token is `UNAUTHENTICATED`, never a silent guest | Builder (U1) |
 | D-26 | Only `2xx` responses are stored for an idempotency key, with their status and body (not other headers); errors roll the key back | Builder (U1, §14.1) |
+| D-27 | Image kinds: posters and person photos refused beyond 2 % off their ratio, backdrops always cropped to 16:9, gallery photos uncropped; the movie backdrop is a gallery photo cover-cropped by the frontend; a required `STORAGE_DRIVER` with a local driver for development and tests | Builder (U4a, `docs/gh-5-media/spec.md`, §9) |
 
 ## 19. Kit and process reconciliations
 

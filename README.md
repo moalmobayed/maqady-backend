@@ -71,7 +71,10 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `DATA_ENCRYPTION_KEY` | yes | Encrypts stored idempotency responses (AES-256-GCM): base64 of exactly 32 bytes |
 | `DATA_ENCRYPTION_PREVIOUS_KEY` | yes, optional | After a key rotation, the old key; it only decrypts |
 | `QR_SIGNING_KEY` | later units | Ticket QR signatures; generate with `openssl rand -base64 32` |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET` | later units | Image storage; the key never leaves the server |
+| `STORAGE_DRIVER` | yes | Where uploaded images go: `supabase` (every deployed environment) or `local` (development and tests). Required, no default |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | for `supabase` | The project URL (`https://<ref>.supabase.co`, no trailing slash) and the service role key, which never leaves the server |
+| `STORAGE_BUCKET` | yes, optional | The public-read Supabase bucket. Default `media` |
+| `LOCAL_STORAGE_DIR`, `LOCAL_STORAGE_PUBLIC_URL` | for `local`, optional | The directory the files go to (default `.media`, created on the first upload) and its public URL (default `http://localhost:<PORT>/media`) |
 | `FRONTEND_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM` | later units | Email links and sending ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all eleven |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
@@ -90,6 +93,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `npm run test:unit` / `npm run test:integration` | One project only |
 | `npm run migrate` | Applies pending migrations to `DATABASE_URL`, without serving |
 | `npm run contract` | Writes `contracts/openapi.yaml` from the code, with no database and no listener |
+| `npm run media:orphans` | Lists stored image files that no `images` row points to (older than an hour); `npm run media:orphans -- --delete` removes them. It only tidies up |
 | `npm run db:local` | Starts a local PostgreSQL 16 cluster and creates `maqady_dev` and `maqady_test` |
 
 ## Dependencies
@@ -108,7 +112,9 @@ but never prints its value. `.env` is for local runs only; real environment vari
 - **Unit** (`test/unit/`, mirroring `src/`): one unit at a time, collaborators mocked.
 - **Integration** (`test/integration/`, mirroring `src/`): the real app through supertest, against
   the real `maqady_test` database. Nothing of ours is mocked; only genuinely external services
-  (Resend, Supabase Storage) will be replaced, at their adapter boundary.
+  (Resend, Supabase Storage) are replaced, at their adapter boundary: the suites store images
+  with the local driver in a temporary directory, and the Supabase adapter is unit-tested with
+  `fetch` mocked.
   - Once per run, the schema and extensions are dropped and every migration runs from zero.
   - Each suite starts and ends with empty tables (`test/support/database.ts`).
   - The suite refuses a database whose name doesn't end in `_test`.
@@ -149,6 +155,13 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `PageResponseOf()` from `common/pagination`; audit records go through `AuditService.record()`.
 - **Rate limits.** Every route has the default limit; opt into a named one with
   `@RateLimit('search')`.
+- **Images** (`modules/media`, `docs/gh-5-media/spec.md`). Import `MediaModule`. An upload route
+  is `@Admin()`, `@Strict()` if it is a `POST`, and `@ImageUpload({ fields })`; it takes
+  `@UploadedImage()` and returns `MediaService.upload({ kind, upload, actor, link })`, where
+  `link(image)` writes the owner's row inside the upload's short transaction. Responses build
+  pictures with `findByIds()` (one query) and `toImageResponse(image, alt)`; `delete()` removes
+  the row now and the files after commit. Kinds: `poster` (2:3), `backdrop` (16:9, cropped),
+  `person` (square, 600 × 600), `gallery` (any shape).
 
 ## Database and migrations
 
@@ -178,6 +191,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   only. Supabase requires TLS. With `sslmode=require`, node-pg also verifies the certificate, so
   give it Supabase's CA certificate (`sslrootcert`), or the connection is refused.
 - Keep the `maqady` schema out of the Supabase Data API's exposed schemas.
+- **Image storage.** Set `STORAGE_DRIVER=supabase`, `SUPABASE_URL` and
+  `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API keys; keep it secret). Create the bucket
+  (`STORAGE_BUCKET`, default `media`) once, as a **public** bucket, in Storage → New bucket; the
+  API returns its public URLs and the browser loads images from them. Never use `local` on
+  Render: its disk is wiped on every deploy.
 - The service trusts one proxy hop for the client address; confirm on the first deploy that
   Render's `X-Forwarded-For` gives the real client.
 
@@ -186,11 +204,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 ```
 src/
   main.ts, app.module.ts, app.setup.ts   boot, root module, HTTP settings
-  cli/                                   migrate and contract commands
+  cli/                                   migrate, contract and media:orphans commands
   common/                                config, database, errors, logging, swagger, auth,
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
-  modules/<feature>/                     one Nest module per feature (health so far)
+  modules/<feature>/                     one Nest module per feature (health, media so far)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

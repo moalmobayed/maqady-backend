@@ -142,7 +142,7 @@ are imported by path. `AppModule` imports `MediaModule` (so `npm run media:orpha
 | `types.ts` | every type of the module (`ImageKind`, `StoredImage`, `ImageUploadPayload`, `UploadOutcome<T>`, `UploadImageInput<T>`, `KindRule`, `ProcessedImage`, `StorageObject`, `StorageListEntry`, `OrphanReport`, …) |
 | `media.constants.ts` | `MAX_UPLOAD_BYTES = 10 * 1024 * 1024`, `MAX_INPUT_PIXELS = 40_000_000`, `ASPECT_TOLERANCE = 0.02`, `KIND_RULES` (table above), `WEBP_OPTIONS`, `UPLOAD_FILE_FIELD = 'file'`, `MULTER_LIMITS = { fileSize, files: 1, fields: 20, fieldSize: 2048, parts: 21 }`, `STORAGE_CACHE_CONTROL`, `STORAGE_TIMEOUT_MS = 15_000`, `STORAGE_DELETE_BATCH = 1000`, `STORAGE_LIST_PAGE = 1000`, `LOCAL_MEDIA_ROUTE = '/media'`, `ORPHAN_MIN_AGE_MINUTES = 60`, `ORPHAN_LOOKUP_BATCH = 500`, `STORAGE_PREFIX_PATTERN` |
 | `image-type.ts` | `detectImageType(buffer): DetectedImageType \| null` |
-| `image-shape.ts` | `planShape(kind, width, height)`: the crop rectangle or `IMAGE_WRONG_SHAPE` |
+| `image-shape.ts` | `planCrop(kind, width, height)`: the crop rectangle or `IMAGE_WRONG_SHAPE` |
 | `image-pipeline.ts` | `ImagePipeline.process(buffer, kind)`; sharp's global settings |
 | `storage/storage.adapter.ts` | the abstract `StorageAdapter` (`put`, `remove`, `list`, `publicUrl`) |
 | `storage/storage-path.ts` | `assertStoragePath(path)`, `encodeStoragePath(path)` |
@@ -183,7 +183,8 @@ CREATE TABLE images (
     CHECK (storage_prefix ~ '^(poster|backdrop|person|gallery)/[0-9a-f-]{36}$'),
   CONSTRAINT chk_images_prefix_kind CHECK (split_part(storage_prefix, '/', 1) = kind),
   CONSTRAINT chk_images_variants
-    CHECK (jsonb_typeof(variants) = 'object' AND variants ?& ARRAY['small', 'medium', 'large']),
+    CHECK (jsonb_typeof(variants) = 'object'
+           AND jsonb_exists_all(variants, ARRAY['small', 'medium', 'large'])),
   CONSTRAINT chk_images_source_size CHECK (source_width > 0 AND source_height > 0),
   CONSTRAINT uq_images_storage_prefix UNIQUE (storage_prefix)  -- media:orphans: prefix → row
 );
@@ -337,7 +338,8 @@ committed binaries):
 
 - `image-type.test.ts`: JPEG and PNG detected; a text file renamed `.jpg`, a GIF, a WebP, an
   empty and a 2-byte buffer → `null`.
-- `image-shape.test.ts`: the tolerance, the crop rectangle per kind, the minimums.
+- `image-shape.test.ts`: the tolerance (exactly 2 % accepted), the crop rectangle per kind, the
+  minimums.
 - `image-pipeline.test.ts` (real sharp): a renamed non-image → `UNSUPPORTED_IMAGE_TYPE`; a
   7000 × 6000 PNG (42 MP, still under 10 MB) → `IMAGE_TOO_MANY_PIXELS` without decoding; a
   truncated JPEG → `UNSUPPORTED_IMAGE_TYPE`; per kind the exact variant sizes; outputs are WebP
@@ -362,7 +364,9 @@ committed binaries):
   only the file differs; outcome unwrapping.
 - `load-config.test.ts` (extended): each storage variable's rule; Supabase variables required
   only for `supabase`; messages never contain values.
-- `media-orphans.command.test.ts`: argument parsing; output lines.
+- `media-orphans.service.test.ts` and `media-orphans.command.test.ts`: grouping by prefix, the
+  60-minute rule, lookups 500 at a time, unknown paths; argument parsing; output lines.
+- `storage/storage.factory.test.ts`: the driver picks the adapter.
 
 **Integration** (`test/integration/modules/media/`, real app, real Postgres,
 `STORAGE_DRIVER=local` in a temp dir; `test/support/media-probe.module.ts` adds `@Admin()`
@@ -390,7 +394,8 @@ REFERENCES images)`, and `test/support/media.ts` for the staff token):
   minutes (Clock moved) is listed, kept without `--delete` and removed with it; a fresh orphan
   and a prefix with a row are kept; an unknown path is reported and kept.
 - The generated `Image` and `ImageVariant` schemas (from a probe route returning
-  `ImageResponse`) match the home-page draft's.
+  `ImageResponse`) match the home-page draft's (`dto/image.response.test.ts`), and an
+  `@ImageUpload()` route is documented as multipart with its fields and error codes.
 
 ## Acceptance
 
