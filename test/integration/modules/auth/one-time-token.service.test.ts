@@ -1,5 +1,6 @@
 import { OneTimeTokenService } from '../../../../src/modules/auth/one-time-token.service';
 import { TestClock } from '../../../support/clock';
+import { registerCustomer } from '../../../support/customer-auth';
 import { createStaffMember } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { TestApp } from '../../../support/types';
@@ -108,22 +109,24 @@ describe('OneTimeTokenService (integration)', () => {
   });
 
   it('stores customer tokens under the customer and refuses a mismatched owner', async () => {
+    // `one_time_tokens.customer_id` references customers (U9), so the owner is a real customer.
+    const { customerId } = await registerCustomer(testApp);
     const issued = await service.issue({
       purpose: 'verify_email',
-      owner: { kind: 'customer', id: 41 },
+      owner: { kind: 'customer', id: customerId },
       lifetimeSeconds: 86_400,
     });
     const [row] = await testApp
       .knex('one_time_tokens')
       .select('staff_user_id', 'customer_id', 'token_hash')
       .where({ id: issued.id });
-    expect(row).toMatchObject({ staff_user_id: null, customer_id: 41 });
+    expect(row).toMatchObject({ staff_user_id: null, customer_id: customerId });
     expect(row.token_hash).not.toBe(issued.token);
     await expect(
       service.consume({ purpose: 'verify_email', token: issued.token }),
     ).resolves.toEqual({
       id: issued.id,
-      owner: { kind: 'customer', id: 41 },
+      owner: { kind: 'customer', id: customerId },
     });
   });
 });

@@ -13,6 +13,7 @@ import {
   RecordingEmailSender,
 } from '../../../support/messaging/recording-email-sender';
 import { oneTimeLinkTemplate } from '../../../support/messaging/test-templates';
+import { registerCustomer } from '../../../support/customer-auth';
 import { createTestApp } from '../../../support/test-app';
 import { TEST_FRONTEND_BASE_URL } from '../../../support/test-config';
 import type { TestApp } from '../../../support/types';
@@ -27,6 +28,7 @@ describe('MessagingService.queue (integration)', () => {
   const sender = new RecordingEmailSender();
   const clock = new TestClock(START);
   let drain: OutboxDrainService;
+  let customerId: number;
 
   beforeAll(async () => {
     testApp = await createTestApp({
@@ -35,6 +37,12 @@ describe('MessagingService.queue (integration)', () => {
       overrides: [{ provide: EmailSender, useValue: sender }],
     });
     drain = testApp.app.get(OutboxDrainService);
+    // `messages.related_customer_id` references customers (U9), so the related customer is real.
+    // Registering queues a verification email; it is cleared so each test sees only its own.
+    customerId = (await registerCustomer(testApp)).customerId;
+    await drain.whenIdle();
+    sender.reset();
+    await testApp.knex('messages').truncate();
   });
 
   afterEach(async () => {
@@ -64,7 +72,7 @@ describe('MessagingService.queue (integration)', () => {
   });
 
   it('sends a committed message through the sender and records it as sent with the provider id', async () => {
-    const response = await queueEmail({ relatedCustomerId: 42 });
+    const response = await queueEmail({ relatedCustomerId: customerId });
     expect(response.status).toBe(201);
     const [id] = response.body.ids as number[];
     await drain.whenIdle();
@@ -90,7 +98,7 @@ describe('MessagingService.queue (integration)', () => {
       payload_ciphertext: null,
       next_attempt_at: null,
       last_error_code: null,
-      related_customer_id: 42,
+      related_customer_id: customerId,
       related_staff_user_id: null,
       related_booking_id: null,
     });
