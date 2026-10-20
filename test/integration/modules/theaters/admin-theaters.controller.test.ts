@@ -264,6 +264,35 @@ describe('Admin theaters (integration)', () => {
       expect(await testApp.knex('theaters').count({ count: 'id' }).first()).toEqual({ count: 1 });
     });
 
+    it('refuses an email or coordinates the database would refuse with VALIDATION_FAILED, not INTERNAL', async () => {
+      // IsEmail accepts a quoted local part; chk_theaters_email does not. A number below 1e-6 is
+      // written with an exponent, which class-validator's maxDecimalPlaces cannot read.
+      for (const overrides of [
+        { email: '"front desk"@maqady.example' },
+        { email: '"box@office"@maqady.example' },
+        { latitude: 1e-7 },
+        { longitude: -2.5e-8 },
+      ]) {
+        const response = await testApp
+          .http()
+          .post(THEATERS)
+          .set('Authorization', admin.authorization)
+          .set('Idempotency-Key', randomUUID())
+          .send(theaterBody(overrides));
+        expectError(response, 400, 'VALIDATION_FAILED');
+        const { fields } = response.body.error.details as { fields: { field: string }[] };
+        expect(fields.map(({ field }) => field)).toEqual(Object.keys(overrides));
+      }
+      const id = await createTheater(testApp, admin.authorization);
+      expectError(
+        await patch(id, { email: '"front desk"@maqady.example' }),
+        400,
+        'VALIDATION_FAILED',
+      );
+      expectError(await patch(id, { latitude: 3e-7 }), 400, 'VALIDATION_FAILED');
+      expect(await testApp.knex('theaters').count({ count: 'id' }).first()).toEqual({ count: 1 });
+    });
+
     it('answers NOT_FOUND for a missing theater and VALIDATION_FAILED for a bad id', async () => {
       expectError(
         await testApp.http().get(`${THEATERS}/999`).set('Authorization', admin.authorization),

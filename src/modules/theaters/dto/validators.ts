@@ -24,6 +24,23 @@ export function Trim(): PropertyDecorator {
   );
 }
 
+/**
+ * A finite number with at most `places` decimals. class-validator's `maxDecimalPlaces` reads the
+ * decimals from `toString()`, which writes numbers below 1e-6 with an exponent (`1e-7`) and then
+ * throws instead of refusing; `toExponential()` always has the exponent, so it is read here.
+ */
+export function HasAtMostDecimals(places: number): PropertyDecorator {
+  return ValidateBy({
+    name: 'hasAtMostDecimals',
+    validator: {
+      validate: (value: unknown) =>
+        typeof value === 'number' && Number.isFinite(value) && decimalsOf(value) <= places,
+      defaultMessage: (args?: ValidationArguments) =>
+        `${args?.property ?? 'value'} must be a number with at most ${places} decimals`,
+    },
+  });
+}
+
 /** A real calendar date written `YYYY-MM-DD`. */
 export function IsCalendarDate(): PropertyDecorator {
   return ValidateBy({
@@ -63,6 +80,13 @@ export function IsClosesTime(options: { optional?: boolean } = {}): PropertyDeco
         closesProblem(args?.value, hoursOf(args), options.optional === true) ?? CLOSES_MESSAGE,
     },
   });
+}
+
+/** The decimals of a finite number: `3.00609e+1` has 5 digits after the point, less 1. */
+function decimalsOf(value: number): number {
+  const [mantissa = '', exponent = '0'] = value.toExponential().split('e');
+  const fractionDigits = mantissa.split('.')[1]?.length ?? 0;
+  return Math.max(0, fractionDigits - Number(exponent));
 }
 
 function hoursOf(args: ValidationArguments | undefined): Partial<WallClockHoursInput> {

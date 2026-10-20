@@ -9,6 +9,16 @@ export const MAX_GALLERY_PHOTOS = 20;
 /** E.164: `+`, a country code and the number, 8 to 16 characters in all. */
 export const PHONE_NUMBER_PATTERN = /^\+[1-9][0-9]{6,14}$/;
 
+/**
+ * What `chk_theaters_email` (migration `0055_01`) stores: no space and exactly one `@`. `IsEmail`
+ * alone also accepts a quoted local part such as `"front desk"@example.com`, which the CHECK
+ * refuses, so the request DTOs apply both.
+ */
+export const STORED_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+
+/** Coordinates are `NUMERIC(9, 6)`: at most this many decimals. */
+export const COORDINATE_DECIMALS = 6;
+
 /** `nextOpensAt` looks this many cinema dates past the current one (home-page contract). */
 export const OPEN_STATE_LOOKAHEAD_DAYS = 7;
 

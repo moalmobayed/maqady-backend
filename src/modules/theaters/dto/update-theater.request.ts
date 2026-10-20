@@ -8,14 +8,15 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   Min,
   ValidateIf,
 } from 'class-validator';
 import { THEATER_STATUSES } from '../enums';
-import { TEXT_LIMITS } from '../theaters.constants';
+import { COORDINATE_DECIMALS, STORED_EMAIL_PATTERN, TEXT_LIMITS } from '../theaters.constants';
 import type { TheaterStatus } from '../types';
-import { Trim } from './validators';
+import { HasAtMostDecimals, Trim } from './validators';
 
 const NOTHING_TO_CHANGE = 'send at least one field to change';
 
@@ -110,7 +111,8 @@ export class UpdateTheaterRequest {
     description: 'Decimal degrees, at most 6 decimals.',
   })
   @ValidateIf(sent)
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @HasAtMostDecimals(COORDINATE_DECIMALS)
   @Min(-90)
   @Max(90)
   latitude?: number;
@@ -124,7 +126,8 @@ export class UpdateTheaterRequest {
     description: 'Decimal degrees, at most 6 decimals.',
   })
   @ValidateIf(sent)
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @HasAtMostDecimals(COORDINATE_DECIMALS)
   @Min(-180)
   @Max(180)
   longitude?: number;
@@ -170,6 +173,7 @@ export class UpdateTheaterRequest {
   @IsString()
   @Length(TEXT_LIMITS.email.min, TEXT_LIMITS.email.max)
   @IsEmail({}, { message: 'email must be an email address' })
+  @Matches(STORED_EMAIL_PATTERN, { message: 'email must contain one @ and no spaces' })
   email?: string | null;
 
   @ApiPropertyOptional({

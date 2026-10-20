@@ -6,11 +6,12 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   Min,
 } from 'class-validator';
-import { TEXT_LIMITS } from '../theaters.constants';
-import { Trim } from './validators';
+import { COORDINATE_DECIMALS, STORED_EMAIL_PATTERN, TEXT_LIMITS } from '../theaters.constants';
+import { HasAtMostDecimals, Trim } from './validators';
 
 /** `POST /admin/theaters`: a new theater, created as a draft (PRD A4 "New theater wizard"). */
 export class CreateTheaterRequest {
@@ -75,7 +76,8 @@ export class CreateTheaterRequest {
     example: 30.0609,
     description: 'Decimal degrees, at most 6 decimals. Places the map pin and the Directions link.',
   })
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @HasAtMostDecimals(COORDINATE_DECIMALS)
   @Min(-90)
   @Max(90)
   latitude!: number;
@@ -88,7 +90,8 @@ export class CreateTheaterRequest {
     example: 31.2197,
     description: 'Decimal degrees, at most 6 decimals.',
   })
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 6 })
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @HasAtMostDecimals(COORDINATE_DECIMALS)
   @Min(-180)
   @Max(180)
   longitude!: number;
@@ -135,6 +138,7 @@ export class CreateTheaterRequest {
   @IsString()
   @Length(TEXT_LIMITS.email.min, TEXT_LIMITS.email.max)
   @IsEmail({}, { message: 'email must be an email address' })
+  @Matches(STORED_EMAIL_PATTERN, { message: 'email must contain one @ and no spaces' })
   email?: string | null;
 
   @ApiPropertyOptional({

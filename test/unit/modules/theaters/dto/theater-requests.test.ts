@@ -68,6 +68,34 @@ describe('theater request DTOs (the global ValidationPipe)', () => {
         await refusedFields(CreateTheaterRequest, { ...valid, email: 'nope', manager: 'x' }),
       ).toEqual(['manager', 'email']);
     });
+
+    it('refuses a quoted email and coordinates written with an exponent, as fields', async () => {
+      expect(
+        await refusedFields(CreateTheaterRequest, {
+          ...valid,
+          email: '"front desk"@maqady.example',
+          latitude: 1e-7,
+          longitude: 2.5e-8,
+        }),
+      ).toEqual(['latitude', 'longitude', 'email']);
+      expect(
+        await refusedFields(UpdateTheaterRequest, {
+          email: '"a@b"@maqady.example',
+          latitude: 1e-9,
+        }),
+      ).toEqual(['latitude', 'email']);
+      const body = (await validate(CreateTheaterRequest, {
+        ...valid,
+        email: 'zamalek@maqady.example',
+        latitude: 0.000001,
+        longitude: -0.5,
+      })) as CreateTheaterRequest;
+      expect([body.email, body.latitude, body.longitude]).toEqual([
+        'zamalek@maqady.example',
+        0.000001,
+        -0.5,
+      ]);
+    });
   });
 
   describe('UpdateTheaterRequest', () => {
