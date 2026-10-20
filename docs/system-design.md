@@ -201,13 +201,13 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `genres` | Fixed genre list, seeded by migration | `name` UNIQUE |
-| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes > 0`; `release_date DATE`; `featured_position` 1–5, UNIQUE where not NULL; `hero_video_id`; `poster_image_id`; `backdrop_photo_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
-| `movie_genres` | Movie ↔ genre | PK (`movie_id`, `genre_id`) |
-| `people` | Actors and crew | `full_name`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three social links |
+| `genres` | Fixed genre list, seeded by migration | `name` UNIQUE; `slug` UNIQUE (`sci-fi`), for URLs and the contract's `GenreRef` |
+| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes` 1–600; `release_date DATE`; `synopsis` (≤ 600), `language`, `country`, `production_company`; a public movie has a synopsis, runtime and release date (CHECK); `featured_position` 1–5, UNIQUE where not NULL, and only on a public movie with a hero video (CHECK); `hero_video_id` and `backdrop_photo_id` with composite FKs onto the movie's own video and photo (`(id, movie_id)`); `poster_image_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
+| `movie_genres` | Movie ↔ genre, at most 5 in display order | PK (`movie_id`, `genre_id`); `sort_order` 0–4, UNIQUE per movie |
+| `people` | Actors and crew | `full_name`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three `https` social links |
 | `person_roles` | Roles shown on a person, even without credits | PK (`person_id`, `role`); `role` is one of the 7 credit roles |
-| `movie_credits` | Cast and crew | UNIQUE (`movie_id`, `person_id`, `role`); `character_name` allowed only for `actor` and `voice` (CHECK); `sort_order` |
-| `movie_videos` | YouTube videos | `youtube_id` CHECK `~ '^[A-Za-z0-9_-]{11}$'`; `kind` (`trailer`, `teaser`, `clip`, `featurette`); `title`; optional `duration_seconds`; `sort_order` |
+| `movie_credits` | Cast and crew | UNIQUE (`movie_id`, `person_id`, `role`); `character_name` allowed only for `actor` and `voice` (CHECK); `sort_order` 0–199; goes with its movie and with its person |
+| `movie_videos` | YouTube videos | `youtube_id` CHECK `~ '^[A-Za-z0-9_-]{11}$'`, UNIQUE per movie; `kind` (`trailer`, `teaser`, `clip`, `featurette`); `title`; optional `duration_seconds`; `sort_order` |
 | `movie_photos` | Movie photos | `image_id`; `kind` (`still`, `behind_the_scenes`); `caption`; `sort_order` |
 | `images` | Every uploaded image | `storage_prefix`; `variants JSONB` (name → path, width, height); `created_by_staff_id` |
 
@@ -626,7 +626,13 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Catalog.**
   - Movies, people, credits and genres follow PRD §A2–A3. A movie that ever had a booking
     can't be deleted, and deleting a person removes their credits.
-  - Featured positions are unique, and a featured movie must have a hero video.
+  - A movie is created as `draft`. Coming soon and Now showing need a synopsis, runtime,
+    release date and a genre (a poster is optional). Now showing never returns to draft or
+    Coming soon; archiving keeps history and may be undone (`docs/gh-7-catalog/spec.md`).
+  - Featured positions are unique, and a featured movie must be public and have a hero video
+    (any of its own videos). A taken position is refused, never shifted.
+  - Deletion is refused by blockers other units register with `MovieLifecycleRegistry`: U7
+    `has_showtimes`, U10 `has_bookings`.
   - The budget is a free-text label.
 - **YouTube.** The API accepts watch, youtu.be, shorts and embed URLs, and stores only the
   11-character video id. Thumbnails and the privacy-enhanced embed URL are derived from the id.
@@ -922,9 +928,9 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 | `DELETE /admin/auth/sessions/current` · `GET /admin/me` (name and role for the shell) | Staff | |
 | `GET /admin/staff` · `PATCH /admin/staff/{id}` (role, status) | Admin | |
 | `POST /admin/staff` (invite) · `POST /admin/staff/{id}/invitations` (resend) | Admin | S |
-| `GET`, `PATCH`, `DELETE /admin/movies/{id}` · `GET /admin/movies` · `PATCH /admin/movies` (bulk archive) · `PUT /admin/movies/{id}/credits` · `PATCH`, `DELETE` a movie's photos and videos | Admin | |
+| `GET`, `PATCH`, `DELETE /admin/movies/{id}` · `GET /admin/movies` · `PATCH /admin/movies` (bulk archive) · `PUT /admin/movies/{id}/credits` · `PUT`, `DELETE /admin/movies/{id}/poster` (upload) · `PATCH`, `DELETE` a movie's photos and videos | Admin | |
 | `POST /admin/movies` · `POST /admin/movies/{id}/photos` (upload) · `POST /admin/movies/{id}/videos` | Admin | S |
-| `GET /admin/people` · `GET`, `PATCH`, `DELETE /admin/people/{id}` · `PUT`, `DELETE /admin/people/{id}/photo` (upload) | Admin | |
+| `GET /admin/people` · `GET`, `PATCH`, `DELETE /admin/people/{id}` · `PUT`, `DELETE /admin/people/{id}/photo` (upload) · `PUT /admin/people/{id}/credits` (filmography) | Admin | |
 | `POST /admin/people` | Admin | S |
 | `GET /admin/theaters` · `GET`, `PATCH`, `DELETE /admin/theaters/{id}` (`PATCH` covers publish and selling) · `PUT /admin/theaters/{id}/hours`, `/phones`, `/facilities`, `/prices` · `PATCH`, `DELETE` a special date or photo | Admin | |
 | `POST /admin/theaters` · `POST /admin/theaters/{id}/special-dates` · `POST /admin/theaters/{id}/photos` (upload) · `POST /admin/theaters/{id}/halls` | Admin | S |
@@ -1204,11 +1210,19 @@ The initial catalogue:
 | `INTERNAL` | 500 | `SERVICE_UNAVAILABLE` | 503 |
 | `PAYLOAD_TOO_LARGE` | 413 | | |
 
-Codes added by later units:
+Codes added by later units (`src/common/errors/error-catalogue.ts` holds the full list):
 
 | Code | HTTP | Added by |
 |---|---|---|
+| `IMAGE_TOO_LARGE` | 413 | U4a: an upload over the size limit |
+| `UNSUPPORTED_IMAGE_TYPE` | 415 | U4a: an upload that is not JPEG, PNG or WebP |
+| `IMAGE_TOO_MANY_PIXELS`, `IMAGE_WRONG_SHAPE` | 422 | U4a: an image over the pixel limit or of the wrong shape |
+| `STORAGE_UNAVAILABLE` | 503 | U4a: the storage adapter cannot be reached |
 | `NOT_INVITED` | 409 | U2b: "Resend invite" for a member who is not `invited` |
+| `MOVIE_NOT_PUBLISHABLE` | 409 | U6: a status change for a movie missing required fields |
+| `MOVIE_NOT_FEATURABLE` | 409 | U6: featuring a movie that is not public or has no hero video |
+| `FEATURED_POSITION_TAKEN` | 409 | U6: a carousel position already held by another movie |
+| `MOVIE_NOT_DELETABLE` | 409 | U6: deleting a movie another unit still depends on |
 
 ### 14.4 Logging and observability
 
@@ -1392,6 +1406,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-27 | Outbox retries: at most 10 attempts with a 1 min to 6 h backoff; `failed` is terminal; a quota 429 holds email until the next 00:00 UTC; the message id is the Resend idempotency key, so one sending environment per Resend team; templates registered by their owning modules | Builder (U3, `docs/gh-3-messaging/spec.md`) |
 | D-28 | Image kinds: posters and person photos refused beyond 2 % off their ratio, backdrops always cropped to 16:9, gallery photos uncropped; the movie backdrop is a gallery photo cover-cropped by the frontend; a required `STORAGE_DRIVER` with a local driver for development and tests | Builder (U4a, `docs/gh-5-media/spec.md`, §9) |
 | D-29 | Customer accounts: registration signs in; a phone is E.164 or an Egyptian local mobile, stored as E.164; sessions end 30 days after sign-in, never extended; a password change keeps the caller's session and ends the others; a reset verifies the email and opens no session; customer self-service writes no audit rows (§13.5); resend verification is limited per customer | Builder (U9, `docs/gh-10-customer-accounts/spec.md`) |
+| D-30 | Catalog: genres seeded with slugs; movies need a synopsis, runtime, release date and a genre to be public, a poster optional; Now showing never goes back; a taken carousel position is refused; the hero is any of the movie's videos; poster routes and the person-side filmography route added to §11; deletion blockers registered by U7 and U10 | Builder (U6, `docs/gh-7-catalog/spec.md`) |
 
 ## 19. Kit and process reconciliations
 

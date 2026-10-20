@@ -28,6 +28,15 @@ export const API_TAGS = [
     description: 'The Message log: every email and SMS with its delivery status (admins only)',
   },
   {
+    name: 'Admin: movies',
+    description:
+      'Movies: details, genres, poster, photos, YouTube videos, cast and crew, publishing and the home carousel (admins only)',
+  },
+  {
+    name: 'Admin: people',
+    description: 'Actors and crew, their photos and filmographies (admins only)',
+  },
+  {
     name: 'Auth',
     description:
       'Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset',
