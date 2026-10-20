@@ -1,8 +1,8 @@
 ---
 title: Maqady backend — system design
 owner: Mohamed Tarek
-status: Draft — awaiting owner approval
-last_verified: 2026-10-19
+status: Approved — 2026-10-20
+last_verified: 2026-10-20
 tags: [architecture, system-design, backend]
 ---
 
@@ -28,8 +28,9 @@ locked in a fixed order while a payment runs, so two buyers can never confirm th
 Anything that expires is judged from its stored timestamp whenever it is read, because the free
 host sleeps and no timer can be trusted.
 
-Payments, email and SMS go through simulated providers that live inside the service, behind
-interfaces a real provider could replace later.
+Payments and SMS go through simulated providers that live inside the service, behind
+interfaces a real provider could replace later. Email is sent for real through Resend's free
+plan ([ADR 0004](adr/0004-email-through-resend.md)).
 
 ## 2. Intent, goals, non-goals, anti-goals
 
@@ -69,7 +70,8 @@ infrastructure, as a codebase worth learning NestJS from.
 | Locked stack: NestJS on Express, Knex with raw SQL migrations, PostgreSQL ([ADR 0002](adr/0002-nestjs-instead-of-express.md)); no Redis ([ADR 0003](adr/0003-idempotency-in-postgres.md)) | No ORM, no second query builder. Idempotency keys live in Postgres. |
 | Frontend contract: REST plus one WebSocket using the browser's built-in `WebSocket` | Plain `ws` through `@nestjs/platform-ws`, not socket.io |
 | Cairo time with summer-time changes | Every time calculation goes through shared time helpers (§8) |
-| Practice project | Simulated payment and messaging providers, behind interfaces (§7.5, §13.1) |
+| Practice project | Simulated payment and SMS providers, behind interfaces (§7.5, §13.1) |
+| Email through Resend's free plan | Sending needs a verified domain and stops at 100 emails a day, so messages go through an outbox that retries (§13.1) |
 
 ## 4. Architecture at a glance
 
@@ -81,7 +83,7 @@ flowchart LR
   end
   subgraph Render["Render free web service"]
     API["NestJS API<br/>REST /api/v1 and WebSocket /ws"]
-    SIM["Simulated payment and<br/>messaging providers"]
+    SIM["Simulated payment<br/>and SMS providers"]
   end
   subgraph Supabase["Supabase free project"]
     PG[("Postgres<br/>schema maqady")]
@@ -94,10 +96,11 @@ flowchart LR
   API -- "Knex through the session pooler" --> PG
   API -- "service key, server side only" --> ST
   API --- SIM
+  API -- "email, after commit" --> RS["Resend email API"]
 ```
 
-- One Node process serves REST and the WebSocket. Simulated providers are ordinary modules in
-  the same process.
+- One Node process serves REST and the WebSocket. The simulated providers are ordinary modules
+  in the same process. Email leaves through Resend's HTTP API.
 - The browser talks only to the API, plus public image links and YouTube embeds. It never
   holds a Supabase key.
 - Every write request runs in one database transaction, opened by the write interceptor
@@ -116,7 +119,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `common/idempotency` | `idempotency_keys`, the write interceptor | database |
 | `common/audit` | `audit_events` (write side) | database |
 | `common/auth` | Guards, the access decorators (§11), the boot-time route check | auth |
-| `common/crypto` | Envelope encryption for stored secrets, HMAC helpers | config |
+| `common/crypto` | Encryption for stored idempotency responses, HMAC helpers | config |
 | `common/time`, `common/money`, `common/errors`, `common/pagination`, `common/logging`, `common/config` | Shared helpers, `AppError`, the global exception filter, cursor codec, pino setup, validated environment | — |
 | `auth` | `sessions`, `one_time_tokens` | customers, staff, messaging |
 | `customers` | `customers` | messaging, audit |
@@ -129,7 +132,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
 | `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging |
 | `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
-| `messaging` | `messages`; templates and the simulated email/SMS sender | crypto |
+| `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
 | `health` | Liveness and readiness | database |
 
@@ -183,7 +186,7 @@ Rules:
 | `one_time_tokens` | Single-use links | `purpose` (`verify_email`, `customer_password_reset`, `staff_invite`, `staff_password_reset`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
 | `idempotency_keys` | Stored results of writes | UNIQUE (`scope`, `key`); `request_hash`; `response_status`; `response_ciphertext` (the response body, encrypted, §14.1); `created_at`. A key older than 24 hours counts as absent. |
 | `audit_events` | Activity log | `actor_kind` (`staff`, `customer`, `system`) plus actor FKs; `action` (for example `booking.refunded`); `entity_type`, `entity_id`; `booking_id`; `changed_fields TEXT[]`; `metadata JSONB`. Never personal data: names of changed fields, not their values. |
-| `messages` | Simulated email and SMS: the outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`; `body` with `{{link}}` placeholders; `secret_ciphertext` for any one-time token (§13.1); FKs to the related customer, staff user or booking |
+| `messages` | The outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`; `body` with one-time links redacted; `status` (`queued`, `sent`, `failed`); `attempts`; `provider_message_id`; `sent_at`; FKs to the related customer, staff user or booking |
 | `staff_alert_reads` | Bell read state | PK (`staff_user_id`, `alert_key`); `seen_at` |
 | `hold_refusals` | Seat conflicts, for the PRD's seat-conflict rate | `showtime_id`, `refused_at`, `seat_count`. Written in its own transaction after a refused hold rolls back. |
 
@@ -194,7 +197,7 @@ Rules:
 | `genres` | Fixed genre list, seeded by migration | `name` UNIQUE |
 | `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes > 0`; `release_date DATE`; `featured_position` 1–5, UNIQUE where not NULL; `hero_video_id`; `poster_image_id`; `backdrop_photo_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
 | `movie_genres` | Movie ↔ genre | PK (`movie_id`, `genre_id`) |
-| `people` | Actors and crew | `full_name`, `name_ar`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three social links |
+| `people` | Actors and crew | `full_name`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three social links |
 | `person_roles` | Roles shown on a person, even without credits | PK (`person_id`, `role`); `role` is one of the 7 credit roles |
 | `movie_credits` | Cast and crew | UNIQUE (`movie_id`, `person_id`, `role`); `character_name` allowed only for `actor` and `voice` (CHECK); `sort_order` |
 | `movie_videos` | YouTube videos | `youtube_id` CHECK `~ '^[A-Za-z0-9_-]{11}$'`; `kind` (`trailer`, `teaser`, `clip`, `featurette`); `title`; optional `duration_seconds`; `sort_order` |
@@ -878,21 +881,27 @@ generated contract (§19).
 
 ### 13.1 Messaging
 
-- **Sending.** `MessageSender` is an interface. The simulated sender inserts the rendered message
-  into `messages`, in the same transaction as the change that caused it. That row *is* the send.
-- **Templates.** Plain-text TypeScript functions in `messaging/templates/`, one per PRD trigger
-  (PRD "Email and SMS"). Links are built from `FRONTEND_BASE_URL`.
-- **Secrets.** A one-time token is never stored in `body`. The body keeps a `{{link}}`
-  placeholder, and the token is stored encrypted in `secret_ciphertext` (§14.1).
-- **The Message log.**
-  - The log shows bodies with the placeholder, unless `MESSAGE_LOG_REVEAL_SECRETS=true`. Then
-    the link is rendered at read time, and each reveal writes an audit event naming the admin.
-  - The practice deployment turns reveal on, because no real email exists to receive the links
-    (PRD veto call 16). That includes staff invites and resets; without them, no new staff
-    member could be onboarded.
-  - The cost: while reveal is on, an admin could open a pending invite and act as that person.
-    The audit trail records every reveal. A real deployment turns reveal off and plugs in a real
-    email provider (§20).
+- **Senders.** `EmailSender` and `SmsSender` are interfaces. `ResendEmailSender` sends email
+  through Resend's HTTP API. `SimulatedSmsSender` only records the message.
+- **Outbox.** A message is written to `messages` as `queued`, in the same transaction as the
+  change that caused it, so a rolled-back change never sends anything.
+  - After commit, a post-commit hook sends it. The row records `sent` with Resend's message id,
+    or a failure and the attempt count.
+  - Queued and failed messages are retried opportunistically. Write requests drain a few after
+    commit (`FOR UPDATE SKIP LOCKED`), and the daily keep-alive ping drains the rest (§16).
+    Retries only change when an email arrives, never whether data is correct.
+  - Resend's free plan allows 100 emails a day. A message refused for the daily quota stays
+    queued and goes out the next day.
+  - Each send carries the message id as its idempotency key, so where the provider supports it,
+    a retry never sends twice.
+- **Templates.** TypeScript functions in `messaging/templates/`, one per PRD trigger (PRD "Email
+  and SMS"), rendering a plain-text body and a simple HTML body. Links are built from
+  `FRONTEND_BASE_URL`.
+- **One-time links.** Verification, reset and invite links appear only in the email itself. The
+  stored `body` keeps the link redacted, so the Message log never shows a usable token. PRD veto
+  call 16 is withdrawn.
+- **SMS.** A simulated SMS is recorded as `sent` immediately.
+- **The Message log** lists every email and SMS with its delivery status.
 - **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
@@ -992,9 +1001,9 @@ Three carve-outs:
 GET requests run without a request transaction. The few GET paths that write open their own
 short transactions explicitly: settlement and export audit rows.
 
-**Encryption at rest.** Stored response bodies can contain a guest's hold code, and message
-secrets are one-time tokens. Both are encrypted with AES-256-GCM under `DATA_ENCRYPTION_KEY`,
-using a random nonce and a key-id prefix so the key can be rotated.
+**Encryption at rest.** Stored response bodies can contain a guest's hold code, so they are
+encrypted with AES-256-GCM under `DATA_ENCRYPTION_KEY`, using a random nonce and a key-id prefix
+so the key can be rotated.
 
 **Cleanup.** Writes opportunistically purge a few expired keys with `DELETE … WHERE id IN
 (SELECT id … WHERE created_at < :cutoff LIMIT 50 FOR UPDATE SKIP LOCKED)`. Postgres `DELETE`
@@ -1066,7 +1075,8 @@ Environment variables are validated at boot, and a missing or malformed value st
 - `DATABASE_URL`, `DB_SCHEMA` (`maqady`);
 - `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`;
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET`;
-- `FRONTEND_BASE_URL`, `CORS_ORIGINS`, `MESSAGE_LOG_REVEAL_SECRETS`;
+- `FRONTEND_BASE_URL`, `CORS_ORIGINS`;
+- `RESEND_API_KEY`, `EMAIL_FROM`;
 - the rate limits;
 - `LOG_LEVEL`, `PORT`.
 
@@ -1088,8 +1098,8 @@ The testing policy in `CLAUDE.md` binds this section.
   zero.
   - HTTP goes through `supertest`; the gateway is tested with the `ws` client.
   - Our own simulated providers are real code and are never mocked.
-  - Only Supabase Storage is replaced, at the adapter boundary, because it is genuinely
-    external.
+  - Only Supabase Storage and Resend are replaced, at their adapter boundaries, because they
+    are genuinely external.
   - Rate limits are raised by test configuration, so concurrency tests aren't throttled.
 - **Must-pass scenarios.** These are the acceptance gate for the units that own them:
   - **Holds.**
@@ -1150,8 +1160,12 @@ The testing policy in `CLAUDE.md` binds this section.
   - The `maqady` schema, left out of the Data API's exposed schemas (or the Data API turned off).
   - A public `media` bucket.
   - The session-pooler connection string in `DATABASE_URL`.
+- **Resend setup.** Verify the sending domain in Resend, then set `RESEND_API_KEY` and
+  `EMAIL_FROM` (an address on that domain). Until a domain is verified, Resend delivers only to
+  the account owner's own address.
 - **Keep-alive (optional).** A daily scheduled GitHub Actions job calls `/health/ready`, so
-  the Supabase project shows activity and isn't paused. It affects availability only.
+  the Supabase project shows activity and isn't paused, and queued emails are drained. It
+  affects availability only.
 - **Bootstrap.** After the first deploy, run `npm run admin:create` once against the
   production database, through the session pooler.
 
@@ -1190,7 +1204,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-02 | Knex with raw, append-only SQL migrations; correctness in database constraints | Locked |
 | D-03 | Postgres and Storage on Supabase free; the API on Render free; the frontend never touches Supabase | Locked |
 | D-04 | Own JWT access and refresh tokens; customers and staff separate | Locked |
-| D-05 | Simulated payment, email and SMS providers | Locked |
+| D-05 | Simulated payment and SMS providers; email through Resend | Locked ([ADR 0004](adr/0004-email-through-resend.md)) |
 | D-06 | Idempotency keys in Postgres; no Redis | Locked ([ADR 0003](adr/0003-idempotency-in-postgres.md)) |
 | D-07 | PRD v2.0 product rules: scope, zone pricing, seat maps, holds, statuses, roles, refunds, time, analytics | Locked (`docs/reference/prd-v2.md`) |
 | D-08 | PRD "Calls open for veto" | Stand unless the owner vetoes |
@@ -1205,7 +1219,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-17 | Contract generated and committed; CI drift check | Builder (§19) |
 | D-18 | Noun routes, including auth; one access decorator per route, checked at boot | Builder (§11) |
 | D-19 | Refunds per charge, on each charge's own rail | Builder (§7.7) |
-| D-20 | Stored responses and message secrets encrypted at rest; reveals audited | Builder (§13.1, §14.1) |
+| D-20 | Stored idempotency responses encrypted at rest; one-time links never stored | Builder (§13.1, §14.1) |
 | D-21 | Budget stored as a display label, not money | Builder (§6.1) |
 | D-22 | A showtime can be cancelled until it ends, but moved only before it starts | Builder (§7.7, §8) |
 
@@ -1233,7 +1247,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | Risk or question | Mitigation or next step |
 |---|---|
 | A refresh token kept in browser storage can be stolen by XSS | Short access tokens, rotation with reuse detection, session checks on every request, staff sessions of 12 hours. If frontend and API later share one site, move the refresh token to an `HttpOnly` cookie. |
-| While message-log reveal is on, an admin can use a pending staff invite or reset link | Practice deployment only, and every reveal is audited. A real deployment turns reveal off and uses real email. |
+| Resend needs a verified domain, and its free plan sends at most 100 emails a day | Until the domain is verified, only the account owner's address receives email. Over the cap, emails stay queued and go out the next day. |
 | Registration reveals that an email is in use | Rate-limited; revisit if abuse appears |
 | A real payment provider would settle through webhooks and must not be called inside a database transaction | The interface already carries idempotency keys and has `retrieve`. A real-provider unit adds a webhook route and moves the call outside the transaction. |
 | One instance: rate limits and seat-map fan-out live in memory | Acceptable on the free tier. Scaling out needs shared counters and `LISTEN/NOTIFY`. |
@@ -1253,7 +1267,7 @@ the frontend early: a deployed API with real reads comes before the booking flow
 | U0 Scaffold and deploy | Nest app, scripts (`typecheck`, `lint`, `test`, `build`, `contract`), Docker Compose, CI (Postgres, contract check, no Redis), config, logging, error filter, health, Knex provider with type parsers and the migrations runner, Dockerfile, a first Render deploy (including the `X-Forwarded-For` check) | — |
 | U1 Foundations | `TransactionRepository`, the write interceptor with idempotency and encryption, audit service, `Clock`, time and money helpers, cursor pagination, rate-limit setup, access decorators and the boot-time route check, the error catalogue | U0 |
 | U2 Staff access | `staff_users`, sessions, admin bootstrap command, staff sign-in, refresh with grace, sign-out, `GET /admin/me`, invites, forgot password and set-password, the last-admin rule, staff management | U1 |
-| U3 Messaging | `messages`, templates, encrypted secrets, simulated sender, Message log API with audited reveal | U1 |
+| U3 Messaging | `messages` outbox, templates, Resend email sender, simulated SMS sender, delivery retries, Message log API | U1 |
 | U4 Media and theaters | Image pipeline, storage adapter, theaters with hours, special dates, phones, facilities, photos, prices, publish and selling | U2 |
 | U5 Halls | Hall CRUD, layout editor API, the hall lock and in-use rule, retire and delete | U4 |
 | U6 Catalog | Genres, movies, people, credits, photos, YouTube videos, publishing, featured carousel | U4 |

@@ -2,7 +2,7 @@
 title: PRD v2.0 — Maqady (copy of the shared doc)
 owner: Mohamed Tarek
 status: Reference
-last_verified: 2026-10-19
+last_verified: 2026-10-20
 tags: [reference, prd, requirements]
 ---
 
@@ -36,14 +36,14 @@ Version 2.0 keeps the goals of PRD v1.0 and all 20 designed screens, but changes
 | Seat hold | 5 minutes from "Continue", owner unclear before sign-in | Same 5 minutes and 8 seats. A guest's hold is claimed when they sign in. |
 | Time | Local strings, no time zone | Cairo time. A cinema day runs until 06:00 the next morning. |
 | Dashboard numbers | Made-up sample data | Defined in this PRD. Revenue counts on the day of the show. |
-| Email and SMS | Listed as a future feature | In v1, through a simulated provider. Admins can read every message sent. |
+| Email and SMS | Listed as a future feature | In v1. Email is really sent, through Resend's free plan; SMS is simulated. Admins can read every message in the Message log. |
 | Implied screens | Not drawn | Added: staff sign-in, forgot password, email verification, standalone sign-in, search results, ticket scanning, notifications, CSV exports, ticket downloads |
 
 ## Product overview
 
 Maqady is a responsive website where people find a movie, pick a showtime and exact seats, and pay online for an e-ticket. Cinema staff run the chain's theaters, schedule and box office from an admin dashboard on the same platform.
 
-Maqady is a practice project built to production quality. It runs on free hosting, and no real money or real messages move: payments, email and SMS go through simulated providers.
+Maqady is a practice project built to production quality. It runs on free hosting, and no real money moves: payments and SMS go through simulated providers, and email is sent through Resend's free plan.
 
 **Problem.** Booking a cinema seat often means visiting or calling the cinema to learn what is on, when, and which seats are free. Maqady puts the choice and the booking in one place.
 
@@ -109,7 +109,7 @@ v1 delivers all 20 designed screens working on real data, updated by this PRD, p
 | Search results | Admin | The admin search has no results page |
 | Notifications panel (bell) | Admin | The bell has no panel |
 | Activity log | Admin | Who did what, across the dashboard |
-| Message log | Admin | Every simulated email and SMS, readable by admins |
+| Message log | Admin | Every email and SMS sent, with its delivery status, readable by admins |
 
 **Out of scope for v1**
 
@@ -119,10 +119,10 @@ v1 delivers all 20 designed screens working on real data, updated by this PRD, p
 - Video uploads (videos are YouTube links)
 - Saved cards (see Calls open for veto)
 - Social sign-in, phone sign-in, guest checkout without an account
-- Multiple languages or currencies (English UI, EGP only)
+- Multiple languages or currencies (English UI, EGP only), including Arabic names and titles
 - Food and drink ordering, seat upgrades, waitlists
 - Person pages for actors and crew
-- A real payment gateway and real email or SMS delivery
+- A real payment gateway and real SMS delivery
 
 ## Business rules
 
@@ -347,7 +347,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 ### A2 Movies `/admin/movies` (Admin)
 
 - List as designed: search by title or cast, status filter with counts, bulk archive.
-- Details tab adds optional Budget and Filming locations.
+- Details tab adds optional Budget and Filming locations, and drops "Original title (Arabic)".
 - Media tab: poster upload (2:3); backdrop picked from the photos; videos are YouTube links only, each with title, type and optional length; photos upload as JPG or PNG up to 10 MB, each with type (Still or Behind the scenes) and caption. The "Upload from computer" video tab is removed.
 - Cast & crew roles: Actor, Voice, Director, Writer, Producer, Cinematographer, Composer. Actor and Voice take a character name.
 - Publishing: status, "Feature in the home carousel" with its position (1 to 5), and the hero trailer. The "Tickets on sale from" and "Hide after" dates are removed.
@@ -356,7 +356,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 
 ### A3 People `/admin/people` (Admin)
 
-- As designed. Role filters: Actors (Actor, Voice), Directors, Writers, Crew (Producer, Cinematographer, Composer).
+- As designed, without the "Name in Arabic" field. Role filters: Actors (Actor, Voice), Directors, Writers, Crew (Producer, Cinematographer, Composer).
 - Photo upload: square, at least 600 × 600, JPG or PNG. Social links (Instagram, IMDb, website) are saved.
 - Filmography can be edited from the person or from the movie.
 
@@ -415,11 +415,11 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - **Admin search results** (both roles): bookings, customers, movies, people and theaters, limited to what the role may see.
 - **Notifications panel** (both roles): the current Needs attention alerts, unread first, each linking to its screen.
 - **Activity log** `/admin/activity` (Admin): time, staff member, action and item, filterable by staff member, item type and date.
-- **Message log** `/admin/messages` (Admin): every simulated email and SMS, with time, channel, recipient, subject and related booking or customer, opening to the full message.
+- **Message log** `/admin/messages` (Admin): every email and SMS, with time, channel, recipient, subject, delivery status (queued, sent, failed) and related booking or customer, opening to the full message. One-time links are always hidden.
 
 ## Shared platform features
 
-These features serve both sites. Email and SMS are simulated: nothing leaves the platform, and every message lands in the admin Message log.
+These features serve both sites. Email goes out through Resend; SMS is simulated. Every message, sent or simulated, lands in the admin Message log with its delivery status.
 
 ### Email and SMS
 
@@ -557,6 +557,8 @@ The PRD v1.0 requirements for security, reliability, accessibility and UI states
 | Bandwidth (Supabase, free) | 10 GB a month, shared by database and storage | Small images, cached by the storage CDN |
 | Project pausing (Supabase, free) | Paused after 7 days of low activity | Owner restores it from the Supabase dashboard |
 
+Email goes through Resend's free plan: about 3,000 emails a month and 100 a day, and sending to customers needs a verified domain. Emails over the daily cap wait in the queue and go out the next day.
+
 Sources: Supabase [file limits](https://supabase.com/docs/guides/storage/uploads/file-limits), [storage size](https://supabase.com/docs/guides/platform/manage-your-usage/storage-size), [bandwidth](https://supabase.com/docs/guides/storage/serving/bandwidth), [database size](https://supabase.com/docs/guides/platform/database-size), [project pausing](https://supabase.com/docs/guides/platform/free-project-pausing); Render [free tier](https://render.com/docs/free).
 
 ## Frontend integration contract
@@ -582,10 +584,10 @@ The React frontend talks to Maqady through one REST API and one WebSocket. It ne
 3. The server then pushes `seat.held` (seats and hold end time), `seat.released` and `seat.booked`.
 4. After a reconnect, the client subscribes again and receives a fresh snapshot.
 
-### Simulated providers
+### Payment and messaging providers
 
 - **Payments.** A documented set of test cards and wallet outcomes decides each result: approve, decline, slow approval (Processing first) and wallet cancelled. The card form sends only the chosen test card's token, never a card number. A decline is a normal result, not an error: the payment comes back with the status Declined.
-- **Email and SMS.** Messages are stored, not sent, and appear in the admin Message log. Their links open frontend routes: `/verify-email?token=`, `/reset-password?token=` and `/admin/set-password?token=`.
+- **Email and SMS.** Email is sent through Resend; SMS is stored, not sent. Both appear in the admin Message log. Their links open frontend routes: `/verify-email?token=`, `/reset-password?token=` and `/admin/set-password?token=`.
 
 ## Acceptance criteria
 
@@ -604,7 +606,7 @@ v1 is ready when every item below holds against real data, on mobile, tablet and
 - [ ] Every dashboard number matches its definition in this PRD.
 - [ ] Customers see only their own bookings, and box office staff can't perform admin actions, even by calling the API directly.
 - [ ] Every screen handles its loading, empty, error, session-expired and pending states.
-- [ ] Every simulated email and SMS appears in the Message log.
+- [ ] Every email and SMS appears in the Message log with its delivery status.
 
 ## Calls open for veto
 
@@ -627,5 +629,5 @@ These 17 calls were made while drafting, to close gaps the designs left open. Ea
 | 13 | Refunds, booking edits and customer changes are admin-only | Box office keeps counter work, matching the two roles |
 | 14 | Ticket scanning opens 60 minutes before the start | Doors open 20 minutes before; the extra time covers early arrivals |
 | 15 | A hall that ever had a showtime is retired, not deleted | Past bookings and reports keep pointing at it |
-| 16 | The Message log shows secret links (verify, reset, invite) only when the deployment allows it | Testers need the links because no real email exists, but a real deployment must not let admins take over accounts |
+| 16 | Withdrawn: email is real (Resend), so the Message log never shows one-time links | Customers and staff receive their links by email |
 | 17 | Revenue by hall shows only when one theater is selected | The all-theaters view already has Revenue by theater |
