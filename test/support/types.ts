@@ -139,3 +139,21 @@ export interface FakeContextOptions {
   readonly handler?: (...args: never[]) => unknown;
   readonly controller?: abstract new (...args: never[]) => unknown;
 }
+
+/** A response body of the catalog fixtures: a movie or a person, by id. */
+export type CatalogBody = { readonly id: number } & Readonly<Record<string, unknown>>;
+
+/** What `createPublishedMovie()` takes; everything has a default. */
+export interface CatalogMovieFixture {
+  readonly title?: string;
+  readonly status?: 'coming_soon' | 'now_showing';
+  readonly synopsis?: string;
+  readonly runtimeMinutes?: number;
+  readonly releaseDate?: string;
+  readonly ageRating?: string;
+  /** Genre slugs, in display order; default `['drama']`. */
+  readonly genres?: readonly string[];
+  /** Features the movie at this position, with a hero video. */
+  readonly featuredPosition?: number;
+  readonly heroYoutubeId?: string;
+}
