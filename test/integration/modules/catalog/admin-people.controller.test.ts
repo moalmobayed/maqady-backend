@@ -142,6 +142,26 @@ describe('Admin people routes (integration)', () => {
       expectError(await get(`${PEOPLE}/987654`), 404, 'NOT_FOUND');
     });
 
+    it("takes a birth date up to today's calendar date in Cairo, even before 06:00", async () => {
+      const person = await createPerson(testApp, admin);
+      const saved = clock.now();
+      // 01:30 on 17 October in Cairo (UTC+3): still the 16th's cinema day, but the 17th's date.
+      clock.set(new Date('2026-10-16T22:30:00Z'));
+      try {
+        const late = await staffSession(testApp, 'admin');
+        const patchLate = (birthDate: string) =>
+          adminWrite(testApp, late, 'patch', `${PEOPLE}/${person.id}`).send({ birthDate });
+        const today = await patchLate('2026-10-17');
+        expect(today.status).toBe(200);
+        expect(today.body.birthDate).toBe('2026-10-17');
+        const tomorrow = await patchLate('2026-10-18');
+        expectError(tomorrow, 400, 'VALIDATION_FAILED');
+        expect(tomorrow.body.error.details.fields[0].field).toBe('birthDate');
+      } finally {
+        clock.set(saved);
+      }
+    });
+
     it('refuses null roles, which are cleared with [], and keeps the set roles', async () => {
       const person = await createPerson(testApp, admin, { roles: ['actor', 'director'] });
 

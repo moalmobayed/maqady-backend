@@ -6,7 +6,7 @@ import { AppError } from '../../common/errors/app-error';
 import { toPage } from '../../common/pagination/cursor';
 import type { Page, PageRequest } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
-import { cinemaDateOf } from '../../common/time/time';
+import { formatCairoIso } from '../../common/time/time';
 import { MediaService } from '../media/media.service';
 import type { ImageUploadPayload, UploadOutcome } from '../media/types';
 import { CatalogAssembler, inRoleOrder } from './catalog-assembler.service';
@@ -193,9 +193,12 @@ export class PeopleService {
     });
   }
 
-  /** A birth date can't be after today's (cinema) date in Cairo. */
+  /**
+   * A birth date can't be after today's calendar date in Cairo: the wall-clock date, not the
+   * cinema day (which only turns over at 06:00).
+   */
   private assertBirthDate(birthDate: string | null | undefined): void {
-    if (birthDate && birthDate > cinemaDateOf(this.clock.now())) {
+    if (birthDate && birthDate > formatCairoIso(this.clock.now()).slice(0, 10)) {
       throw fieldError('birthDate', 'birthDate must not be in the future');
     }
   }

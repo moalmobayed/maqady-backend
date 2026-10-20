@@ -667,5 +667,5 @@ media), `admin-people.controller.test.ts`, `catalog-read.service.test.ts`,
   transaction with the movie row locked `FOR UPDATE`.
 - **Person-side credits** also touch the person's `updated_at`; a movie that would pass 200
   credits answers `409 CONFLICT { limit: 200, movieIds }`.
-- **`birthDate`** is checked against today's cinema date in Cairo by the service, after DTO
-  validation passes.
+- **`birthDate`** is checked by the service, after DTO validation passes, against today's
+  calendar date in Cairo: the wall-clock date, not the cinema day that turns over at 06:00.
