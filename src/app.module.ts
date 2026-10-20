@@ -16,6 +16,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
@@ -65,6 +66,7 @@ export class AppModule {
         TheatersModule,
         MessageLogModule,
         CustomersModule,
+        CatalogModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },

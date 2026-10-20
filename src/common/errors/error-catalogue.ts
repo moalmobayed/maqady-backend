@@ -157,6 +157,30 @@ export const ERROR_CATALOGUE = {
     description:
       'Pause ticket sales instead: a published theater is never deleted, and neither is a draft with showtimes. `details.reasons` says why, for example `["not_draft"]` or `["has_showtimes"]`.',
   },
+  MOVIE_NOT_PUBLISHABLE: {
+    status: 409,
+    message: 'Add a synopsis, runtime, release date and at least one genre before publishing.',
+    description:
+      'A Coming soon or Now showing movie needs a synopsis, a runtime, a release date and at least one genre (a poster is optional). Also answered when an edit would clear one of them on a public movie. `details.missing` lists what is missing, from `synopsis`, `runtimeMinutes`, `releaseDate` and `genres`.',
+  },
+  MOVIE_NOT_FEATURABLE: {
+    status: 409,
+    message: 'Only Coming soon or Now showing movies with a hero video can be featured.',
+    description:
+      'A movie in the home carousel must be Coming soon or Now showing and have a hero video. Also answered when an edit or a video deletion would leave a featured movie without its hero video. `details.reasons` lists `not_public`, `no_hero_video` or both; unfeature the movie first (`featuredPosition: null`).',
+  },
+  FEATURED_POSITION_TAKEN: {
+    status: 409,
+    message: 'Another movie holds this carousel position; unfeature it first.',
+    description:
+      'Each home carousel position holds one movie. `details.position` is the position asked for and `details.movieId` the movie holding it; unfeature that movie or pick another position.',
+  },
+  MOVIE_NOT_DELETABLE: {
+    status: 409,
+    message: "A movie that has had bookings can't be deleted; archive it instead.",
+    description:
+      'Deleting would lose history another part of the system keeps, such as bookings or showtimes. `details.reasons` lists why, for example `has_bookings` or `has_showtimes`. Archive the movie instead.',
+  },
   CONFLICT: {
     status: 409,
     message: 'The request conflicts with existing data.',
