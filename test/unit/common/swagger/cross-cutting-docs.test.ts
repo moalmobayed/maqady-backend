@@ -84,6 +84,24 @@ describe('applyCrossCuttingDocs', () => {
     expect(patch!.responses).not.toHaveProperty('422');
     expect(keyOf(get!)).toBeUndefined();
   });
+
+  it('documents 413 PAYLOAD_TOO_LARGE on every write, since every JSON body is limited to 1 MB', () => {
+    const document = documentWith({
+      '/a': {
+        post: operation({ 'x-maqady-access': 'public' }),
+        patch: operation({ 'x-maqady-access': 'public', 'x-maqady-idempotency': 'ignored' }),
+        delete: operation({ 'x-maqady-access': 'public' }),
+        get: operation({ 'x-maqady-access': 'public' }),
+      },
+    });
+    applyCrossCuttingDocs(document);
+    const { post, patch, delete: remove, get } = document.paths['/a']!;
+
+    for (const write of [post!, patch!, remove!]) {
+      expect(codesOf(write, '413')).toEqual(['PAYLOAD_TOO_LARGE']);
+    }
+    expect(get!.responses).not.toHaveProperty('413');
+  });
 });
 
 describe('mergeErrorCode', () => {

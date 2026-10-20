@@ -262,7 +262,8 @@ insensitive) are refused with `INTERNAL`.
 
 ## Swagger
 
-No new paths. Every operation now documents `429 RATE_LIMITED`. The access and idempotency
+No new paths. Every operation now documents `429 RATE_LIMITED`, and every write `413
+PAYLOAD_TOO_LARGE` (the 1 MB JSON limit; review finding R4). The access and idempotency
 decorators record markers that the document builder turns into: the security requirement
 (`[]`, `customer`, `staff`, or optional customer for `@Guest()`), the access errors
 (`UNAUTHENTICATED`, `SESSION_REVOKED`, `ACCOUNT_BLOCKED`/`ACCOUNT_DEACTIVATED`, `FORBIDDEN` for

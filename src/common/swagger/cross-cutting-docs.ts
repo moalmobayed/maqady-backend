@@ -51,6 +51,7 @@ const IDEMPOTENCY_KEY_PARAMETER_DESCRIPTION =
  *
  * - the security requirement and the guards' error codes, per access level;
  * - `429 RATE_LIMITED` on every operation, since every route has at least the default limit;
+ * - `413 PAYLOAD_TOO_LARGE` on writes, since every JSON body is limited to 1 MB;
  * - on writes, the `Idempotency-Key` header (required on `@Strict()` routes), its error codes
  *   and the `Idempotent-Replayed` response header. `@NoIdempotencyStorage()` routes get none.
  *
@@ -73,6 +74,8 @@ export function applyCrossCuttingDocs(document: OpenAPIObject): void {
       }
       if (WRITE_OPERATIONS.has(method)) {
         documentIdempotency(operation, idempotency ?? 'optional');
+        // The one JSON parser refuses any body over 1 MB, before the route runs.
+        mergeErrorCode(operation, 'PAYLOAD_TOO_LARGE');
       }
       mergeErrorCode(operation, 'RATE_LIMITED');
       operation.responses = sortedByStatus(operation.responses);
