@@ -33,9 +33,18 @@ export class StaffRepository {
     return this.staff().select<StaffUserRow[]>(STAFF_COLUMNS).where({ id }).first();
   }
 
-  /** The member's row, locked until the transaction ends. */
+  /**
+   * The member's row, locked until the transaction ends. `FOR NO KEY UPDATE`, not `FOR UPDATE`:
+   * the foreign-key checks of rows that point at the member (a refresh inserting the next session
+   * row, an audit event naming them as actor) take `FOR KEY SHARE`, which `FOR UPDATE` would block,
+   * deadlocking with a revocation that waits on the session row that refresh holds.
+   */
   async findByIdForUpdate(id: number): Promise<StaffUserRow | undefined> {
-    return this.staff().select<StaffUserRow[]>(STAFF_COLUMNS).where({ id }).forUpdate().first();
+    return this.staff()
+      .select<StaffUserRow[]>(STAFF_COLUMNS)
+      .where({ id })
+      .forNoKeyUpdate()
+      .first();
   }
 
   /** By email, case-insensitively (`CITEXT`). */
@@ -46,14 +55,15 @@ export class StaffRepository {
   /**
    * Locks every active admin row, in id order, until the transaction ends, and returns their ids
    * (the last-admin rule, design §10.1). Every staff change takes this lock first, so concurrent
-   * changes queue here and each sees the set as the previous one left it.
+   * changes queue here and each sees the set as the previous one left it. `FOR NO KEY UPDATE`, so
+   * foreign-key checks against these rows are not blocked (see `findByIdForUpdate`).
    */
   async lockActiveAdmins(): Promise<number[]> {
     const rows = await this.staff()
       .select<{ id: number }[]>('id')
       .where({ role: 'admin', status: 'active' })
       .orderBy('id')
-      .forUpdate();
+      .forNoKeyUpdate();
     return rows.map((row) => row.id);
   }
 

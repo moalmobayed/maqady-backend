@@ -51,7 +51,7 @@ export async function up(knex: Knex): Promise<void> {
     [
       'idx_staff_users_active_admins',
       "(id) WHERE role = 'admin' AND status = 'active'",
-      "The last-admin lock: SELECT id ... WHERE role = 'admin' AND status = 'active' ORDER BY id FOR UPDATE.",
+      "The last-admin lock: SELECT id ... WHERE role = 'admin' AND status = 'active' ORDER BY id FOR NO KEY UPDATE.",
     ],
     [
       'idx_staff_users_full_name_id',

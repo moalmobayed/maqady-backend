@@ -664,9 +664,13 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   `staff_password_reset` link (1 hour) leading to `/admin/set-password`, the same page an invite
   uses.
 - **Last admin.** Demoting or deactivating an admin first locks every active admin row
-  `FOR UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
+  `FOR NO KEY UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
   demotions therefore can't both succeed.
   - Every staff change takes that lock first, then the member's row, so changes never deadlock.
+  - Both locks are `FOR NO KEY UPDATE`, never `FOR UPDATE`: rows that reference a staff member
+    (a refresh's new `sessions` row, an `audit_events` actor) take `FOR KEY SHARE` in their
+    foreign-key check, and `FOR UPDATE` would block them and deadlock with the revocation that
+    waits on the session row a refresh holds.
   - An admin may demote or deactivate themselves within the rule (U2a).
 - **Staff status changes** (U2a). Deactivating revokes every session of the member and deletes
   their unused invite and reset links. Reactivating returns a member to `active`, or to
