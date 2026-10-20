@@ -388,7 +388,14 @@ describe('Staff management routes (integration)', () => {
       const adminRoutes = listHttpRoutes(testApp).filter((route) => route.access === 'admin');
 
       expect(adminRoutes.map((route) => `${route.method} ${route.path}`)).toEqual(
-        expect.arrayContaining(['GET /api/v1/admin/staff', 'PATCH /api/v1/admin/staff/:id']),
+        expect.arrayContaining([
+          'GET /api/v1/admin/staff',
+          'PATCH /api/v1/admin/staff/:id',
+          'POST /api/v1/admin/staff',
+          'POST /api/v1/admin/staff/:id/invitations',
+          'GET /api/v1/admin/messages',
+          'GET /api/v1/admin/messages/:id',
+        ]),
       );
       for (const route of adminRoutes) {
         const response = await testApp
