@@ -15,6 +15,7 @@ import {
 } from './messaging.constants';
 import { OutboxDrainService } from './outbox-drain.service';
 import { payloadAad } from './payload';
+import { escapeHtml } from './simple-html';
 import type {
   MessageChannel,
   MessageTemplate,
@@ -113,7 +114,10 @@ function checkRendered<P extends TemplateParams<P>>(
   }
 }
 
-/** A stored copy must never hold a secret parameter, raw or URL-encoded (design §13.1). */
+/**
+ * A stored copy must never hold a secret parameter (design §13.1): raw, URL-encoded (as
+ * `encodeURIComponent` or a query string writes it) or HTML-escaped (as `renderSimpleHtml` does).
+ */
 function checkNoSecretLeaks<P extends TemplateParams<P>>(
   template: MessageTemplate<P>,
   params: P,
@@ -128,7 +132,13 @@ function checkNoSecretLeaks<P extends TemplateParams<P>>(
         `Secret parameter "${name}" of "${template.name}" must be a non-empty string.`,
       );
     }
-    if (stored.includes(value) || stored.includes(encodeURIComponent(value))) {
+    const forms = [
+      value,
+      encodeURIComponent(value),
+      new URLSearchParams({ v: value }).toString().slice(2),
+      escapeHtml(value),
+    ];
+    if (forms.some((form) => stored.includes(form))) {
       throw new AppError(
         'INTERNAL',
         `Message template "${template.name}" would store secret parameter "${name}".`,

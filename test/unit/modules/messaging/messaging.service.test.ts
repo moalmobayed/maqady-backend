@@ -6,6 +6,7 @@ import { MessageTemplateRegistry } from '../../../../src/modules/messaging/messa
 import type { MessagesRepository } from '../../../../src/modules/messaging/messages.repository';
 import { REDACTED_LINK } from '../../../../src/modules/messaging/messaging.constants';
 import { MessagingService } from '../../../../src/modules/messaging/messaging.service';
+import { escapeHtml } from '../../../../src/modules/messaging/simple-html';
 import type { OutboxDrainService } from '../../../../src/modules/messaging/outbox-drain.service';
 import type { MessageTemplate, NewMessageRow } from '../../../../src/modules/messaging/types';
 import { TestClock } from '../../../support/clock';
@@ -150,6 +151,26 @@ describe('MessagingService.queue', () => {
     expect(error.code).toBe('INTERNAL');
     expect(error.message).toContain('secret parameter "token"');
     expect(error.message).not.toContain(TOKEN);
+    expect(messages.insert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['HTML-escaped', (code: string) => `<p>Your code: ${escapeHtml(code)}</p>`],
+    ['form-encoded', (code: string) => `<p>${new URLSearchParams({ code }).toString()}</p>`],
+  ])('refuses a secret parameter stored %s', async (_form, html) => {
+    const { service, registry, messages } = setup();
+    const secret = "it's a <secret> & more";
+    const leaky: MessageTemplate<{ code: string }> = {
+      name: 'test.leaky_encoded',
+      channel: 'email',
+      secretParams: ['code'],
+      render: ({ code }) => ({ subject: 'Code', text: 'See the HTML part.', html: html(code) }),
+    };
+    registry.register(leaky);
+    const error = await rejection(
+      service.queue({ template: leaky, recipient: 'a@b.co', params: { code: secret } }),
+    );
+    expect(error.message).toContain('secret parameter "code"');
     expect(messages.insert).not.toHaveBeenCalled();
   });
 
