@@ -120,6 +120,20 @@ describe('OpenAPI document and Swagger UI (integration)', () => {
     }
   });
 
+  it('documents 429 RATE_LIMITED with Retry-After on every operation', () => {
+    for (const item of Object.values(served.paths)) {
+      const limited = item.get!.responses['429'] as { headers?: Record<string, unknown> };
+      expect(responseSchemaRef(served, limited)).toBe('#/components/schemas/ErrorResponse');
+      expect(limited.headers).toHaveProperty('Retry-After');
+    }
+  });
+
+  it('publishes the health routes as public, and none of the internal x-maqady markers', () => {
+    expect(served.paths['/health']!.get!.security).toEqual([]);
+    expect(served.paths['/health/ready']!.get!.security).toEqual([]);
+    expect(JSON.stringify(served)).not.toContain('x-maqady');
+  });
+
   it('is what contracts/openapi.yaml holds (run `npm run contract` after changing the API)', () => {
     const committed = readFileSync(CONTRACT_FILE, 'utf8');
     expect(committed).toBe(renderOpenApiYaml(buildOpenApiDocument(testApp.app)));
