@@ -165,8 +165,8 @@ describe('OutboxDrainService.drain', () => {
     expect(smsSender.send).toHaveBeenCalledTimes(1);
     expect(messages.markThrottled.mock.calls).toEqual([
       [[1], retryAt, 'daily_quota_exceeded', NOW],
-      [[2], retryAt, 'daily_quota_exceeded', NOW],
-      [[4], retryAt, 'daily_quota_exceeded', NOW],
+      // The rest of the batch's emails, in one statement.
+      [[2, 4], retryAt, 'daily_quota_exceeded', NOW],
     ]);
     expect(messages.markSent).toHaveBeenCalledWith(3, 'simulated-sms-3', NOW);
     // The 429 ended the flush: the second batch was never claimed.

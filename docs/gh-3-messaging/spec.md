@@ -111,14 +111,15 @@ queues needs it, and it exports `MessagingService`, `MessageTemplateRegistry`,
 
 | File | Holds |
 |---|---|
-| `enums.ts` | `MESSAGE_CHANNELS = ['email','sms']`, `MESSAGE_STATUSES = ['queued','sent','failed']`, `DRAIN_MODES = ['batch','flush']` |
-| `types.ts` | `JsonValue`, `TemplateParams`, `MessageChannel`, `MessageStatus`, `DrainMode`, `LinkBuilder`, `RenderedMessage`, `MessageTemplate<P>`, `RegisteredTemplate`, `SimpleHtmlContent`, `QueueMessageInput<P>`, `QueuedMessage`, `RelatedRecords`, `NewMessageRow`, `ClaimedMessage`, `OutgoingEmail`, `OutgoingSms`, `SendOutcome`, `DrainResult`, `ResendErrorBody`, `ResendSenderOptions` |
-| `messaging.constants.ts` | `CLAIM_BATCH_SIZE = 10`, `CLAIM_LEASE_MINUTES = 5`, `MAX_SEND_ATTEMPTS = 10`, `RETRY_BACKOFF_MINUTES = [1, 5, 15, 60, 180, 360]`, `FLUSH_MAX_BATCHES = 10`, `SHUTDOWN_WAIT_MS = 5000`, `REDACTED_LINK`, `TEMPLATE_NAME_PATTERN`, `EMAIL_RECIPIENT_PATTERN`, `SMS_RECIPIENT_PATTERN`, `ERROR_CODE_PATTERN`, `DRAIN_AFTER_RESPONSE_METADATA`, the Resend constants (`RESEND_EMAILS_URL`, `RESEND_TIMEOUT_MS = 10000`, `RESEND_MIN_INTERVAL_MS = 500`, `DEFAULT_RETRY_AFTER_SECONDS = 60`, `MAX_RETRY_AFTER_SECONDS = 3600`, `RESEND_KEY_ERRORS`, `RESEND_RETRYABLE_CONFLICTS`, `RESEND_QUOTA_ERRORS`) |
+| `enums.ts` | `MESSAGE_CHANNELS = ['email','sms']`, `MESSAGE_STATUSES = ['queued','sent','failed']`, `DRAIN_MODES = ['batch','flush']`, `SEND_OUTCOME_KINDS` |
+| `types.ts` | `JsonValue`, `TemplateParams`, `MessageChannel`, `MessageStatus`, `DrainMode`, `SendOutcomeKind`, `LinkBuilder`, `RenderedMessage`, `MessageTemplate<P>`, `RegisteredTemplate`, `SimpleHtmlContent`, `QueueMessageInput<P>`, `QueuedMessage`, `RelatedRecords`, `NewMessageRow`, `ClaimedMessage`, `OutgoingEmail`, `OutgoingSms`, `SendOutcome`, `DrainResult`, `DrainCounts`, `BatchThrottle`, `DeliveryRecord`, `ResendResponseBody`, `ResendSenderOptions` |
+| `messaging.constants.ts` | `CLAIM_BATCH_SIZE = 10`, `CLAIM_LEASE_MINUTES = 5`, `MAX_SEND_ATTEMPTS = 10`, `RETRY_BACKOFF_MINUTES = [1, 5, 15, 60, 180, 360]`, `FLUSH_MAX_BATCHES = 10`, `SHUTDOWN_WAIT_MS = 5000`, `REDACTED_LINK`, `TEMPLATE_NAME_PATTERN`, `EMAIL_RECIPIENT_PATTERN`, `SMS_RECIPIENT_PATTERN`, `ERROR_CODE_PATTERN`, `OUTBOX_ERROR_CODES`, `DRAIN_AFTER_RESPONSE_METADATA`, the Resend constants (`RESEND_EMAILS_URL`, `RESEND_TIMEOUT_MS = 10000`, `RESEND_MIN_INTERVAL_MS = 500`, `DEFAULT_RETRY_AFTER_SECONDS = 60`, `MAX_RETRY_AFTER_SECONDS = 3600`, `RESEND_KEY_ERRORS`, `RESEND_RETRYABLE_CONFLICTS`, `RESEND_QUOTA_ERRORS`) |
 | `messages.repository.ts` | `MessagesRepository`: `nextId`, `insert` (through `TransactionContext.executor()`); `claimDue`, `markSent`, `markRetry`, `markThrottled`, `markFailed` (on the pool, outside any transaction). Columns are always named. |
 | `message-template.registry.ts` | `MessageTemplateRegistry` |
 | `links.ts` | `deliveryLinks(baseUrl)`, `storageLinks(baseUrl)` |
 | `simple-html.ts` | `escapeHtml()`, `renderSimpleHtml()` |
 | `retry-schedule.ts` | `retryDelayMinutes(attempts)` |
+| `payload.ts` | `payloadAad(id)`: the AAD `messages:<id>` that binds a payload to its row |
 | `messaging.service.ts` | `MessagingService` |
 | `outbox-drain.service.ts` | `OutboxDrainService` |
 | `outbox-drain.interceptor.ts` | `OutboxDrainInterceptor` |
@@ -271,7 +272,7 @@ for `flush`.
 | Outcome | Row becomes |
 |---|---|
 | `sent` | `status = 'sent'`, `attempts + 1`, `provider_message_id`, `sent_at = now`; `next_attempt_at`, `payload_ciphertext` and `last_error_code` become NULL |
-| `throttled` (429) | stays `queued`, `attempts` unchanged, `next_attempt_at = retryAt`, `last_error_code` set; the batch's remaining emails get the same `retryAt` and code |
+| `throttled` (429) | stays `queued`, `attempts` unchanged, `next_attempt_at = retryAt`, `last_error_code` set; the batch's remaining emails get the same `retryAt` and code, in one statement |
 | `retry` (5xx, network, timeout, `409 concurrent_idempotent_requests`, API-key problems, render and template errors) | `attempts + 1`. If that reaches 10, the row becomes `failed` with `attempts_exhausted`. Otherwise `next_attempt_at = now + backoff(attempts)` and `last_error_code` is set. |
 | `rejected` (any other 4xx) | `status = 'failed'`, `attempts + 1`, `next_attempt_at` NULL, `last_error_code` set; the payload is kept |
 
@@ -352,6 +353,7 @@ class MessagingService {
 class MessageTemplateRegistry {
   register<P extends TemplateParams<P>>(template: MessageTemplate<P>): void; // a duplicate or malformed name is INTERNAL, at boot
   get(name: string): RegisteredTemplate | undefined;
+  isRegistered<P extends TemplateParams<P>>(template: MessageTemplate<P>): boolean;
   names(): string[];
 }
 class OutboxDrainService {

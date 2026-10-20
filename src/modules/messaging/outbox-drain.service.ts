@@ -121,32 +121,39 @@ export class OutboxDrainService implements BeforeApplicationShutdown {
     total: DrainCounts,
   ): Promise<boolean> {
     let throttle: BatchThrottle | undefined;
+    const held: ClaimedMessage[] = [];
     for (const message of claimed) {
       if (throttle && message.channel === 'email') {
         // Sending on into a quota wall only burns calls: the batch's other emails wait too.
-        await this.messages.markThrottled(
-          [message.id],
-          throttle.retryAt,
-          throttle.errorCode,
-          this.clock.now(),
-        );
-        this.count(
-          total,
-          this.logResult(message, {
-            outcome: 'throttled',
-            errorCode: throttle.errorCode,
-            attempts: message.attempts,
-          }),
-        );
+        held.push(message);
         continue;
       }
       const outcome = await this.attempt(message);
       const record = await this.record(message, outcome);
       this.count(total, this.logResult(message, record));
-      if (outcome.kind === 'throttled')
-        throttle = { retryAt: outcome.retryAt, errorCode: outcome.errorCode };
+      if (outcome.kind === 'throttled') {
+        throttle = { retryAt: outcome.retryAt, errorCode: storableErrorCode(outcome.errorCode) };
+      }
     }
-    return throttle !== undefined;
+    if (!throttle) return false;
+    if (held.length > 0) {
+      // One statement for the whole rest of the batch, not one per message.
+      await this.messages.markThrottled(
+        held.map((message) => message.id),
+        throttle.retryAt,
+        throttle.errorCode,
+        this.clock.now(),
+      );
+    }
+    for (const message of held) {
+      const record: DeliveryRecord = {
+        outcome: 'throttled',
+        errorCode: throttle.errorCode,
+        attempts: message.attempts,
+      };
+      this.count(total, this.logResult(message, record));
+    }
+    return true;
   }
 
   /** Rebuilds the real message from its encrypted parameters and hands it to its sender. */
