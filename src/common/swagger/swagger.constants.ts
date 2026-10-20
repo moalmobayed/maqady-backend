@@ -13,6 +13,7 @@ export const SECURITY_SCHEMES = {
 
 /** Tags in display order. Each unit adds the tags of the routes it introduces. */
 export const API_TAGS = [
+  { name: 'Discovery', description: 'Public browsing data' },
   { name: 'Health', description: 'Liveness and readiness' },
   {
     name: 'Admin: auth',
