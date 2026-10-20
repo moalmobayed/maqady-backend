@@ -757,7 +757,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - Email verification (24 hours), customer password reset (1 hour), staff invite (72 hours) and
   staff password reset (1 hour) each use a 32-byte random token. It is stored as a hash and
   usable once.
-- Requesting a new token invalidates the previous one of the same purpose.
+- Requesting a new token invalidates the previous one of the same purpose. Issues for one
+  owner and purpose queue on an advisory lock, so two at once leave only the later one live
+  (U2a).
 - Both "Forgot password" routes always answer `202`, whether or not the email exists.
 - Registration does report an email already in use (`EMAIL_TAKEN`). It is rate-limited, and
   registering is useless without the password, so the usability gain outweighs the small
