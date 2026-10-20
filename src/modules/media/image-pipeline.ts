@@ -62,7 +62,9 @@ export class ImagePipeline {
 
 async function readHeader(buffer: Buffer): Promise<Metadata> {
   try {
-    const metadata = await sharp(buffer).metadata();
+    // Only the header is read here, so sharp's own pixel limit (about 268 MP) is lifted: an image
+    // above it must be refused as IMAGE_TOO_MANY_PIXELS below, not as an unreadable file.
+    const metadata = await sharp(buffer, { limitInputPixels: false }).metadata();
     if (!metadata.width || !metadata.height) throw unsupported();
     return metadata;
   } catch (error) {

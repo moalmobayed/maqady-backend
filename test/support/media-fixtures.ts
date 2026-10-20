@@ -1,3 +1,4 @@
+import { crc32, deflateSync } from 'node:zlib';
 import sharp from 'sharp';
 
 /**
@@ -49,4 +50,31 @@ export function textFile(): Buffer {
 export async function truncatedJpeg(): Promise<Buffer> {
   const whole = await jpeg(800, 1200);
   return whole.subarray(0, Math.floor(whole.length / 2));
+}
+
+/**
+ * A PNG whose header claims `width` × `height` but whose pixel data is a few bytes: what a
+ * decompression bomb or a giant panorama looks like before decoding. Built byte by byte, since
+ * sharp refuses to create an image this large.
+ */
+export function pngHeader(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const checksum = Buffer.alloc(4);
+    checksum.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, checksum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // bit depth
+  header[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.alloc(16))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }

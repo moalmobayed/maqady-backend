@@ -6,6 +6,7 @@ import {
   jpeg,
   orientedJpegWithMetadata,
   png,
+  pngHeader,
   textFile,
   truncatedJpeg,
 } from '../../../support/media-fixtures';
@@ -58,6 +59,18 @@ describe('ImagePipeline (real sharp)', () => {
       expect(error.code).toBe('IMAGE_TOO_MANY_PIXELS');
       expect(error.status).toBe(422);
       expect(error.details).toEqual({ maxPixels: 40_000_000, width: 7000, height: 6000 });
+      expect(decode).not.toHaveBeenCalled();
+    });
+
+    it('refuses a 400-megapixel header as too many pixels, not as an unsupported file', async () => {
+      // Above sharp's own default limit (about 268 MP), which would otherwise fail the header read.
+      const decode = jest.spyOn(sharp.prototype, 'toBuffer');
+
+      const error = await refusal(pipeline.process(pngHeader(20_000, 20_000), 'gallery'));
+
+      expect(error.code).toBe('IMAGE_TOO_MANY_PIXELS');
+      expect(error.status).toBe(422);
+      expect(error.details).toEqual({ maxPixels: 40_000_000, width: 20_000, height: 20_000 });
       expect(decode).not.toHaveBeenCalled();
     });
 
