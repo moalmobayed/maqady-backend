@@ -750,10 +750,16 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 | Customer "Email again" | 3 per hour | Booking |
 | Search | 60 per minute | IP address |
 | WebSocket | 20 connections, 3 subscriptions each | IP address and connection |
-| Every other route | 300 per minute | IP address |
+| Every other route | 300 per minute, counted per route | The signed-in customer, else the IP address |
 
 The per-IP hold limit is looser than the per-customer one because mobile carriers in Egypt put
 many customers behind one shared address.
+
+The default limit applies to every route, the named ones only to the routes that declare them,
+and a named limit shares one count across those routes (both forgot-password routes, for
+example). Emails are hashed before they become a counter key. The default counts a signed-in
+customer by account rather than address for the same shared-address reason (U1,
+`docs/gh-2-foundations/spec.md`).
 
 ### 10.7 Transport security
 
@@ -1253,6 +1259,9 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-21 | Budget stored as a display label, not money | Builder (§6.1) |
 | D-22 | A showtime can be cancelled until it ends, but moved only before it starts | Builder (§7.7, §8) |
 | D-23 | NestJS 11 on CommonJS, TypeScript 6, Jest 30 with ts-jest. NestJS 12 ships only as ES modules, which Jest loads from CommonJS only on Node 24.9+, and the suite must also run on Node 22. Move to NestJS 12 once the minimum Node version allows it | Builder (U0, `docs/gh-1-scaffold/spec.md`) |
+| D-24 | The default rate limit counts per route, by signed-in customer else IP; named limits count across the routes that declare them | Builder (U1, `docs/gh-2-foundations/spec.md`) |
+| D-25 | A `@Guest()` route accepts no token or a valid customer token; an invalid token is `UNAUTHENTICATED`, never a silent guest | Builder (U1) |
+| D-26 | Only `2xx` responses are stored for an idempotency key, with their status and body (not other headers); errors roll the key back | Builder (U1, §14.1) |
 
 ## 19. Kit and process reconciliations
 
