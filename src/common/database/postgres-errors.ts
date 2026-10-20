@@ -2,6 +2,8 @@ import type { PostgresError } from './types';
 
 /** SQLSTATE codes this service reacts to (PostgreSQL 16, Appendix A). */
 export const SQLSTATE = {
+  SERIALIZATION_FAILURE: '40001',
+  DEADLOCK_DETECTED: '40P01',
   UNIQUE_VIOLATION: '23505',
   EXCLUSION_VIOLATION: '23P01',
   ADMIN_SHUTDOWN: '57P01',
@@ -14,6 +16,12 @@ export const SQLSTATE = {
 const CONFLICT_SQLSTATES = new Set<string>([
   SQLSTATE.UNIQUE_VIOLATION,
   SQLSTATE.EXCLUSION_VIOLATION,
+]);
+
+/** Failures where re-running the whole transaction can succeed (design §7.1, §14.1). */
+const RETRYABLE_SQLSTATES = new Set<string>([
+  SQLSTATE.SERIALIZATION_FAILURE,
+  SQLSTATE.DEADLOCK_DETECTED,
 ]);
 
 /** Server-side states in which no query can succeed until the database is back. */
@@ -77,4 +85,14 @@ export function isDatabaseUnavailableError(error: unknown, depth = 0): boolean {
     if (nested.some((inner) => isDatabaseUnavailableError(inner, depth + 1))) return true;
   }
   return isDatabaseUnavailableError(error.cause, depth + 1);
+}
+
+/**
+ * True for a deadlock (`40P01`) or a serialization failure (`40001`), on the error itself or
+ * anywhere in its `cause` chain (a service may wrap the driver error in an `AppError`).
+ */
+export function isRetryableTransactionError(error: unknown, depth = 0): boolean {
+  if (!(error instanceof Error) || depth > MAX_CAUSE_DEPTH) return false;
+  if (isPostgresError(error) && RETRYABLE_SQLSTATES.has(error.code)) return true;
+  return isRetryableTransactionError(error.cause, depth + 1);
 }

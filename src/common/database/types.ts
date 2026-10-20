@@ -38,3 +38,15 @@ export interface MigrationResult {
 
 /** Parses one element of a Postgres array from its text form. */
 export type ElementParser = (value: string) => unknown;
+
+/** Work to run once the transaction it was registered in has committed. */
+export type PostCommitHook = () => void | Promise<void>;
+
+/**
+ * What the transaction context holds while a transaction (or a savepoint inside one) is open:
+ * the executor repositories use, and the hooks to run after the outermost commit.
+ */
+export interface TransactionState {
+  readonly executor: Knex.Transaction;
+  readonly hooks: PostCommitHook[];
+}
