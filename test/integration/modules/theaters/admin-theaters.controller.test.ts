@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'supertest';
+import { addActiveHall } from '../../../support/halls';
 import { listHttpRoutes, samplePath } from '../../../support/routes';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -73,7 +74,6 @@ describe('Admin theaters (integration)', () => {
 
   beforeEach(async () => {
     clock.set(NOW);
-    probe.withActiveHall.clear();
     probe.withShowtimes.clear();
     await testApp.knex.raw(
       'TRUNCATE theaters, audit_events, idempotency_keys RESTART IDENTITY CASCADE',
@@ -167,7 +167,7 @@ describe('Admin theaters (integration)', () => {
         missing: ['active_hall'],
       });
 
-      probe.withActiveHall.add(id);
+      await addActiveHall(testApp, admin.authorization, id);
       const published = await patch(id, { status: 'active' });
       expect(published.status).toBe(200);
       expect(published.body).toEqual(
@@ -193,7 +193,7 @@ describe('Admin theaters (integration)', () => {
       expect(draftPause.body.error.details).toEqual({ from: 'draft', to: 'sales_paused' });
 
       await prepareTheater(testApp, admin.authorization, id);
-      probe.withActiveHall.add(id);
+      await addActiveHall(testApp, admin.authorization, id);
       await setTheaterStatus(testApp, admin.authorization, id, 'active');
       expect((await patch(id, { status: 'sales_paused' })).body.status).toBe('sales_paused');
       const backToDraft = await patch(id, { status: 'draft' });
@@ -214,7 +214,7 @@ describe('Admin theaters (integration)', () => {
     it('applies field changes and the publish together, and a PATCH of nothing records nothing', async () => {
       const id = await createTheater(testApp, admin.authorization, { name: 'Maqady Maadi' });
       await prepareTheater(testApp, admin.authorization, id);
-      probe.withActiveHall.add(id);
+      await addActiveHall(testApp, admin.authorization, id);
 
       const both = await patch(id, { city: 'Giza', status: 'active' });
       expect(both.body).toEqual(expect.objectContaining({ city: 'Giza', status: 'active' }));
@@ -432,7 +432,7 @@ describe('Admin theaters (integration)', () => {
 
       const active = await createTheater(testApp, admin.authorization);
       await prepareTheater(testApp, admin.authorization, active);
-      probe.withActiveHall.add(active);
+      await addActiveHall(testApp, admin.authorization, active);
       await setTheaterStatus(testApp, admin.authorization, active, 'active');
       const refused = await testApp
         .http()
@@ -465,7 +465,7 @@ describe('Admin theaters (integration)', () => {
       // Ids follow the names: "Theater 00" is 1 and "Theater 01" is 2.
       for (const id of [1, 2]) {
         await prepareTheater(testApp, admin.authorization, id);
-        probe.withActiveHall.add(id);
+        await addActiveHall(testApp, admin.authorization, id);
         await setTheaterStatus(testApp, admin.authorization, id, 'active');
       }
       await testApp
@@ -525,7 +525,11 @@ describe('Admin theaters (integration)', () => {
   describe('access', () => {
     it('serves the 16 theater routes, every one Admin only', () => {
       const routes = listHttpRoutes(testApp)
-        .filter((route) => route.path.startsWith('/api/v1/admin/theaters'))
+        // The theater's halls are U5's routes, covered by its own suite.
+        .filter(
+          (route) =>
+            route.path.startsWith('/api/v1/admin/theaters') && !route.path.endsWith('/halls'),
+        )
         .map((route) => `${route.access} ${route.method} ${route.path}`)
         .sort();
       expect(routes).toEqual(
