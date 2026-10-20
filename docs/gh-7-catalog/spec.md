@@ -1,7 +1,7 @@
 ---
 title: U6 — Catalog - genres, movies, people, credits, photos, YouTube videos, featured
 owner: Mohamed Tarek
-status: In progress
+status: Implemented
 last_verified: 2026-10-20
 tags: [catalog, movies, people, credits, genres, youtube, photos, featured, publishing, admin]
 ---
@@ -79,7 +79,7 @@ service, so no other module touches catalog tables.
 | Alt text: poster `"<title> poster"`, backdrop `<title>`, photo `caption ?? title`, person photo `<fullName>` | U4a: owners pass `alt`; the contract example uses "… poster". |
 | `budgetLabel` (≤ 40) and `filmingLocations` (≤ 200) are optional free text, never parsed | §6.1, call 5. |
 | Every movie write, including its genres, media and credits, sets `movies.updated_at` and `updated_by_staff_id`; a person-side credit change or a person delete touches every affected movie in one `whereIn` update. The admin response's `updatedBy` comes from `StaffService.findById` | PRD A2 "real Last edited by". |
-| Lock order: movies `FOR UPDATE` in ascending id, then people (`FOR UPDATE` when the person itself changes, `FOR SHARE` when only credited) in ascending id. Person delete and person-side credits first read the affected movie ids, lock those movies, then the person | Movie and person writes meet on `movie_credits`; one order avoids deadlocks (U1 retries a `40P01` once anyway). |
+| Lock order: movies in ascending id, then people in ascending id. A movie write takes `FOR NO KEY UPDATE` (it waits for U7's `FOR SHARE` scheduling lock but not for foreign-key checks of rows pointing at the movie); a movie delete takes `FOR UPDATE`. A person edit takes `FOR NO KEY UPDATE`, a person delete `FOR UPDATE`, and a movie-side credits replace locks the credited people `FOR KEY SHARE`, so none is deleted before the credits commit. Person delete and person-side credits first read the affected movie ids, lock those movies, then the person | Movie and person writes meet on `movie_credits`; one order avoids deadlocks (U1 retries a `40P01` once anyway). |
 | Movies, people, photos and videos are hard-deleted; children `ON DELETE CASCADE`; images through `MediaService.deleteMany` (files after commit). No `deleted_at` | Retraction is `archived`; deletion is only for movies that never sold, and people's credits go with them (§9). |
 | Movie delete: lock the movie, run every registered `MovieDeletionBlocker`, refuse with `409 MOVIE_NOT_DELETABLE` `details.reasons` (blocker keys); nothing blocks until U7/U10 register theirs | §9 "a movie that ever had a booking can't be deleted"; the U4b seam pattern. |
 | `PATCH /admin/movies` (bulk archive) is all-or-nothing: `movieIds` 1–100 unique, `status` must be `archived`; any unknown id → `404 NOT_FOUND` `details.missingIds`, nothing changed; already archived ids are reported, not refused | One request, one transaction; the list's checkbox selection may include archived rows. |
@@ -113,21 +113,23 @@ Providers: the five repositories, `MoviesService`, `MovieMediaService`, `Credits
 |---|---|
 | `enums.ts` | `MOVIE_STATUSES = ['draft','coming_soon','now_showing','archived']`, `PUBLIC_MOVIE_STATUSES = ['coming_soon','now_showing']`, `AGE_RATINGS = ['G','PG','12+','16+','18+']`, `CREDIT_ROLES = ['actor','voice','director','writer','producer','cinematographer','composer']`, `CHARACTER_ROLES = ['actor','voice']`, `ROLE_GROUPS = ['actors','directors','writers','crew']`, `VIDEO_KINDS = ['trailer','teaser','clip','featurette']`, `MOVIE_PHOTO_KINDS = ['still','behind_the_scenes']`, `PUBLISH_REQUIREMENTS = ['synopsis','runtimeMinutes','releaseDate','genres']`, `FEATURE_BLOCKERS = ['not_public','no_hero_video']` |
 | `types.ts` | `MovieStatus`, `PublicMovieStatus`, `AgeRating`, `CreditRole`, `RoleGroup`, `VideoKind`, `MoviePhotoKind`, `PublishRequirement`, `FeatureBlocker`, row types (`GenreRow`, `MovieRow`, `NewMovieRow`, `PersonRow`, `MovieCreditRow`, `MoviePhotoRow`, `MovieVideoRow`), domain types (`GenreRef`, `MovieRef`, `MovieSummary`, `MovieDetails`, `MovieVideo`, `MoviePhoto`, `MovieCredit`, `CreditedPerson`, `FeaturedMovie`, `PublicMovieFilter`, `PublicPersonFilter`, `PublicPerson`, `MovieSchedulingInfo`, `AdminMovie`, `AdminMovieListItem`, `AdminMovieListFilter`, `StatusCounts`, `MovieChanges`, `AdminPerson`, `AdminPersonListItem`, `AdminPersonListFilter`, `PersonChanges`, `PersonCredit`, `CreditInput`, `PersonCreditInput`, `BulkArchiveResult`, `MovieDeletionBlocker`) |
+| `catalog-errors.ts`, `movie-changes.ts`, `sequential.ts` | pure: `fieldError()` / `fieldErrors()` (`VALIDATION_FAILED` in the pipe's shape); `diffMovie()` / `diffPerson()` (sent fields that differ, as columns and API names), `moved()`, `sameOrder()`, `sameSet()`; `inSequence()` (the queries of one request run one after another: inside a transaction they share one node-pg client, which must not get a query while another runs) |
 | `catalog.constants.ts` | `MAX_GENRES_PER_MOVIE = 5`, `MAX_MOVIE_PHOTOS = 30`, `MAX_MOVIE_VIDEOS = 20`, `MAX_CREDITS = 200`, `MAX_BULK_ARCHIVE = 100`, `FEATURED_POSITION_MIN = 1`, `FEATURED_POSITION_MAX = 5`, `MAX_RUNTIME_MINUTES = 600`, `MAX_VIDEO_DURATION_SECONDS = 36_000`, `DEFAULT_AGE_RATING = '12+'`, `MOVIE_STATUS_TRANSITIONS`, `ROLE_GROUP_ROLES`, `YOUTUBE_ID_PATTERN`, `YOUTUBE_HOSTS`, `YOUTUBE_URL_MESSAGE`, `MAX_YOUTUBE_URL_LENGTH = 2048`, `SIMILAR_MOVIES_LIMIT = 4`, `MIN_SEARCH_LENGTH = 2` |
 | `youtube.ts` | pure: `parseYoutubeUrl(input): string \| null`, `youtubeEmbedUrl(id)`, `youtubeThumbnailUrl(id)`, `youtubeWatchUrl(id)` |
-| `movie-rules.ts` | pure: `canTransition(from, to)`, `missingPublishRequirements(state)`, `featureBlockers(state)`, `isBackdropShaped(image: StoredImage)` |
-| `genres.repository.ts` | `listAll`, `findByIds`, `genresOf(movieIds)`, `replaceMovieGenres(movieId, genreIds)`, `countPublicByGenre(filter)` |
-| `movies.repository.ts` | `insert`, `findById`, `findByIdForUpdate`, `findByIdForShare`, `findByIdsForUpdate` (ascending id), `findByIds`, `update`, `touch(ids, at, staffId)`, `deleteById`, `findByFeaturedPosition`, `clearFeatured(ids)`, `adminList`, `adminCount`, `adminStatusCounts`, `publicList`, `publicCount`, `publicCountsByStatus`, `findPublicById`, `listFeatured`, `listSimilar`, `mediaCountsOf(ids)` |
-| `movie-media.repository.ts` | photos: `photosOf(movieIds)`, `countPhotos`, `insertPhoto`, `findPhoto(movieId, id)`, `updatePhoto`, `deletePhoto`, `reorderPhotos`, `renumberPhotos`; videos: the same set for videos |
-| `people.repository.ts` | `insert`, `findById`, `findByIdForUpdate`, `findByIdsForShare`, `findByIds`, `update`, `deleteById`, `replaceRoles`, `rolesOf(ids)`, `adminList`, `adminCount`, `publicList`, `publicCount` |
-| `credits.repository.ts` | `creditsOfMovies(movieIds)`, `creditsOfPeople(personIds)` (with movie title, release date, status, poster id), `replaceForMovie(movieId, credits)`, `movieIdsOfPerson(personId)`, `replaceForPerson(personId, credits)`, `renumber(movieIds)`, `countsOf(personIds)`, `creditedRolesOf(personIds)` |
+| `movie-rules.ts` | pure: `isPublicStatus()`, `canTransition(from, to)`, `missingPublishRequirements(state)`, `featureBlockers(state)`, `isBackdropShaped(image: StoredImage)`, `backdropShapeDetails()`, `containsPattern()` (an `ILIKE` pattern with `%`, `_` and `\` escaped) |
+| `genres.repository.ts` | `listAll`, `findByIds`, `genresOf(movieIds)`, `replaceMovieGenres(movieId, genreIds)` |
+| `movies.repository.ts` | `insert`, `findById`, `findByIdForUpdate` (`FOR NO KEY UPDATE`), `findByIdForDelete` (`FOR UPDATE`), `findByIdForShare`, `findByIdsForUpdate` (ascending id), `findByIds`, `update`, `touch(ids, at, staffId)`, `archive(ids, at, staffId)` (also frees positions), `deleteById`, `findByFeaturedPosition`, `adminList`, `adminCount`, `adminStatusCounts`, `countsOf(ids)` (photos, videos, credits in one query), `publicList`, `publicCount`, `publicCountsByStatus`, `publicCountsByGenre`, `findPublicByIds`, `listFeatured`, `listSimilar` |
+| `movie-media.repository.ts` | photos: `photosOf(movieIds)`, `findPhotosByIds`, `findPhoto(movieId, id)`, `countPhotos`, `insertPhoto`, `updatePhoto`, `deletePhoto`, `photoOrder`, `setPhotoOrder` (one `UPDATE … FROM unnest(…) WITH ORDINALITY`); videos: the same set, plus `findVideoByYoutubeId` |
+| `people.repository.ts` | `insert`, `findById`, `findByIdForUpdate`, `findByIdForDelete`, `lockExisting(ids)` (`FOR KEY SHARE`), `findByIds`, `update`, `deleteById`, `replaceRoles`, `rolesOf(ids)`, `adminList`, `adminCount`, `publicList`, `publicCount` |
+| `credits.repository.ts` | `creditsOfMovies(movieIds)` (with the person), `creditsOfPeople(personIds)` (with movie title, release date, status, poster id), `ofPerson`, `movieIdsOfPerson(personId)`, `replaceForMovie(movieId, rows)`, `insertMany`, `deleteByIds`, `setCharacterNames` (one statement), `renumber(movieIds)` (one statement), `countsByMovie`, `summariesOf(personIds)` (credit count and credited roles), `knownFor(personIds, limit)` |
+| `catalog-assembler.service.ts` | `CatalogAssembler`: builds `AdminMovie`, `AdminMovieListItem`, `MovieSummary`, `MovieDetails`, `FeaturedMovie`, `AdminPerson`, `AdminPersonListItem` and `PublicPerson` from rows with a fixed number of queries (every related table once with `whereIn`, every image in one `MediaService.findByIds`) |
 | `movie-lifecycle.registry.ts` | `MovieLifecycleRegistry` |
 | `movies.service.ts` | `MoviesService`: list, create, get, update (fields, genres, status, featured, hero, backdrop), bulk archive, delete |
 | `movie-media.service.ts` | `MovieMediaService`: poster `link` and remove, photo `link`/patch/delete, video create/patch/delete |
 | `credits.service.ts` | `CreditsService`: movie-side and person-side replace |
 | `people.service.ts` | `PeopleService`: list, create, get, update, delete, photo `link` and remove |
 | `catalog-read.service.ts` | the exported read service |
-| `movie-response.mapper.ts`, `person-response.mapper.ts` | `toAdminMovieResponse`, `toAdminMovieListItem`, `toVideoResponse`, `toGenreRefResponse`, `toAdminPersonResponse`, `toAdminPersonListItem` |
+| `catalog-response.mapper.ts` | `CatalogResponseMapper` (injects `MediaService` for image URLs and alt text): `adminMovie`, `adminMovieListItem`, `adminMoviePage`, `adminPerson`, `adminPersonListItem`. `toVideoResponse()` and `toGenreRefResponse()` live beside their DTOs. Upload routes pass a presenter (`(movie) => mapper.adminMovie(movie)`) to the service, because the body is stored with the idempotency key inside the upload's transaction |
 | `admin-movies.controller.ts` | `@Controller('admin/movies')`: list, create, bulk archive, get, patch, delete, credits |
 | `admin-movie-media.controller.ts` | `@Controller('admin/movies/:id')`: `poster`, `photos`, `photos/:photoId`, `videos`, `videos/:videoId` |
 | `admin-people.controller.ts` | `@Controller('admin/people')`: list, create, get, patch, delete, `:id/photo`, `:id/credits` |
@@ -491,14 +493,15 @@ class CatalogReadService {
 //   poster: StoredImage | null }
 
 class MovieLifecycleRegistry {
-  addDeletionBlocker(blocker: MovieDeletionBlocker): void; // duplicate key → throws
+  addDeletionBlocker(blocker: MovieDeletionBlocker): void; // duplicate key → throws (INTERNAL)
+  deletionBlockersOf(movieId: number): Promise<string[]>;   // used by MoviesService.delete
 }
 // MovieDeletionBlocker = { key: string; blocks(movieId: number): Promise<boolean> }
 //   (runs in the delete transaction with the movie locked FOR UPDATE; U7 adds 'has_showtimes',
 //   U10 adds 'has_bookings')
 ```
 
-Every movie status change locks the movie `FOR UPDATE`, so U7's `lockMovieForShare` serialises
+Every movie write locks the movie `FOR NO KEY UPDATE`, which conflicts with `FOR SHARE`, so U7's `lockMovieForShare` serialises
 scheduling against archiving.
 
 Also exported by path: `VideoResponse`, `GenreRefResponse`, `toVideoResponse()`,
@@ -521,6 +524,13 @@ Also exported by path: `VideoResponse`, `GenreRefResponse`, `toVideoResponse()`,
 `PageRequest`, `AppError`, `ApiErrorResponses()`. Nothing from U3, U4b or U9.
 
 ## Tests
+
+As built: unit `youtube.test.ts`, `movie-rules.test.ts`, `movie-changes.test.ts`,
+`movie-lifecycle.registry.test.ts`, `movies.service.test.ts`, `dto/catalog-requests.test.ts`;
+integration `admin-movies.controller.test.ts` (lifecycle, carousel, bulk archive, credits, delete,
+list, access, audit), `admin-movie-media.controller.test.ts` (YouTube, photos, poster, delete with
+media), `admin-people.controller.test.ts`, `catalog-read.service.test.ts`,
+`dto/catalog-contract.test.ts`. The plan below is what they cover.
 
 **Unit** (`test/unit/modules/catalog/`):
 
@@ -638,4 +648,24 @@ Also exported by path: `VideoResponse`, `GenreRefResponse`, `toVideoResponse()`,
   composite media FKs, photo and video columns), §11 (`PUT`/`DELETE /admin/movies/{id}/poster`,
   `PUT /admin/people/{id}/credits`) and §14.3 (four codes) updated; follow-ups for U7
   (`has_showtimes` blocker, `showtimes.movie_id` FK, `lockMovieForShare`) and U10 (`has_bookings`)
-  recorded; `docs/gh-7-catalog/spec.md` is this draft.
+  recorded; this spec corrected against the code as built.
+
+## As built: notes for later units
+
+- **Test fixtures.** `test/support/catalog.ts` builds catalog data through the real admin routes:
+  `createDraftMovie()`, `createPublishedMovie(testApp, admin, { status, genres, releaseDate,
+  featuredPosition, … })` (with a hero video when featured), `createPerson()`, `genreId(slug)`,
+  `adminWrite()` (a write with a fresh `Idempotency-Key`), `idsOf()`. Seeded `genres` survive
+  `resetDatabase()` (`PRESERVED_TABLES`).
+- **Enum references in the contract.** @nestjs/swagger writes an enum property as
+  `allOf: [{ $ref: '#/components/schemas/VideoKind' }]` beside its description (OpenAPI 3.0
+  ignores siblings of a bare `$ref`). The home-page draft writes `{ $ref }`; both are the same
+  shape, and `test/integration/modules/catalog/dto/catalog-contract.test.ts` compares them that
+  way. U8 meets the same for `AgeRating` and `MovieStatus`.
+- **Deletion blocker seam.** A blocker is registered from the owning module's `onModuleInit()`
+  (`test/support/catalog-probe.module.ts` shows the pattern); it runs inside the delete
+  transaction with the movie row locked `FOR UPDATE`.
+- **Person-side credits** also touch the person's `updated_at`; a movie that would pass 200
+  credits answers `409 CONFLICT { limit: 200, movieIds }`.
+- **`birthDate`** is checked against today's cinema date in Cairo by the service, after DTO
+  validation passes.

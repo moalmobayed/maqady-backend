@@ -160,6 +160,10 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   'admin')` creates an active member through `StaffService` and signs them in through
   `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
   `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/catalog.ts` builds catalog data through the real admin routes:
+  `createPublishedMovie(testApp, admin, { status, genres, featuredPosition })`,
+  `createDraftMovie()`, `createPerson()` and `genreId('drama')` (genres are seeded by migration
+  and survive the per-suite reset).
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -202,6 +206,12 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   pictures with `findByIds()` (one query) and `toImageResponse(image, alt)`; `delete()` removes
   the row now and the files after commit. Kinds: `poster` (2:3), `backdrop` (16:9, cropped),
   `person` (square, 600 × 600), `gallery` (any shape).
+- **Catalog** (`modules/catalog`, `docs/gh-7-catalog/spec.md`). Import `CatalogModule` and read
+  movies, genres, people and the carousel through `CatalogReadService` (public reads for
+  discovery; `lockMovieForShare()` and `findMoviesByIds()` for scheduling); never query catalog
+  tables. Refuse a movie's deletion by registering a blocker with
+  `MovieLifecycleRegistry.addDeletionBlocker()` in `onModuleInit()`. Public responses reuse
+  `GenreRefResponse` (`GenreRef`) and `VideoResponse` (`Video`, with `toVideoResponse()`).
 
 ## Database and migrations
 
