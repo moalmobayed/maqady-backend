@@ -72,11 +72,10 @@ export class TheaterReadService {
   async detailsOf(rows: readonly TheaterRow[]): Promise<TheaterDetails[]> {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
-    const [phones, facilities, photos] = await Promise.all([
-      this.theaters.phonesOf(ids),
-      this.theaters.facilitiesOf(ids),
-      this.photos.photosOf(ids),
-    ]);
+    // One after the other: inside a transaction they would share one connection.
+    const phones = await this.theaters.phonesOf(ids);
+    const facilities = await this.theaters.facilitiesOf(ids);
+    const photos = await this.photos.photosOf(ids);
     const imageIds = [
       ...rows.flatMap((row) => (row.cover_image_id === null ? [] : [row.cover_image_id])),
       ...photos.map((photo) => photo.image_id),

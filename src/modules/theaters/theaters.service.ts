@@ -58,19 +58,15 @@ export class TheatersService {
 
   /** `GET /admin/theaters`: by name then id, with today's hours and the open state now. */
   async list(filter: TheaterListFilter, page: PageRequest): Promise<Page<TheaterListEntry>> {
-    const [rows, total] = await Promise.all([
-      this.theaters.list(filter, page),
-      this.theaters.count(filter),
-    ]);
+    const rows = await this.theaters.list(filter, page);
+    const total = await this.theaters.count(filter);
     const pageRows = rows.slice(0, page.limit);
     const ids = pageRows.map((row) => row.id);
     const now = this.clock.now();
     const { from, to } = openStateDates(now);
-    const [phones, hours, images] = await Promise.all([
-      this.theaters.phonesOf(ids),
-      this.hours.hoursFor(ids, from, to),
-      this.media.findByIds(pageRows.flatMap((row) => row.cover_image_id ?? [])),
-    ]);
+    const phones = await this.theaters.phonesOf(ids);
+    const hours = await this.hours.hoursFor(ids, from, to);
+    const images = await this.media.findByIds(pageRows.flatMap((row) => row.cover_image_id ?? []));
     const children = new TheaterChildren(phones, [], [], images);
     return toPage(
       rows,
@@ -103,13 +99,12 @@ export class TheatersService {
     if (!row) throw new AppError('NOT_FOUND');
     const now = this.clock.now();
     const { from, to } = openStateDates(now);
-    const [[theater], weekly, specials, days, publishBlockers] = await Promise.all([
-      this.reads.detailsOf([row]),
-      this.hours.weeklyHours([id]),
-      this.hours.specialDates([id], cinemaDateOf(now), null),
-      this.hours.hoursFor([id], from, to),
-      row.status === 'draft' ? this.unmetPublishRequirements(row) : Promise.resolve([]),
-    ]);
+    // One query after the other: a write answers with this inside its transaction.
+    const [theater] = await this.reads.detailsOf([row]);
+    const weekly = await this.hours.weeklyHours([id]);
+    const specials = await this.hours.specialDates([id], cinemaDateOf(now), null);
+    const days = await this.hours.hoursFor([id], from, to);
+    const publishBlockers = row.status === 'draft' ? await this.unmetPublishRequirements(row) : [];
     return {
       theater: theater!,
       hours: weekly.get(id) ?? [],

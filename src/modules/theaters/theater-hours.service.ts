@@ -48,10 +48,9 @@ export class TheaterHoursService {
       throw new AppError('INTERNAL', `hoursFor() answers at most ${MAX_HOURS_RANGE_DAYS} dates.`);
     }
     const ids = [...new Set(theaterIds)];
-    const [weekly, specials] = await Promise.all([
-      this.weeklyHours(ids),
-      this.specialDates(ids, from, to),
-    ]);
+    // One after the other: inside a transaction both would share one connection.
+    const weekly = await this.weeklyHours(ids);
+    const specials = await this.specialDates(ids, from, to);
     const dates = cinemaDatesBetween(from, to);
     return new Map(
       ids.map((id) => {
