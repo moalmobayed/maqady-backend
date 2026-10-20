@@ -14,4 +14,7 @@ gate (G5) checks it.
 | `docs/reference/prd.md` | Text extract of the PRD, "Movie Reservation System" v1.0 (Arabic/English); superseded by v2.0 | Mohamed Tarek | 2026-10-19 |
 | `docs/reference/prd-v2.md` | PRD v2.0: requirements after backend planning (copy of the shared doc) | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-1-scaffold/spec.md` | U0 spec: the NestJS scaffold, config, logging, errors, database, Swagger, health, tests, CI and deploy files | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-1-scaffold/qa.md` | U0 manual QA: curl evidence for health, readiness, error shapes, X-Request-Id, CORS, Swagger, database-down, fail-fast boot, logs, the replayed Docker image and shutdown | Mohamed Tarek | 2026-10-20 |
+| `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
+| `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |

@@ -1,7 +1,7 @@
 ---
 title: U0 — Scaffold the NestJS app, Swagger, CI and deploy files
 owner: Mohamed Tarek
-status: In progress
+status: Implemented — 2026-10-20
 last_verified: 2026-10-20
 tags: [scaffold, nestjs, config, logging, errors, database, swagger, health, ci, docker]
 ---
@@ -152,7 +152,8 @@ it is a new UUID. It is echoed in the response header and in error bodies, and e
 carries it as `correlationId`. There is one line per request, with method, route template,
 status and duration. URLs, query strings, headers and bodies are never logged. The
 `authorization`, `x-hold-token` and `cookie` headers are redacted wherever a header object is
-logged.
+logged. Errors are logged under `err`, whose serializer keeps a Postgres error's SQLSTATE and
+constraint only. Knex's own warnings go through the same logger, never `console`.
 
 ## Tests
 
@@ -174,14 +175,19 @@ zero once per run, data cleaned per suite)
 - `GET /health` and `GET /health/ready` return `200 {"status":"ok"}` with `no-store`.
 - `X-Request-Id` echo: a valid UUID is echoed, an invalid one is replaced, and a missing one is
   generated.
-- Error shapes: unknown route, validation failure (through a test-only route), malformed JSON
-  and an oversized body.
+- Error shapes: unknown route (inside and outside `/api/v1`), validation failure (through a
+  test-only route), malformed JSON, a form-encoded body (never parsed), an oversized body, an
+  unexpected error (`INTERNAL`), and a real unique violation (`CONFLICT`).
+- The database down: readiness answers `503 SERVICE_UNAVAILABLE` while liveness stays `200`.
 - CORS: preflight for an allowed origin lists the allowed and exposed headers; a foreign origin
-  gets no CORS headers. Helmet headers are present.
-- Migrations: schema, extensions, row-level security, extension-free names, idempotent re-run,
-  session settings and type parsers on a pooled connection.
-- Request logging: one line per request with `correlationId`, and no body, query string or
-  `Authorization` value.
+  gets no CORS headers. Helmet headers are present. One trusted proxy hop: a client can't spoof
+  its address through `X-Forwarded-For`.
+- Migrations: schema, extensions, row-level security, extension-free names, an idempotent
+  re-run, the refused rollback, and extensions placed in `extensions` on a Supabase-style
+  database. Session settings and type parsers on pooled connections.
+- Request logging: one line per request with `correlationId`, and no body, query string,
+  token or cookie. An unexpected error is logged with its stack; a Postgres error by SQLSTATE
+  and constraint only.
 - Swagger: the UI and the JSON document are served. The health paths and the
   `HealthResponse` and `ErrorResponse` schemas match the agreed draft, and the committed
   `contracts/openapi.yaml` is current.
