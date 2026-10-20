@@ -74,6 +74,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET` | later units | Image storage; the key never leaves the server |
 | `FRONTEND_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM` | later units | Email links and sending ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all eleven |
+| `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
 ## Scripts
@@ -90,6 +91,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `npm run test:unit` / `npm run test:integration` | One project only |
 | `npm run migrate` | Applies pending migrations to `DATABASE_URL`, without serving |
 | `npm run contract` | Writes `contracts/openapi.yaml` from the code, with no database and no listener |
+| `npm run admin:create` | Migrates, then creates the first active admin from `BOOTSTRAP_ADMIN_*` unless an active admin exists. Safe to repeat; never prints the email or password |
 | `npm run db:local` | Starts a local PostgreSQL 16 cluster and creates `maqady_dev` and `maqady_test` |
 
 ## Dependencies
@@ -128,6 +130,14 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/foundations-probe.module.ts` holds test-only routes and principal resolvers for
   exercising the guards and the write interceptor. They are registered by the suites, never by
   the app.
+- `test/support/staff-auth.ts` gives admin-route tests real staff tokens: `staffSession(testApp,
+  'admin')` creates an active member through `StaffService` and signs them in through
+  `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
+  `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/routes.ts` lists every HTTP route with its declared access
+  (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
+- Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
+  (`foundations-probe.module.ts`): the registry takes one resolver per audience.
 - Point `TEST_DATABASE_URL` at your own `*_test` database when other runs share the server.
 
 ## Writing a feature (the shared foundations)
@@ -149,6 +159,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `PageResponseOf()` from `common/pagination`; audit records go through `AuditService.record()`.
 - **Rate limits.** Every route has the default limit; opt into a named one with
   `@RateLimit('search')`.
+- **Credentials** (`modules/auth`, `CredentialsModule`): `PasswordService` (scrypt),
+  `@IsAllowedPassword()`, `SessionService` (refresh-token sessions with rotation; call `refresh()`
+  from a `@NoRequestTransaction()` route) and `OneTimeTokenService` (single-use links). Staff
+  use them now; customers (U9) pass their own lifetime and account check.
+- **Staff** (`modules/staff`): `StaffService` reads members (`findById`, `findByEmail`, `list`).
 
 ## Database and migrations
 
@@ -174,6 +189,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - Render builds the `Dockerfile`. The container runs `node dist/main.js`, which migrates under
   an advisory lock, then listens on `PORT`. Set the health check path to `/api/v1/health`.
 - Set the environment variables above in Render; secrets live only there.
+- **First admin.** Once, from a Render shell (or any machine that reaches the database), with
+  `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` and `BOOTSTRAP_ADMIN_PASSWORD` set for that
+  command only: `npm run admin:create`. It prints `Created admin #<id>` or that an active admin
+  already exists. Sign in at `/admin/login`; the admin can change the password later through
+  "Forgot password".
 - `DATABASE_URL` is Supabase's **session pooler** URL (port 5432): the direct connection is IPv6
   only. Supabase requires TLS. With `sslmode=require`, node-pg also verifies the certificate, so
   give it Supabase's CA certificate (`sslrootcert`), or the connection is refused.
@@ -186,11 +206,12 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 ```
 src/
   main.ts, app.module.ts, app.setup.ts   boot, root module, HTTP settings
-  cli/                                   migrate and contract commands
+  cli/                                   migrate, contract and admin:create commands
   common/                                config, database, errors, logging, swagger, auth,
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
-  modules/<feature>/                     one Nest module per feature (health so far)
+  modules/<feature>/                     one Nest module per feature: health, auth (credentials),
+                                         staff
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

@@ -121,9 +121,9 @@ a repository, a service, a controller or gateway, and the module file.
 | `common/auth` | Guards, the access decorators (§11), the boot-time route check | auth |
 | `common/crypto` | Encryption for stored idempotency responses, HMAC helpers | config |
 | `common/time`, `common/money`, `common/errors`, `common/pagination`, `common/logging`, `common/config` | Shared helpers, `AppError`, the global exception filter, cursor codec, pino setup, validated environment | — |
-| `auth` | `sessions`, `one_time_tokens` | customers, staff, messaging |
-| `customers` | `customers` | messaging, audit |
-| `staff` | `staff_users` | messaging, audit |
+| `auth` (`CredentialsModule`) | `sessions`, `one_time_tokens`; passwords | audit. Staff and customers import it and pass in their own account checks, so it points at neither (U2a) |
+| `customers` | `customers` | auth, messaging, audit |
+| `staff` | `staff_users` | auth, messaging, audit |
 | `media` | `images`; the Supabase Storage adapter and image pipeline | — |
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
 | `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters, seating |
@@ -189,7 +189,7 @@ Rules:
 |---|---|---|
 | `customers` | Customer accounts | `email CITEXT`, unique among rows where `deleted_at IS NULL`; `password_hash`; `phone`; `email_verified_at`; `status` (`active`, `blocked`); `deleted_at`. An anonymised row has no email or phone (CHECK). |
 | `staff_users` | Staff accounts | `email CITEXT UNIQUE`; `role` (`admin`, `box_office`); `status` (`invited`, `active`, `deactivated`); `password_hash` is NULL until a password is set; `last_sign_in_at` |
-| `sessions` | Refresh-token sessions | Exactly one of `customer_id`, `staff_user_id` (CHECK `num_nonnulls(…) = 1`); `family_id`; `token_hash` UNIQUE; `rotated_at`; `expires_at`; `revoked_at`; `replaced_by_id` |
+| `sessions` | Refresh-token sessions, one row per refresh token | Exactly one of `customer_id`, `staff_user_id` (CHECK `num_nonnulls(…) = 1`); `family_id UUID` (one sign-in's chain); `token_hash` UNIQUE; `rotated_at`; `expires_at` (the family's, copied on rotation); `revoked_at` with `revoked_reason`; `replaced_by_id` |
 | `one_time_tokens` | Single-use links | `purpose` (`verify_email`, `customer_password_reset`, `staff_invite`, `staff_password_reset`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
 | `idempotency_keys` | Stored results of writes | UNIQUE (`scope`, `key`); `request_hash`; `response_status`; `response_ciphertext` (the response body, encrypted, §14.1); `created_at`. A key older than 24 hours counts as absent. |
 | `audit_events` | Activity log | `actor_kind` (`staff`, `customer`, `system`) plus actor FKs; `action` (for example `booking.refunded`); `entity_type`, `entity_id`; `booking_id`; `changed_fields TEXT[]`; `metadata JSONB`. Never personal data: names of changed fields, not their values. |
@@ -666,6 +666,14 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Last admin.** Demoting or deactivating an admin first locks every active admin row
   `FOR UPDATE`. The change is refused with `LAST_ADMIN` if it would leave none. Two concurrent
   demotions therefore can't both succeed.
+  - Every staff change takes that lock first, then the member's row, so changes never deadlock.
+  - An admin may demote or deactivate themselves within the rule (U2a).
+- **Staff status changes** (U2a). Deactivating revokes every session of the member and deletes
+  their unused invite and reset links. Reactivating returns a member to `active`, or to
+  `invited` if they never set a password, so the invite can be resent. An invited member becomes
+  active only by setting a password.
+- **The bootstrap password** is used as given; v1 forces no change at first sign-in. The admin
+  can change it through "Forgot password", and the variable is removed after the run (U2a).
 
 ### 10.2 Tokens and sessions
 
@@ -674,24 +682,35 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   role; the guard reads the role from the database (§10.3).
 - **Refresh token.** An opaque 32-byte random value. Only its SHA-256 hash is stored, in
   `sessions`. It lasts 30 days for customers and 12 hours for staff.
+  - The lifetime is absolute: it runs from the sign-in, and a rotated token keeps the family's
+    `expires_at`. Refreshing never extends a session, so a stolen token can't be kept alive by
+    refreshing (U2a).
 - **Rotation.** Every refresh issues a new refresh token in the same family.
   - Presenting the previous token again within 30 seconds of its rotation answers
     `REFRESH_CONFLICT`, without revoking anything. A second tab or a retry then re-reads the
     token already stored.
   - After 30 seconds, presenting an already-rotated token revokes the whole family
     (`SESSION_REVOKED`).
+  - A token nobody issued answers `UNAUTHENTICATED`; the frontend signs in again on any 401.
 - **Revocation.**
   - Sign-out revokes the family.
-  - Blocking a customer, or deactivating a staff member, revokes all their sessions.
+  - Blocking a customer, or deactivating or demoting a staff member, revokes all their
+    sessions. A demoted admin signs in again as box office.
+  - A revocation first locks the family's (or the account's) unrotated rows, so a refresh in
+    flight finishes first and the token it issued is revoked too (U2a).
   - Because the guard checks the session on every request, revocation takes effect immediately,
     not when the access token expires.
 - **Transport.** Tokens travel in JSON bodies and the `Authorization` header, not cookies. The
   frontend and API sit on different sites on free hosting, where browsers increasingly block
   third-party cookies. The frontend keeps the access token in memory and the refresh token in
   storage. See §20 for the trade-off.
-- **No idempotency storage for auth.** Sign-up, sign-in, refresh and password routes run inside
-  the write interceptor's transaction, but their responses are never stored, because they carry
+- **No idempotency storage for auth.** Sign-up, sign-in and password routes run inside the
+  write interceptor's transaction, but their responses are never stored, because they carry
   credentials (§14.1).
+  - **Refresh is the exception** (U2a): it runs outside the request transaction
+    (`@NoRequestTransaction()`), in a transaction of its own, so a reuse-triggered revocation
+    commits before `SESSION_REVOKED` is answered. Inside the request transaction, the error would
+    roll the revocation back.
   - A repeated sign-up answers `EMAIL_TAKEN`.
   - A repeated sign-in simply opens a second session.
   - A repeated refresh meets the 30-second grace above.
@@ -1011,7 +1030,8 @@ Replays return the stored status and body with an `Idempotent-Replayed: true` he
 Three carve-outs:
 
 - **Auth routes** run in the transaction, but their responses are never stored, because they
-  carry credentials (§10.2).
+  carry credentials (§10.2). The refresh routes run outside it, in their own transaction, so a
+  detected token reuse stays revoked (§10.2).
 - **Upload routes** opt out of the request transaction, and their services open short
   transactions after the image work (§9).
 - **Business results that must persist**, such as a declined payment, are successful responses,
