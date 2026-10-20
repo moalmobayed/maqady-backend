@@ -134,6 +134,12 @@ export const ERROR_CATALOGUE = {
     message: 'At least one active admin must remain.',
     description: 'Demoting or deactivating this admin would leave no active admin.',
   },
+  NOT_INVITED: {
+    status: 409,
+    message: 'This staff member is not waiting for an invite.',
+    description:
+      'Only a member who is still `invited` (has not set a password) can be sent an invite again. An active member uses "Forgot password" on the sign-in page; reactivate a deactivated member first.',
+  },
   EMAIL_TAKEN: {
     status: 409,
     message: 'An account with this email already exists.',

@@ -12,6 +12,7 @@ import type {
   IssuedOneTimeToken,
   IssueOneTimeTokenInput,
   ConsumedOneTimeTokenRow,
+  LiveOneTimeToken,
   OneTimeTokenOwner,
 } from './types';
 
@@ -65,6 +66,18 @@ export class OneTimeTokenService {
       if (!row) throw new AppError('INVALID_TOKEN');
       return { id: row.id, owner: ownerOf(row) };
     });
+  }
+
+  /**
+   * Whose a live token is and what it is for, without using it or locking anything: null when it
+   * is malformed, unknown, used or expired. A caller that must lock the owner before the token
+   * (a password setup, which locks the member as every staff change does) reads it here, takes
+   * its lock, then `consume()`s it; a token used or deleted in between fails `consume()`.
+   */
+  async findLive(token: string): Promise<LiveOneTimeToken | null> {
+    if (!OPAQUE_TOKEN_PATTERN.test(token)) return null;
+    const row = await this.tokens.findLive(sha256Hex(token), this.clock.now());
+    return row ? { id: row.id, purpose: row.purpose, owner: ownerOf(row) } : null;
   }
 
   /** Deletes every unused token of an account, of any purpose (deactivation, anonymisation). */
