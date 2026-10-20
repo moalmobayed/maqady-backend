@@ -156,19 +156,27 @@ describe('SessionService', () => {
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('revokes the family for reuse from 30 seconds on, records it, and throws only after the commit', async () => {
+    it('revokes the family for reuse from 30 seconds on, in a second transaction, records it, and throws only after the commit', async () => {
       sessions.findByTokenHashForUpdate.mockResolvedValue(
         row({ rotated_at: new Date('2026-10-20T09:59:30Z') }),
       );
-      // The transaction resolves (commits) with the reuse; only then is the error thrown.
-      let committed: unknown;
+      // Each transaction resolves (commits) in turn; only then is the error thrown.
+      const committed: unknown[] = [];
+      let revokedInTransaction: number | undefined;
+      sessions.revoke.mockImplementation(() => {
+        revokedInTransaction = committed.length + 1;
+        return Promise.resolve(2);
+      });
       transactions.run.mockImplementation(async (fn: () => Promise<unknown>) => {
-        committed = await fn();
-        return committed;
+        const result = await fn();
+        committed.push(result);
+        return result;
       });
 
       await expect(refresh()).rejects.toMatchObject({ code: 'SESSION_REVOKED' });
-      expect(committed).toEqual({ kind: 'reused' });
+      expect(committed).toEqual([{ kind: 'reused', familyId: FAMILY, sessionId: 10 }, undefined]);
+      // Not in the transaction that read (and locked) the presented row.
+      expect(revokedInTransaction).toBe(2);
       expect(sessions.lockLiveHeads).toHaveBeenCalledWith({ kind: 'family', familyId: FAMILY });
       expect(sessions.revoke).toHaveBeenCalledWith(
         { kind: 'family', familyId: FAMILY },

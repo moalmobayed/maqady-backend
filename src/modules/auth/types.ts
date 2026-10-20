@@ -47,9 +47,13 @@ export interface RefreshedSession {
   readonly expiresAt: Date;
 }
 
-/** What a refresh decided inside its transaction; a reuse is thrown only after the commit. */
+/**
+ * What a refresh decided inside its transaction. A reuse names the family and the presented row;
+ * the family is revoked in a second transaction, and `SESSION_REVOKED` thrown after it commits.
+ */
 export type RefreshOutcome =
-  { readonly kind: 'rotated'; readonly session: RefreshedSession } | { readonly kind: 'reused' };
+  | { readonly kind: 'rotated'; readonly session: RefreshedSession }
+  | { readonly kind: 'reused'; readonly familyId: string; readonly sessionId: number };
 
 /** A `sessions` row as the repository reads it. */
 export interface SessionRow {

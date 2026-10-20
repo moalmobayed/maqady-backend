@@ -274,9 +274,11 @@ stored parameters, `timingSafeEqual` the keys.
 transaction is already open): the order in Decisions. On success insert the new row (same
 `family_id`, owner and `expires_at`, `created_at = now`), then mark the old row `rotated_at = now,
 replaced_by_id = new.id`, call `assertOwnerLive(ownerId)` (staff: `ACCOUNT_DEACTIVATED` unless
-`active`; a throw rolls the rotation back), and return. Reuse after the grace window revokes the
-family with `refresh_reuse`, writes audit `session.reuse_detected` (actor system), commits, then
-throws `SESSION_REVOKED`. `StaffAuthService.refresh` signs the new access token.
+`active`; a throw rolls the rotation back), and return. Reuse after the grace window ends that
+transaction, then, in a second one, revokes the family with `refresh_reuse` and writes audit
+`session.reuse_detected` (actor system), commits, and throws `SESSION_REVOKED`. The second
+transaction locks the live heads first like every revocation, so concurrent replays and sign-outs
+can't deadlock with it. `StaffAuthService.refresh` signs the new access token.
 
 **Sign-out**: `SessionService.revokeFamilyOf(principal.sessionId, 'sign_out')`; audit
 `session.revoked`; `204`.

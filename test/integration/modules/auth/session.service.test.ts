@@ -67,6 +67,59 @@ describe('SessionService (integration)', () => {
     ]);
   });
 
+  it('two replays of different old tokens of one family both answer SESSION_REVOKED, without a deadlock', async () => {
+    const member = await createStaffMember(testApp, { role: 'box_office' });
+    const sessions = testApp.app.get(SessionService);
+    const live = () => Promise.resolve();
+    const opened = await sessions.open({
+      owner: { audience: 'staff', id: member.id },
+      lifetimeSeconds: 3600,
+    });
+    const first = opened.refreshToken;
+    const second = (
+      await sessions.refresh({ audience: 'staff', refreshToken: first, assertOwnerLive: live })
+    ).refreshToken;
+    const head = await sessions.refresh({
+      audience: 'staff',
+      refreshToken: second,
+      assertOwnerLive: live,
+    });
+    clock.advance({ seconds: 31 });
+
+    // Hold the live head, so both replays lock their own old row and then queue on it.
+    const gate = await testApp.knex.transaction();
+    let replays: PromiseSettledResult<unknown>[];
+    try {
+      await gate('sessions').select('id').where({ id: head.sessionId }).forUpdate();
+      const racing = Promise.allSettled(
+        [first, second].map((refreshToken) =>
+          sessions.refresh({ audience: 'staff', refreshToken, assertOwnerLive: live }),
+        ),
+      );
+      await waitForLockWaiters(testApp.knex, 2);
+      await gate.commit();
+      replays = await racing;
+    } catch (error) {
+      if (!gate.isCompleted()) await gate.rollback();
+      throw error;
+    }
+
+    expect(
+      replays.map((replay): unknown =>
+        replay.status === 'rejected' ? (replay.reason as unknown) : replay,
+      ),
+    ).toEqual([
+      expect.objectContaining({ code: 'SESSION_REVOKED' }),
+      expect.objectContaining({ code: 'SESSION_REVOKED' }),
+    ]);
+    const unrevoked = await testApp
+      .knex('sessions')
+      .pluck('id')
+      .where({ family_id: opened.familyId })
+      .whereNull('revoked_at');
+    expect(unrevoked).toEqual([]);
+  });
+
   it('revokes every session of an owner and leaves other owners alone', async () => {
     const first = await createStaffMember(testApp, { role: 'box_office' });
     const second = await createStaffMember(testApp, { role: 'box_office' });

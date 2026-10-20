@@ -718,7 +718,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - **Refresh is the exception** (U2a): it runs outside the request transaction
     (`@NoRequestTransaction()`), in a transaction of its own, so a reuse-triggered revocation
     commits before `SESSION_REVOKED` is answered. Inside the request transaction, the error would
-    roll the revocation back.
+    roll the revocation back. The revocation runs in a second transaction, after the one that read
+    and locked the presented row ends, so it takes its locks in the same order as every other
+    revocation and two replays (or a replay and a sign-out) can't deadlock.
   - A repeated sign-up answers `EMAIL_TAKEN`.
   - A repeated sign-in simply opens a second session.
   - A repeated refresh meets the 30-second grace above.

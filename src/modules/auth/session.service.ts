@@ -28,7 +28,7 @@ import type {
  * - `open()` starts a family with its first refresh token. Only the token's SHA-256 is stored.
  * - `refresh()` rotates within the family. The previous token again within 30 seconds of its
  *   rotation is `REFRESH_CONFLICT` (nothing revoked); later it revokes the family
- *   (`SESSION_REVOKED`). It runs in its own transaction, so the revocation commits before the
+ *   (`SESSION_REVOKED`). It runs in its own transactions, so the revocation commits before the
  *   error is answered: call it from a `@NoRequestTransaction()` route.
  * - `revokeFamilyOf()` and `revokeAllFor()` end sessions; the guard checks the session on every
  *   request, so they take effect on the next one.
@@ -68,8 +68,21 @@ export class SessionService {
       throw new AppError('INTERNAL', 'A refresh must run outside the request transaction.');
     }
     const outcome = await this.transactions.run(() => this.rotate(input));
-    if (outcome.kind === 'reused') throw new AppError('SESSION_REVOKED');
-    return outcome.session;
+    if (outcome.kind === 'rotated') return outcome.session;
+
+    // A reuse revokes the family in a transaction of its own, after the one that read the
+    // presented row (and held its lock) ended: the revocation then locks the live heads before any
+    // other row, as every revocation does, so replays and sign-outs racing it can't deadlock.
+    await this.transactions.run(async () => {
+      await this.revokeScope({ kind: 'family', familyId: outcome.familyId }, 'refresh_reuse');
+      await this.audit.record({
+        actor: { kind: 'system' },
+        action: 'session.reuse_detected',
+        entity: { type: 'session', id: outcome.sessionId },
+        metadata: { audience: input.audience },
+      });
+    });
+    throw new AppError('SESSION_REVOKED');
   }
 
   /** Revokes the whole family of a session (sign-out). Does nothing for an unknown session. */
@@ -98,14 +111,7 @@ export class SessionService {
     if (row.rotated_at !== null) {
       const graceEnds = addToInstant(row.rotated_at, { seconds: REFRESH_REUSE_GRACE_SECONDS });
       if (now.getTime() < graceEnds.getTime()) throw new AppError('REFRESH_CONFLICT');
-      await this.revokeScope({ kind: 'family', familyId: row.family_id }, 'refresh_reuse');
-      await this.audit.record({
-        actor: { kind: 'system' },
-        action: 'session.reuse_detected',
-        entity: { type: 'session', id: row.id },
-        metadata: { audience: input.audience },
-      });
-      return { kind: 'reused' };
+      return { kind: 'reused', familyId: row.family_id, sessionId: row.id };
     }
 
     await input.assertOwnerLive(ownerId);
