@@ -46,6 +46,8 @@ describe('hall request DTOs', () => {
       ['a blank name', { name: '   ' }],
       ['a name of 41 characters', { name: 'x'.repeat(41) }],
       ['a number', { name: 3 }],
+      // Postgres text can't hold NUL: the insert would fail with a 500.
+      ['a name with a NUL character', { name: 'Hall\u00003' }],
     ])('refuses %s', async (_, body) => {
       expect(await invalidFields(CreateHallRequest, body)).toEqual(['name']);
     });
@@ -63,6 +65,10 @@ describe('hall request DTOs', () => {
       expect(await invalidFields(UpdateHallRequest, {})).toEqual(['name']);
       expect(await invalidFields(UpdateHallRequest, { name: null })).toEqual(['name']);
       expect(await invalidFields(UpdateHallRequest, { status: null })).toEqual(['status']);
+    });
+
+    it('refuses a name with a NUL character, which Postgres text cannot hold', async () => {
+      expect(await invalidFields(UpdateHallRequest, { name: 'Hall\u00004' })).toEqual(['name']);
     });
 
     it('takes a name, a status or both', async () => {

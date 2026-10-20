@@ -195,6 +195,8 @@ describe('Admin halls (integration)', () => {
         .send({ name: 'Hall 1' });
       expectError(noKey, 400, 'IDEMPOTENCY_KEY_REQUIRED');
       expectError(await post(theaterId, { name: ' ' }), 400, 'VALIDATION_FAILED');
+      // Postgres text can't hold NUL: refused up front, never a 500 from the insert.
+      expectError(await post(theaterId, { name: 'Hall\u00001' }), 400, 'VALIDATION_FAILED');
 
       const key = randomUUID();
       const first = await post(theaterId, { name: 'Hall 1' }, key);
