@@ -9,6 +9,7 @@ import {
 } from '../../../support/catalog';
 import { png } from '../../../support/media-fixtures';
 import { mediaDirectory, removeMediaDirectory, storedFiles } from '../../../support/media';
+import { waitForLockWaiters } from '../../../support/database';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import { buildTestConfig } from '../../../support/test-config';
@@ -242,6 +243,51 @@ describe('Admin people routes (integration)', () => {
         .where({ action: 'person.credits_replaced', entity_id: newcomer.id });
       expect(audit.metadata).toEqual({ count: 2, movieCount: 2 });
     });
+
+    it('renumbers a movie whose credit it removes after that credit was added meanwhile', async () => {
+      const [waitedOn, creditedMeanwhile] = await Promise.all([
+        createDraftMovie(testApp, admin),
+        createDraftMovie(testApp, admin),
+      ]);
+      const [person, stays] = await Promise.all([
+        createPerson(testApp, admin),
+        createPerson(testApp, admin),
+      ]);
+      expectStatus(
+        await putMovieCredits(waitedOn.id, [{ personId: person.id, role: 'actor' }]),
+        200,
+      );
+
+      // Hold the movie the replace reads first, so it waits after reading the person's movies.
+      const blocker = await testApp.knex.transaction();
+      await blocker('movies').select('id').where({ id: waitedOn.id }).forUpdate();
+      const replace = putPersonCredits(person.id, [{ movieId: waitedOn.id, role: 'actor' }]).then(
+        (response) => response,
+      );
+      await waitForLockWaiters(testApp.knex, 1);
+      expectStatus(
+        await putMovieCredits(creditedMeanwhile.id, [
+          { personId: person.id, role: 'director' },
+          { personId: stays.id, role: 'writer' },
+        ]),
+        200,
+      );
+      clock.advance({ minutes: 2 });
+      await blocker.commit();
+      expect((await replace).status).toBe(200);
+
+      expect(
+        (await movieCredits(creditedMeanwhile.id)).map((credit) => [
+          credit.person.id,
+          credit.position,
+        ]),
+      ).toEqual([[stays.id, 0]]);
+      const [touched] = await testApp
+        .knex('movies')
+        .select<{ updated_at: Date }[]>('updated_at')
+        .where({ id: creditedMeanwhile.id });
+      expect(touched!.updated_at.toISOString()).toBe(clock.now().toISOString());
+    });
   });
 
   describe('DELETE /admin/people/{id}', () => {
@@ -315,6 +361,53 @@ describe('Admin people routes (integration)', () => {
         404,
         'NOT_FOUND',
       );
+    });
+
+    it('renumbers a movie that credited the person while the delete waited for its locks', async () => {
+      const [waitedOn, creditedMeanwhile] = await Promise.all([
+        createDraftMovie(testApp, admin),
+        createDraftMovie(testApp, admin),
+      ]);
+      const [gone, stays] = await Promise.all([
+        createPerson(testApp, admin),
+        createPerson(testApp, admin),
+      ]);
+      expectStatus(await putMovieCredits(waitedOn.id, [{ personId: gone.id, role: 'actor' }]), 200);
+
+      // Hold the movie the delete reads first, so it waits after reading the person's movies.
+      const blocker = await testApp.knex.transaction();
+      await blocker('movies').select('id').where({ id: waitedOn.id }).forUpdate();
+      const deletion = adminWrite(testApp, admin, 'delete', `${PEOPLE}/${gone.id}`).then(
+        (response) => response,
+      );
+      await waitForLockWaiters(testApp.knex, 1);
+      expectStatus(
+        await putMovieCredits(creditedMeanwhile.id, [
+          { personId: gone.id, role: 'director' },
+          { personId: stays.id, role: 'writer' },
+        ]),
+        200,
+      );
+      clock.advance({ minutes: 2 });
+      await blocker.commit();
+      expect((await deletion).status).toBe(204);
+
+      expect(
+        (await movieCredits(creditedMeanwhile.id)).map((credit) => [
+          credit.person.id,
+          credit.position,
+        ]),
+      ).toEqual([[stays.id, 0]]);
+      const [touched] = await testApp
+        .knex('movies')
+        .select<{ updated_at: Date }[]>('updated_at')
+        .where({ id: creditedMeanwhile.id });
+      expect(touched!.updated_at.toISOString()).toBe(clock.now().toISOString());
+      const [audit] = await testApp
+        .knex('audit_events')
+        .select('metadata')
+        .where({ action: 'person.deleted', entity_id: gone.id });
+      expect(audit.metadata).toEqual({ creditCount: 2 });
     });
   });
 

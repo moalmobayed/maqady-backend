@@ -114,6 +114,12 @@ export class CreditsService {
       if (!(await this.people.findByIdForUpdate(personId))) throw new AppError('NOT_FOUND');
 
       const current = await this.credits.ofPerson(personId);
+      // A credit added on another movie while this waited for its locks: lock that movie too,
+      // so removing the credit renumbers and touches it.
+      const lateIds = [...new Set(current.map((row) => row.movie_id))]
+        .filter((movieId) => !found.has(movieId))
+        .sort((a, b) => a - b);
+      await this.movies.findByIdsForUpdate(lateIds);
       const keyOf = (movieId: number, role: string): string => `${movieId}:${role}`;
       const requested = new Map(
         credits.map((credit) => [keyOf(credit.movieId, credit.role), credit]),
@@ -123,7 +129,9 @@ export class CreditsService {
       const removed = current.filter((row) => !keptKeys.has(keyOf(row.movie_id, row.role)));
       const added = credits.filter((credit) => !keptKeys.has(keyOf(credit.movieId, credit.role)));
 
-      const affected = [...new Set([...requestedIds, ...currentIds])].sort((a, b) => a - b);
+      const affected = [...new Set([...requestedIds, ...currentIds, ...lateIds])].sort(
+        (a, b) => a - b,
+      );
       await this.credits.deleteByIds(removed.map((row) => row.id));
       await this.credits.setCharacterNames(
         kept.map((row): CharacterNameChange => ({

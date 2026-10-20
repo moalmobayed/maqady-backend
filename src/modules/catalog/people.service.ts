@@ -126,11 +126,17 @@ export class PeopleService {
    */
   async delete(actor: StaffPrincipal, id: number): Promise<void> {
     await this.transactions.run(async () => {
-      const movieIds = await this.credits.movieIdsOfPerson(id);
-      await this.movies.findByIdsForUpdate(movieIds);
+      const lockedIds = await this.credits.movieIdsOfPerson(id);
+      await this.movies.findByIdsForUpdate(lockedIds);
       const row = await this.people.findByIdForDelete(id);
       if (!row) throw new AppError('NOT_FOUND');
-      const creditCount = (await this.credits.ofPerson(id)).length;
+      // A movie credited on the person while the delete waited for its locks: lock it too, so
+      // its list is renumbered and touched. Nothing new can credit the person from here on.
+      const credits = await this.credits.ofPerson(id);
+      const movieIds = [...new Set(credits.map((credit) => credit.movie_id))].sort((a, b) => a - b);
+      const locked = new Set(lockedIds);
+      await this.movies.findByIdsForUpdate(movieIds.filter((movieId) => !locked.has(movieId)));
+      const creditCount = credits.length;
       await this.people.deleteById(id);
       await this.credits.renumber(movieIds);
       await this.movies.touch(movieIds, this.clock.now(), actor.id);
