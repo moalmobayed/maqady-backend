@@ -14815,6 +14815,1155 @@ paths:
         - 'Admin: people'
       security:
         - staff: []
+  /home:
+    get:
+      description: |-
+        Public; anyone may call it, no token needed. Returns, in one call:
+        - `featured`: up to 5 movies for the hero carousel, ordered by `position`, each with its hero video and backdrop.
+        - `ticker`: Now showing movies that still have a bookable showtime today (current cinema day), with that next showtime, soonest first. Movies with nothing left today are left out. Empty until showtimes are scheduled.
+        - `genres`: every genre, alphabetical, with how many Now showing and Coming soon movies it has. Hide genres with `movieCount: 0` if you like.
+        - `nowShowing`: up to 12 Now showing movies, newest release first, plus the `total` for "View all".
+        - `comingSoon`: up to 12 Coming soon movies, soonest release first, plus the `total`.
+        - `cinemas`: every theater open for sales, alphabetical, with its open state at `serverTime` (judged by the cinema day, 06:00 to 06:00). `mainPhone` is null when the theater hides its contacts.
+
+        Drafts, archived movies and theaters that are drafts or have sales paused never appear. Responses may be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+      operationId: getHome
+      parameters: []
+      responses:
+        '200':
+          description: The home page data
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeResponse'
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Everything the home page shows
+      tags:
+        - Discovery
+      security: []
+  /genres:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        Every genre, alphabetical, with `movieCount`: its Coming soon plus Now showing movies, or only the tab's when `status` is given (the Movies page genre filter). Link a genre with its `slug`: `/movies?genres=sci-fi`. Cursor-paginated (default 20, at most 100); there are ten genres, so one page holds them all.
+      operationId: listGenres
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: status
+          required: false
+          in: query
+          description: Count only the movies of this tab (the Movies page). Without it, `movieCount` counts Now showing plus Coming soon.
+          schema:
+            $ref: '#/components/schemas/MovieStatus'
+      responses:
+        '200':
+          description: One page of genres
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreWithCountPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Genres with their movie counts
+      tags:
+        - Discovery
+      security: []
+  /movies:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        One page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): `genres` (slugs) and `people` (person ids) match any of their values, `q` a title or a credited person's name. `total` counts the tab with the filters ("Showing n of total"); `tabCounts` counts both tabs with the same filters, for the tab labels. Load more with `cursor` = `nextCursor`; pages never repeat or skip a movie. The "show date" filter comes with showtimes.
+      operationId: listPublicMovies
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: status
+          required: false
+          in: query
+          description: 'The tab: Now showing (newest release first) or Coming soon (soonest release first). Default `now_showing`.'
+          schema:
+            $ref: '#/components/schemas/MovieStatus'
+        - name: genres
+          required: false
+          in: query
+          description: 'Genre slugs, comma-separated (at most 10): movies in any of them; empty is no filter. An unknown slug is `VALIDATION_FAILED`.'
+          schema:
+            example: drama,sci-fi
+            type: string
+        - name: q
+          required: false
+          in: query
+          description: Movies whose title or a credited person’s name contains this text (case-insensitive), 2 to 100 characters.
+          schema:
+            minLength: 2
+            maxLength: 100
+            example: light
+            type: string
+        - name: people
+          required: false
+          in: query
+          description: 'Person ids, comma-separated (at most 20): movies crediting any of them; empty is no filter (the cast filter, and the links from a movie''s credits).'
+          schema:
+            example: 4,9
+            type: string
+      responses:
+        '200':
+          description: One page of movie cards and the tab counts
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieCardPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: 'The Movies page: one tab, filtered'
+      tags:
+        - Discovery
+      security: []
+  /movies/{id}:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        The header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is `404 NOT_FOUND`. Showtimes, the next show today and "from" prices come with showtimes.
+      operationId: getPublicMovie
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Movie id.
+          schema:
+            minimum: 1
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: The movie
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieDetails'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A movie's page
+      tags:
+        - Discovery
+      security: []
+  /movies/{id}/similar:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        Up to 4 Now showing movies sharing the most genres with the movie, then newest release first; never the movie itself. Empty when none shares a genre. A movie that isn't public is `404 NOT_FOUND`.
+      operationId: listSimilarMovies
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Movie id.
+          schema:
+            minimum: 1
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: Up to 4 movie cards
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimilarMovies'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: '"More like this" for a movie'
+      tags:
+        - Discovery
+      security: []
+  /people:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        People credited on a Coming soon or Now showing movie, by name then id, with their roles. `q` matches part of a name; `roleGroup` keeps Actors, Directors, Writers or Crew. Filter the Movies page by a person with `/movies?people=<id>`. Cursor-paginated (default 20, at most 100).
+      operationId: listPublicPeople
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: q
+          required: false
+          in: query
+          description: People whose name contains this text (case-insensitive), 2 to 100 characters.
+          schema:
+            minLength: 2
+            maxLength: 100
+            example: fahm
+            type: string
+        - name: roleGroup
+          required: false
+          in: query
+          description: Actors (actor, voice), Directors, Writers or Crew (producer, cinematographer, composer).
+          schema:
+            $ref: '#/components/schemas/RoleGroup'
+      responses:
+        '200':
+          description: One page of people
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPersonPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: People on public movies (the cast filter)
+      tags:
+        - Discovery
+      security: []
+  /theaters:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location and its facilities. `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100).
+      operationId: listPublicTheaters
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: openNow
+          required: false
+          in: query
+          description: '`true`: only theaters open right now (judged by the cinema day).'
+          schema:
+            example: true
+            type: boolean
+        - name: parking
+          required: false
+          in: query
+          description: '`true`: only theaters with free or valet parking.'
+          schema:
+            example: true
+            type: boolean
+      responses:
+        '200':
+          description: One page of theaters
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicTheaterPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: 'The Theaters page: cards and map'
+      tags:
+        - Discovery
+      security: []
+  /theaters/{id}:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones and email appear only when the theater shows its contacts (`phones` is empty and `email` null otherwise). A draft, a paused or an unknown theater is `404 NOT_FOUND`. Halls and showtimes come with them.
+      operationId: getPublicTheater
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Theater id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: The theater
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicTheater'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A theater's page
+      tags:
+        - Discovery
+      security: []
 info:
   title: Maqady API
   description: |-
@@ -14833,6 +15982,8 @@ info:
     - The free server sleeps when idle, so the first request after a pause can take much longer. Show a "waking up" state rather than an error; `GET /health` is a cheap way to wake it.
   version: 0.1.0
 tags:
+  - name: Discovery
+    description: Public browsing data
   - name: Health
     description: Liveness and readiness
   - name: 'Admin: auth'
@@ -17964,6 +19115,845 @@ components:
             $ref: '#/components/schemas/PersonCreditRequest'
       required:
         - credits
+    MovieStatus:
+      type: string
+      enum:
+        - coming_soon
+        - now_showing
+      description: Public status.
+    FeaturedMovieDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Movie id.
+        title:
+          type: string
+          example: The Last Lighthouse
+          description: Title.
+        synopsis:
+          type: string
+          maxLength: 600
+          example: A lighthouse keeper on the Red Sea coast finds a logbook that predicts the storms before they arrive.
+          description: The full synopsis; clamp it to a few lines on the carousel
+        genres:
+          description: Genres in display order.
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreRef'
+        runtimeMinutes:
+          type: integer
+          minimum: 1
+          example: 128
+          description: Runtime in minutes.
+        ageRating:
+          example: 12+
+          description: Age certificate.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+        releaseDate:
+          type: string
+          format: date
+          example: '2026-10-01'
+          description: Release date, `YYYY-MM-DD`.
+        status:
+          example: now_showing
+          description: Public status.
+          allOf:
+            - $ref: '#/components/schemas/MovieStatus'
+      required:
+        - id
+        - title
+        - synopsis
+        - genres
+        - runtimeMinutes
+        - ageRating
+        - releaseDate
+        - status
+    FeaturedMovie:
+      type: object
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 1
+          description: Carousel position the admin set, 1 first.
+        movie:
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/FeaturedMovieDetails'
+        heroVideo:
+          description: The hero video the slide plays muted and looping.
+          allOf:
+            - $ref: '#/components/schemas/Video'
+        backdrop:
+          nullable: true
+          description: Backdrop image (16:9), or null when none is set
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+      required:
+        - position
+        - movie
+        - heroVideo
+        - backdrop
+    TickerItem:
+      type: object
+      properties:
+        movie:
+          type: object
+          required:
+            - id
+            - title
+          properties:
+            id:
+              type: integer
+              example: 1
+              description: Movie id.
+            title:
+              type: string
+              example: The Last Lighthouse
+              description: Title.
+          description: The movie.
+        nextShowtime:
+          type: object
+          required:
+            - id
+            - startsAt
+            - cinemaDate
+            - theater
+          properties:
+            id:
+              type: integer
+              example: 501
+              description: Showtime id.
+            startsAt:
+              type: string
+              format: date-time
+              example: '2026-10-16T16:15:00+03:00'
+              description: Start, Cairo time with offset.
+            cinemaDate:
+              type: string
+              format: date
+              example: '2026-10-16'
+              description: The cinema day (06:00 to 06:00) it belongs to.
+            theater:
+              type: object
+              required:
+                - id
+                - name
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                  description: Theater id.
+                name:
+                  type: string
+                  example: Maqady Zamalek
+                  description: Theater name.
+              description: Where it plays.
+          description: The next bookable showtime of the movie today, soonest first.
+      required:
+        - movie
+        - nextShowtime
+    MovieCard:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Movie id.
+        title:
+          type: string
+          example: The Last Lighthouse
+          description: Title.
+        poster:
+          nullable: true
+          description: Poster image (2:3), or null when none is set
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        genres:
+          description: In display order; the first one is the "first genre" shown on Now showing cards
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreRef'
+        runtimeMinutes:
+          type: integer
+          minimum: 1
+          example: 128
+          description: Runtime in minutes.
+        ageRating:
+          example: 12+
+          description: Age certificate.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+        releaseDate:
+          type: string
+          format: date
+          example: '2026-10-01'
+          description: Release date, `YYYY-MM-DD`.
+        status:
+          example: now_showing
+          description: Now showing (bookable) or Coming soon (listed, no sales; show a "Soon" badge).
+          allOf:
+            - $ref: '#/components/schemas/MovieStatus'
+      description: 'A public movie as its card shows it: poster, title, genres, runtime, rating.'
+      required:
+        - id
+        - title
+        - poster
+        - genres
+        - runtimeMinutes
+        - ageRating
+        - releaseDate
+        - status
+    MovieCardList:
+      type: object
+      properties:
+        items:
+          maxItems: 12
+          description: Up to 12 movies, in the row's order.
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieCard'
+        total:
+          type: integer
+          minimum: 0
+          example: 9
+          description: How many movies the full list (Movies page) has
+      required:
+        - items
+        - total
+    TheaterCard:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          example: Maqady Zamalek
+          description: Name.
+        district:
+          type: string
+          example: Zamalek
+          description: District or area.
+        city:
+          type: string
+          example: Cairo
+          description: City.
+        address:
+          type: string
+          example: 26 July Street, Zamalek
+          description: Street address.
+        cover:
+          nullable: true
+          description: Cover photo, or null when none is set
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        openState:
+          description: Open now, and until when; or when it opens next.
+          allOf:
+            - $ref: '#/components/schemas/OpenState'
+        mainPhone:
+          nullable: true
+          description: Null when the theater hides its contacts from the website
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Phone'
+        hallCount:
+          type: integer
+          minimum: 0
+          example: 6
+          description: How many halls the theater has.
+        facilities:
+          type: array
+          example:
+            - wheelchair_access
+            - valet_parking
+            - cafe_bar
+          description: All of the theater's facilities; the design shows up to 3 on this page
+          items:
+            $ref: '#/components/schemas/Facility'
+      required:
+        - id
+        - name
+        - district
+        - city
+        - address
+        - cover
+        - openState
+        - mainPhone
+        - hallCount
+        - facilities
+    HomeResponse:
+      type: object
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          example: '2026-10-16T15:10:00+03:00'
+          description: The server's current time, for correcting the client clock
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: Today's cinema day (06:00 to 06:00)
+        featured:
+          maxItems: 5
+          description: Up to 5 movies for the hero carousel, ordered by `position`.
+          type: array
+          items:
+            $ref: '#/components/schemas/FeaturedMovie'
+        ticker:
+          description: Now showing movies that still have a bookable showtime today, with that next showtime, soonest first.
+          type: array
+          items:
+            $ref: '#/components/schemas/TickerItem'
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreWithCount'
+          description: Every genre, alphabetical, with how many Now showing and Coming soon movies it has.
+        nowShowing:
+          description: Up to 12 Now showing movies, newest release first, plus the total.
+          allOf:
+            - $ref: '#/components/schemas/MovieCardList'
+        comingSoon:
+          description: Up to 12 Coming soon movies, soonest release first, plus the total.
+          allOf:
+            - $ref: '#/components/schemas/MovieCardList'
+        cinemas:
+          description: Every theater open for sales, alphabetical.
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterCard'
+      required:
+        - serverTime
+        - cinemaDate
+        - featured
+        - ticker
+        - genres
+        - nowShowing
+        - comingSoon
+        - cinemas
+    GenreWithCountPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreWithCount'
+          description: This page, alphabetical. Empty when nothing matches.
+        nextCursor:
+          type: string
+          nullable: true
+          example: null
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          example: 10
+          description: How many genres there are.
+      required:
+        - items
+        - nextCursor
+        - total
+    MovieTabCounts:
+      type: object
+      properties:
+        nowShowing:
+          type: integer
+          minimum: 0
+          example: 7
+          description: Now showing movies.
+        comingSoon:
+          type: integer
+          minimum: 0
+          example: 4
+          description: Coming soon movies.
+      required:
+        - nowShowing
+        - comingSoon
+    MovieCardPage:
+      type: object
+      properties:
+        items:
+          description: This page, in the tab order. Empty when nothing matches ("No matches").
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieCard'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTAxIiwxMl0
+          description: Pass as `cursor` to get the next page ("Load more"); null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          example: 7
+          description: How many movies this tab has with these filters ("Showing n of total").
+        tabCounts:
+          description: Both tabs’ totals with the same filters, for the tab labels.
+          allOf:
+            - $ref: '#/components/schemas/MovieTabCounts'
+      required:
+        - items
+        - nextCursor
+        - total
+        - tabCounts
+    MoviePhoto:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 21
+          description: Photo id.
+        kind:
+          example: still
+          description: Still or Behind the scenes.
+          allOf:
+            - $ref: '#/components/schemas/MoviePhotoKind'
+        caption:
+          type: string
+          nullable: true
+          example: Youssef reads the logbook by lamplight
+          description: Caption, or null.
+        image:
+          description: The photo in web sizes, in its own shape.
+          allOf:
+            - $ref: '#/components/schemas/Image'
+      required:
+        - id
+        - kind
+        - caption
+        - image
+    MovieDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Movie id.
+        title:
+          type: string
+          example: The Last Lighthouse
+          description: Title.
+        status:
+          example: now_showing
+          description: Public status.
+          allOf:
+            - $ref: '#/components/schemas/MovieStatus'
+        synopsis:
+          type: string
+          maxLength: 600
+          example: A lighthouse keeper on the Red Sea coast finds a logbook that predicts the storms.
+          description: Synopsis.
+        runtimeMinutes:
+          type: integer
+          minimum: 1
+          example: 128
+          description: Runtime in minutes.
+        releaseDate:
+          type: string
+          format: date
+          example: '2026-10-01'
+          description: Release date, `YYYY-MM-DD`.
+        ageRating:
+          example: 12+
+          description: Age certificate.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+        language:
+          type: string
+          nullable: true
+          example: Arabic
+          description: Language.
+        country:
+          type: string
+          nullable: true
+          example: Egypt
+          description: Country.
+        productionCompany:
+          type: string
+          nullable: true
+          example: Nile Light Pictures
+          description: Production company.
+        budgetLabel:
+          type: string
+          nullable: true
+          example: EGP 48M
+          description: Budget as display text; show it only when not null.
+        filmingLocations:
+          type: string
+          nullable: true
+          example: Marsa Alam, Red Sea
+          description: Filming locations; show them only when not null.
+        genres:
+          description: Genres in display order; also the tag chips.
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreRef'
+        poster:
+          nullable: true
+          description: Poster image (2:3), or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        backdrop:
+          nullable: true
+          description: 'Backdrop: one of the photos, any shape; show it at 16:9 with a cover crop. Null when none is set.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        heroVideo:
+          nullable: true
+          description: The hero video ("Watch trailer"), or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Video'
+        videos:
+          description: Every video, in display order.
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        photos:
+          description: Every photo, in display order.
+          type: array
+          items:
+            $ref: '#/components/schemas/MoviePhoto'
+        credits:
+          description: Cast and crew in display order. Group them by `role` for Director, Writers and Stars; each person links to `/movies?people=<id>`.
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieCreditResponse'
+      required:
+        - id
+        - title
+        - status
+        - synopsis
+        - runtimeMinutes
+        - releaseDate
+        - ageRating
+        - language
+        - country
+        - productionCompany
+        - budgetLabel
+        - filmingLocations
+        - genres
+        - poster
+        - backdrop
+        - heroVideo
+        - videos
+        - photos
+        - credits
+    SimilarMovies:
+      type: object
+      properties:
+        items:
+          maxItems: 4
+          description: Up to 4 Now showing movies sharing the most genres, then newest release first.
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieCard'
+      required:
+        - items
+    PublicPerson:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 4
+          description: Person id; filter with `/movies?people=<id>`.
+        fullName:
+          type: string
+          example: Karim Fahmy
+          description: Full name.
+        photo:
+          nullable: true
+          description: Square photo, or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        roles:
+          type: array
+          example:
+            - actor
+          description: 'Their roles: set on the person and credited, in the credit role order.'
+          items:
+            $ref: '#/components/schemas/CreditRole'
+      required:
+        - id
+        - fullName
+        - photo
+        - roles
+    PublicPersonPage:
+      type: object
+      properties:
+        items:
+          description: This page, by name. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicPerson'
+        nextCursor:
+          type: string
+          nullable: true
+          example: null
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          example: 18
+          description: How many people match.
+      required:
+        - items
+        - nextCursor
+        - total
+    PublicTheaterListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          example: Maqady Zamalek
+          description: Name.
+        district:
+          type: string
+          example: Zamalek
+          description: District or area.
+        city:
+          type: string
+          example: Cairo
+          description: City.
+        address:
+          type: string
+          example: 26 July Street, Zamalek
+          description: Street address.
+        cover:
+          nullable: true
+          description: Cover photo, or null when none is set
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        openState:
+          description: Open now, and until when; or when it opens next.
+          allOf:
+            - $ref: '#/components/schemas/OpenState'
+        mainPhone:
+          nullable: true
+          description: Null when the theater hides its contacts from the website
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Phone'
+        hallCount:
+          type: integer
+          minimum: 0
+          example: 6
+          description: How many halls the theater has.
+        facilities:
+          type: array
+          example:
+            - wheelchair_access
+            - valet_parking
+            - cafe_bar
+          description: All of the theater's facilities; the design shows up to 3 on this page
+          items:
+            $ref: '#/components/schemas/Facility'
+        latitude:
+          type: number
+          example: 30.0609
+          description: Latitude, for the map.
+        longitude:
+          type: number
+          example: 31.2197
+          description: Longitude, for the map.
+        today:
+          description: Today's hours (the cinema day), including a special date's.
+          allOf:
+            - $ref: '#/components/schemas/TodayHoursResponse'
+        weeklyHours:
+          description: The weekly hours, Monday (1) to Sunday (7).
+          type: array
+          items:
+            $ref: '#/components/schemas/DayHoursResponse'
+      required:
+        - id
+        - name
+        - district
+        - city
+        - address
+        - cover
+        - openState
+        - mainPhone
+        - hallCount
+        - facilities
+        - latitude
+        - longitude
+        - today
+        - weeklyHours
+    PublicTheaterPage:
+      type: object
+      properties:
+        items:
+          description: This page, alphabetical. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicTheaterListItem'
+        nextCursor:
+          type: string
+          nullable: true
+          example: null
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          example: 5
+          description: How many theaters match.
+      required:
+        - items
+        - nextCursor
+        - total
+    TheaterGalleryPhoto:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Photo id.
+        caption:
+          type: string
+          nullable: true
+          example: The lobby
+          description: Caption (also its alt text), or null.
+        image:
+          description: The photo in web sizes.
+          allOf:
+            - $ref: '#/components/schemas/Image'
+      required:
+        - id
+        - caption
+        - image
+    PublicTheater:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          example: Maqady Zamalek
+          description: Name.
+        address:
+          type: string
+          example: 26 July Street, Zamalek
+          description: Street address.
+        district:
+          type: string
+          example: Zamalek
+          description: District or area.
+        city:
+          type: string
+          example: Cairo
+          description: City.
+        latitude:
+          type: number
+          example: 30.0609
+          description: Latitude ("Directions").
+        longitude:
+          type: number
+          example: 31.2197
+          description: Longitude ("Directions").
+        transitInfo:
+          type: string
+          nullable: true
+          example: 'Metro: Opera station, 10 minutes on foot'
+          description: How to get there, or null.
+        parkingInfo:
+          type: string
+          nullable: true
+          example: Valet at the main entrance
+          description: Parking notes, or null.
+        email:
+          type: string
+          nullable: true
+          example: zamalek@maqady.example
+          description: Contact email; null when none is set or the theater hides its contacts.
+        phones:
+          description: Phones, the main one first; empty when the theater hides its contacts.
+          type: array
+          items:
+            $ref: '#/components/schemas/Phone'
+        facilities:
+          type: array
+          example:
+            - wheelchair_access
+            - valet_parking
+          description: Every facility, in the facility list order.
+          items:
+            $ref: '#/components/schemas/Facility'
+        cover:
+          nullable: true
+          description: Cover photo (16:9), or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        photos:
+          description: Gallery photos in the admin order.
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterGalleryPhoto'
+        openState:
+          description: Open now, and until when; or when it opens next.
+          allOf:
+            - $ref: '#/components/schemas/OpenState'
+        today:
+          description: Today's hours (the cinema day), including a special date's.
+          allOf:
+            - $ref: '#/components/schemas/TodayHoursResponse'
+        weeklyHours:
+          description: The weekly hours, Monday (1) to Sunday (7).
+          type: array
+          items:
+            $ref: '#/components/schemas/DayHoursResponse'
+        specialDates:
+          description: Special dates in the next 7 cinema days (today included), by date; each replaces that day's weekly hours.
+          type: array
+          items:
+            $ref: '#/components/schemas/SpecialDateResponse'
+        hallCount:
+          type: integer
+          minimum: 0
+          example: 6
+          description: How many halls the theater has.
+      required:
+        - id
+        - name
+        - address
+        - district
+        - city
+        - latitude
+        - longitude
+        - transitInfo
+        - parkingInfo
+        - email
+        - phones
+        - facilities
+        - cover
+        - photos
+        - openState
+        - today
+        - weeklyHours
+        - specialDates
+        - hallCount
     ErrorResponse:
       type: object
       properties:
@@ -18000,3 +19990,16 @@ components:
               example: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
       required:
         - error
+    GenreWithCount:
+      description: A genre with how many Coming soon and Now showing movies it has.
+      allOf:
+        - $ref: '#/components/schemas/GenreRef'
+        - type: object
+          required:
+            - movieCount
+          properties:
+            movieCount:
+              type: integer
+              minimum: 0
+              example: 4
+              description: Now showing plus Coming soon movies in this genre
