@@ -10,6 +10,12 @@ export const MAX_CINEMA_MINUTE = 1800;
 /** How the API writes an instant: Cairo wall time with its offset, no milliseconds. */
 export const CAIRO_ISO_FORMAT = "yyyy-MM-dd'T'HH:mm:ssZZ";
 
+/** How messages write an instant for people: `Fri 16 Oct 2026, 19:30`, Cairo wall clock. */
+export const CAIRO_DISPLAY_FORMAT = 'ccc d LLL yyyy, HH:mm';
+
+/** A Cairo wall-clock time of day, `19:30`. */
+export const CAIRO_WALL_CLOCK_FORMAT = 'HH:mm';
+
 /** `YYYY-MM-DD`, a calendar or cinema date. */
 export const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
