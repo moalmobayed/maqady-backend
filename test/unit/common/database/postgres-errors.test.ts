@@ -3,6 +3,7 @@ import {
   isConstraintConflict,
   isDatabaseUnavailableError,
   isPostgresError,
+  isRetryableTransactionError,
 } from '../../../../src/common/database/postgres-errors';
 import { postgresError, socketError } from '../../../support/errors';
 
@@ -67,5 +68,21 @@ describe('isDatabaseUnavailableError', () => {
     const looped = new Error('a');
     Object.assign(looped, { cause: looped });
     expect(isDatabaseUnavailableError(looped)).toBe(false);
+  });
+});
+
+describe('isRetryableTransactionError', () => {
+  it.each(['40P01', '40001'])('is true for SQLSTATE %s, directly or as a cause', (code) => {
+    expect(isRetryableTransactionError(postgresError({ code }))).toBe(true);
+    const wrapped = new Error('wrapped', {
+      cause: new Error('again', { cause: postgresError({ code }) }),
+    });
+    expect(isRetryableTransactionError(wrapped)).toBe(true);
+  });
+
+  it('is false for other failures', () => {
+    expect(isRetryableTransactionError(postgresError({ code: '23505' }))).toBe(false);
+    expect(isRetryableTransactionError(socketError('ECONNRESET'))).toBe(false);
+    expect(isRetryableTransactionError({ code: '40P01', severity: 'ERROR' })).toBe(false);
   });
 });

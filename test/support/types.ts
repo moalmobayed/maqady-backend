@@ -41,3 +41,12 @@ export interface LogCapture {
 
 /** What a test principal resolver answers for one session: a principal, gone, or an error. */
 export type ResolverEntry = Principal | AppError | null;
+
+/** What `fakeContext()` builds a unit-test `ExecutionContext` from. */
+export interface FakeContextOptions {
+  readonly type?: 'http' | 'ws' | 'rpc';
+  readonly request?: object;
+  readonly response?: object;
+  readonly handler?: (...args: never[]) => unknown;
+  readonly controller?: abstract new (...args: never[]) => unknown;
+}

@@ -83,9 +83,7 @@ describe('loadConfig', () => {
   });
 
   it('ignores variables it does not own', () => {
-    expect(() =>
-      loadConfig({ ...VALID_ENV, PATH: '/usr/bin', SUPABASE_URL: 'x' }),
-    ).not.toThrow();
+    expect(() => loadConfig({ ...VALID_ENV, PATH: '/usr/bin', SUPABASE_URL: 'x' })).not.toThrow();
   });
 
   it('reports each missing required variable as required', () => {
