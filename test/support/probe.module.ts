@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Inject, Injectable, Module, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Module, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { Type } from 'class-transformer';
 import { IsArray, IsString, MinLength, ValidateNested } from 'class-validator';
 import type { Knex } from 'knex';
-import { KNEX } from '../../src/common/database/database.constants';
+import { Public } from '../../src/common/auth/access.decorators';
+import { TransactionContext } from '../../src/common/database/transaction-context';
 
 /**
  * Test-only routes under `/api/v1/test-probe`. The scaffold has no write endpoints yet, so these
@@ -38,13 +39,14 @@ export class ProbeItemBody {
 
 @Injectable()
 export class ProbeRepository {
-  constructor(@Inject(KNEX) private readonly knex: Knex) {}
+  constructor(private readonly db: TransactionContext) {}
 
   async insertItem(code: string): Promise<void> {
-    await this.knex(PROBE_TABLE).insert({ code });
+    await this.db.executor()(PROBE_TABLE).insert({ code });
   }
 }
 
+@Public()
 @Controller('test-probe')
 export class ProbeController {
   constructor(private readonly probeRepository: ProbeRepository) {}

@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, type OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import { dump } from 'js-yaml';
 import { ErrorResponse } from '../errors/dto/error-response.dto';
+import { applyCrossCuttingDocs } from './cross-cutting-docs';
 import { errorResponseFor } from './error-responses';
 import {
   API_DESCRIPTION,
@@ -31,6 +32,8 @@ function packageVersion(): string {
  * - Paths are relative to the `/api/v1` server, as in the contract agreed with the frontend.
  * - Operation ids are the controller method names (`getHealth`), and must be unique.
  * - `ErrorResponse` is registered once; every operation documents `500 INTERNAL`.
+ * - What the global guards and the write interceptor add to every route (security, access
+ *   errors, `429 RATE_LIMITED`, `Idempotency-Key`) comes from the decorators' markers.
  */
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const builder = new DocumentBuilder()
@@ -69,6 +72,7 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   if (document.info.contact && Object.keys(document.info.contact).length === 0) {
     delete document.info.contact;
   }
+  applyCrossCuttingDocs(document);
   assertUniqueOperationIds(document);
   return document;
 }

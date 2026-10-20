@@ -9,6 +9,20 @@ import type { TestApp } from '../../../support/types';
 
 const EXTENSIONS = ['btree_gist', 'citext', 'pg_trgm'];
 
+/** Every migration in `src/migrations`, in the order a run from zero applies them. */
+function allMigrations(): Promise<string[]> {
+  return new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, { schema: TEST_SCHEMA }).getMigrations();
+}
+
+/**
+ * A scratch database named after the test database (`maqady_test` → `maqady_race_test`), so
+ * suites pointed at different test databases never drop each other's scratch copies.
+ */
+function scratchDatabaseName(purpose: string): string {
+  const testDatabase = decodeURIComponent(new URL(testDatabaseUrl()).pathname.slice(1));
+  return `${testDatabase.replace(/_test$/, '')}_${purpose}_test`;
+}
+
 async function extensionSchemas(knex: Knex): Promise<Record<string, string>> {
   const { rows } = await knex.raw<{ rows: { extname: string; nspname: string }[] }>(
     `SELECT e.extname, n.nspname
@@ -60,7 +74,7 @@ describe('Migrations (integration)', () => {
     ).toBe(true);
   });
 
-  it("enables row-level security on Knex's tables, as on every table in the schema", async () => {
+  it("enables row-level security on every table in the schema, Knex's included", async () => {
     const { rows } = await testApp.knex.raw<{
       rows: { relname: string; relrowsecurity: boolean }[];
     }>(
@@ -69,10 +83,10 @@ describe('Migrations (integration)', () => {
         WHERE n.nspname = ? AND c.relkind = 'r' ORDER BY c.relname`,
       [TEST_SCHEMA],
     );
-    expect(rows).toEqual([
-      { relname: 'knex_migrations', relrowsecurity: true },
-      { relname: 'knex_migrations_lock', relrowsecurity: true },
-    ]);
+    expect(rows.map(({ relname }) => relname)).toEqual(
+      expect.arrayContaining(['knex_migrations', 'knex_migrations_lock']),
+    );
+    expect(rows.filter(({ relrowsecurity }) => !relrowsecurity)).toEqual([]);
   });
 
   it('does nothing when run again', async () => {
@@ -102,7 +116,7 @@ describe('Migrations (integration)', () => {
   });
 
   describe('when several processes boot at once against an empty database', () => {
-    const RACE_DATABASE = 'maqady_race_test';
+    const RACE_DATABASE = scratchDatabaseName('race');
     const INSTANCES = 4;
     const racers: Knex[] = [];
 
@@ -131,12 +145,12 @@ describe('Migrations (integration)', () => {
       const applied = results.flatMap((result) =>
         result.status === 'fulfilled' ? result.value.applied : [],
       );
-      expect(applied).toEqual(['0010_01_create_schema']);
+      expect(applied).toEqual(await allMigrations());
     });
   });
 
   describe('on a Supabase-style database, where an extensions schema exists', () => {
-    const SCRATCH_DATABASE = 'maqady_scratch_test';
+    const SCRATCH_DATABASE = scratchDatabaseName('scratch');
     let scratch: Knex | undefined;
 
     afterAll(async () => {
@@ -155,7 +169,7 @@ describe('Migrations (integration)', () => {
       await scratch.raw('CREATE SCHEMA extensions');
       const { applied } = await new MigrationRepository(scratch, config).migrateLatest();
 
-      expect(applied).toEqual(['0010_01_create_schema']);
+      expect(applied).toEqual(await allMigrations());
       expect(await extensionSchemas(scratch)).toEqual({
         btree_gist: 'extensions',
         citext: 'extensions',
