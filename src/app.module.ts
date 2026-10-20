@@ -17,6 +17,7 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
 import { HealthModule } from './modules/health/health.module';
+import { StaffModule } from './modules/staff/staff.module';
 
 /**
  * The root module. It takes the validated configuration as a value, so `main.ts`, the CLIs and
@@ -50,6 +51,7 @@ export class AppModule {
         RateLimitModule,
         IdempotencyModule,
         HealthModule,
+        StaffModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
