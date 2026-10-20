@@ -397,7 +397,7 @@ describe('Customer auth routes (integration)', () => {
 
     it('answers SESSION_EXPIRED 30 days after sign-in, on refresh and on a live access token', async () => {
       const customer = await registerCustomer(testApp);
-      clock.advance({ days: 30, minutes: -5 });
+      clock.advance({ hours: 30 * 24, minutes: -5 });
       const late = await refresh(customer.refreshToken);
       expect(late.status).toBe(201);
 
