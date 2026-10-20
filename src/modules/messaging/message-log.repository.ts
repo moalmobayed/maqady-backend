@@ -41,7 +41,8 @@ export class MessageLogRepository {
 
   /**
    * Up to `limit + 1` messages after the cursor, newest first (`idx_messages_created_at`). The
-   * cursor's sort key is the row's `created_at` as an ISO instant.
+   * cursor's sort key is the row's `created_at` as an ISO instant (checked by the service); it is
+   * bound as a `Date`, so Postgres never parses the client's text.
    */
   async list(filter: MessageLogFilter, page: PageRequest): Promise<MessageLogRow[]> {
     const query = this.filtered(filter)
@@ -52,7 +53,10 @@ export class MessageLogRepository {
       ])
       .limit(page.limit + 1);
     if (page.after) {
-      query.whereRaw('(created_at, id) < (?::timestamptz, ?)', [page.after.sortKey, page.after.id]);
+      query.whereRaw('(created_at, id) < (?, ?)', [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
     }
     return query;
   }

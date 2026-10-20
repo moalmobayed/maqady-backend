@@ -161,6 +161,18 @@ describe('calendar and instant arithmetic', () => {
     expect(isIsoInstant('2026-W42-5')).toBe(false);
   });
 
+  it('accepts only the offsets real time zones use (up to 14 hours either way)', () => {
+    expect(isIsoInstant('2026-10-16T19:30:00+14:00')).toBe(true);
+    expect(isIsoInstant('2026-10-16T19:30:00-12:00')).toBe(true);
+    expect(isIsoInstant('2026-10-16T19:30:00+05:45')).toBe(true);
+    for (const offset of ['+14:01', '-14:30', '+16:00', '+23:00', '+24:00', '+99:00', '+03:60']) {
+      expect({ offset, valid: isIsoInstant(`2026-10-16T19:30:00${offset}`) }).toEqual({
+        offset,
+        valid: false,
+      });
+    }
+  });
+
   it('adds and subtracts real durations, unaffected by summer time', () => {
     const before = at('2026-04-23T23:30:00+02:00');
     expect(addToInstant(before, { hours: 1 })).toEqual(at('2026-04-24T01:30:00+03:00'));

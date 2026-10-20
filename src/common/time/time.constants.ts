@@ -17,6 +17,12 @@ export const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const ISO_INSTANT_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
 
+/**
+ * The largest UTC offset an instant may carry, in minutes: real time zones stay within 14 hours
+ * either way. Larger ones parse in Luxon but not in `Date`, or in `Date` but not in Postgres.
+ */
+export const MAX_UTC_OFFSET_MINUTES = 14 * 60;
+
 /** `HH:mm`, a 24-hour wall-clock time as an admin types it. */
 export const WALL_CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 

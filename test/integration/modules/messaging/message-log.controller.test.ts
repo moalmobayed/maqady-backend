@@ -321,6 +321,22 @@ describe('Message log (integration)', () => {
       expectError(await get(`${MESSAGES}/0`), 400, 'VALIDATION_FAILED');
     });
 
+    it('refuses an instant whose offset is out of range, in a filter or a cursor', async () => {
+      const outOfRange = '2026-10-20T10:00:00+99:00';
+      for (const query of [
+        `?from=${encodeURIComponent(outOfRange)}`,
+        `?to=${encodeURIComponent('2026-10-20T10:00:00+24:00')}`,
+        `?cursor=${Buffer.from(JSON.stringify([outOfRange, 3])).toString('base64url')}`,
+      ]) {
+        const response = await get(`${MESSAGES}${query}`);
+        expect({ query, status: response.status, code: response.body?.error?.code }).toEqual({
+          query,
+          status: 400,
+          code: 'VALIDATION_FAILED',
+        });
+      }
+    });
+
     it('is for admins only', async () => {
       const boxOffice = await staffSession(testApp, 'box_office');
       expectError(await get(MESSAGES, boxOffice), 403, 'FORBIDDEN');
