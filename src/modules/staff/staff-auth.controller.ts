@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
+  ApiAcceptedResponse,
   ApiBody,
   ApiCreatedResponse,
   ApiNoContentResponse,
@@ -19,14 +20,20 @@ import {
 } from '../../common/swagger/error-responses';
 import { RefreshTokensRequest } from '../auth/dto/refresh-tokens.request';
 import { SessionTokensResponse } from '../auth/dto/session-tokens.response';
+import { StaffPasswordResetRequest } from './dto/staff-password-reset.request';
+import { StaffPasswordSetupRequest } from './dto/staff-password-setup.request';
 import { StaffSessionResponse, sessionTokensResponseOf } from './dto/staff-session.response';
 import { StaffSignInRequest } from './dto/staff-sign-in.request';
 import { StaffAuthService } from './staff-auth.service';
+import { StaffOnboardingService } from './staff-onboarding.service';
 
 @ApiTags('Admin: auth')
 @Controller('admin/auth')
 export class StaffAuthController {
-  constructor(private readonly staffAuth: StaffAuthService) {}
+  constructor(
+    private readonly staffAuth: StaffAuthService,
+    private readonly onboarding: StaffOnboardingService,
+  ) {}
 
   @Post('sessions')
   @Public()
@@ -87,5 +94,42 @@ export class StaffAuthController {
   @ApiNoContentResponse({ description: 'Signed out', headers: REQUEST_ID_RESPONSE_HEADER })
   async signOut(@CurrentPrincipal() principal: StaffPrincipal): Promise<void> {
     await this.staffAuth.signOut(principal);
+  }
+
+  @Post('password-reset-requests')
+  @Public()
+  @RateLimit('emailRequestEmail', 'emailRequestIp')
+  @NoIdempotencyStorage()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Staff "Forgot password"',
+    description:
+      'Public: the "Forgot password" link of the staff sign-in page. Always answers `202` with no body, whether or not the email belongs to a staff member, so show "If a staff account exists for that email, we\'ve sent a link" either way.\n\n- Only an active member gets an email: a link to `/admin/set-password` that works once, for 1 hour. Asking again voids the previous link.\n- An invited member gets nothing (an admin resends their invite), nor does a deactivated one.\n- Limited to 3 requests per hour per email and 20 per hour per address, shared with the customer "Forgot password" and resend-verification routes (`RATE_LIMITED`).\n- `Idempotency-Key` is ignored.',
+  })
+  @ApiBody({ type: StaffPasswordResetRequest })
+  @ApiAcceptedResponse({
+    description: 'Accepted; an email is sent if an active staff member has this address',
+    headers: REQUEST_ID_RESPONSE_HEADER,
+  })
+  @ApiErrorResponses('VALIDATION_FAILED')
+  async requestPasswordReset(@Body() body: StaffPasswordResetRequest): Promise<void> {
+    await this.onboarding.requestPasswordReset(body.email);
+  }
+
+  @Post('password-setups')
+  @Public()
+  @RateLimit('signInIp')
+  @NoIdempotencyStorage()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Set a staff password from an emailed link',
+    description:
+      'Public: the Set your password page (`/admin/set-password?token=…`) sends the link\'s token with the new password. Invite and reset links both work here.\n\n- An invite link makes the invited member `active` with this password; a reset link replaces an active member\'s password and signs them out everywhere.\n- No session is opened: send the member to `/admin/login` to sign in with the new password.\n- Each link works once. An unknown, used, expired or replaced link is `INVALID_TOKEN`: offer "Forgot password", or ask an admin to resend the invite.\n- A password that breaks the rule (8 to 128 characters including a digit) is `VALIDATION_FAILED`, and the link still works. A deactivated member is `ACCOUNT_DEACTIVATED`.\n- Limited to 20 per minute per address, shared with staff sign-in (`RATE_LIMITED`). `Idempotency-Key` is ignored.',
+  })
+  @ApiBody({ type: StaffPasswordSetupRequest })
+  @ApiNoContentResponse({ description: 'The password is set', headers: REQUEST_ID_RESPONSE_HEADER })
+  @ApiErrorResponses('VALIDATION_FAILED', 'INVALID_TOKEN', 'ACCOUNT_DEACTIVATED')
+  async setUpPassword(@Body() body: StaffPasswordSetupRequest): Promise<void> {
+    await this.onboarding.setPassword({ token: body.token, password: body.password });
   }
 }

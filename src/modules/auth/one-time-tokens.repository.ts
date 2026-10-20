@@ -4,6 +4,7 @@ import { AppError } from '../../common/errors/app-error';
 import { OWNER_COLUMN } from './auth.constants';
 import type {
   ConsumedOneTimeTokenRow,
+  LiveOneTimeTokenRow,
   NewOneTimeTokenRow,
   OneTimeTokenOwner,
   OneTimeTokenPurpose,
@@ -52,6 +53,21 @@ export class OneTimeTokensRepository {
       .whereNull('used_at')
       .where('expires_at', '>', now)
       .returning<ConsumedOneTimeTokenRow[]>(['id', 'staff_user_id', 'customer_id']);
+    return row;
+  }
+
+  /**
+   * The live, unused token with this hash, of any purpose, without locking it. Undefined when
+   * nothing matches. `consume()` is still what makes a use count.
+   */
+  async findLive(tokenHash: string, now: Date): Promise<LiveOneTimeTokenRow | undefined> {
+    const row = await this.db
+      .executor()('one_time_tokens')
+      .select<LiveOneTimeTokenRow[]>(['id', 'purpose', 'staff_user_id', 'customer_id'])
+      .where({ token_hash: tokenHash })
+      .whereNull('used_at')
+      .where('expires_at', '>', now)
+      .first();
     return row;
   }
 }

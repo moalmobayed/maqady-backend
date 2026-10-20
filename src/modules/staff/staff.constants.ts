@@ -1,8 +1,17 @@
+import type { StaffRole } from '../../common/auth/types';
+
 /** `staff_users.full_name VARCHAR(100)`. */
 export const STAFF_FULL_NAME_MAX_LENGTH = 100;
 
 /** The longest email address accepted (RFC 5321's path limit, as `staff_users` checks it). */
 export const EMAIL_MAX_LENGTH = 320;
+
+/**
+ * What an emailed address must look like: one `@`, no spaces, a dot in the domain. Stricter than
+ * `IsEmail` alone, which accepts quoted local parts with spaces that `staff_users` and the
+ * outbox refuse.
+ */
+export const STAFF_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Sign-in compares at most this many characters; longer passwords can't exist (design §10.1). */
 export const SIGN_IN_PASSWORD_MAX_LENGTH = 128;
@@ -16,3 +25,15 @@ export const BOOTSTRAP_ADMIN_VARIABLES = {
   fullName: 'BOOTSTRAP_ADMIN_NAME',
   password: 'BOOTSTRAP_ADMIN_PASSWORD',
 } as const;
+
+/** The longest token a set-password request may carry; real ones are 43 characters. */
+export const SET_PASSWORD_TOKEN_MAX_LENGTH = 128;
+
+/** The frontend page every invite and reset link opens (PRD "Frontend integration contract"). */
+export const SET_PASSWORD_PATH = '/admin/set-password';
+
+/** How the emails name a role. */
+export const STAFF_ROLE_LABELS: Readonly<Record<StaffRole, string>> = {
+  admin: 'Admin',
+  box_office: 'Box office',
+};

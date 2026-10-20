@@ -7,6 +7,7 @@ import { ADMIN_CREATE_LOCK_KEY } from './staff.constants';
 import type {
   NewStaffUserRow,
   StaffListFilter,
+  StaffPasswordUpdate,
   StaffPrincipalRow,
   StaffUserRow,
   StaffUserUpdate,
@@ -114,15 +115,30 @@ export class StaffRepository {
     return updated;
   }
 
+  /** Sets a member's password and status (a password setup, U2b); the row as it now is. */
+  async setPassword(id: number, changes: StaffPasswordUpdate): Promise<StaffUserRow> {
+    const [updated] = await this.staff()
+      .update(changes)
+      .where({ id })
+      .returning<StaffUserRow[]>(STAFF_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The staff member to update is gone.');
+    return updated;
+  }
+
   /**
-   * Records a sign-in of an active member and returns the row as it now is; undefined when the
-   * member is no longer active. The update waits for a staff change in flight and re-checks the
-   * status against its result.
+   * Records a sign-in of an active member whose password hash is still the one the password was
+   * checked against, and returns the row as it now is; undefined when the member is no longer
+   * active or their password changed meanwhile. The update waits for a staff change or password
+   * setup in flight and re-checks both against its result.
    */
-  async recordSignIn(id: number, signedInAt: Date): Promise<StaffUserRow | undefined> {
+  async recordSignIn(
+    id: number,
+    checkedPasswordHash: string,
+    signedInAt: Date,
+  ): Promise<StaffUserRow | undefined> {
     const [row] = await this.staff()
       .update({ last_sign_in_at: signedInAt, updated_at: signedInAt })
-      .where({ id, status: 'active' })
+      .where({ id, status: 'active', password_hash: checkedPasswordHash })
       .returning<StaffUserRow[]>(STAFF_COLUMNS);
     return row;
   }

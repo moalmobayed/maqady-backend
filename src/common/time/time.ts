@@ -8,6 +8,7 @@ import {
   ISO_INSTANT_PATTERN,
   MAX_CINEMA_MINUTE,
   MAX_GAP_MINUTES,
+  MAX_UTC_OFFSET_MINUTES,
   WALL_CLOCK_TIME_PATTERN,
 } from './time.constants';
 import type { CalendarDate, CinemaDayBounds, InstantDuration, IsoWeekday } from './types';
@@ -32,10 +33,17 @@ export function isCalendarDate(value: string): boolean {
 /**
  * True for a real instant written in ISO 8601 with its offset, such as
  * `2026-10-16T19:30:00+03:00` or `2026-10-16T16:30:00.000Z`; false for a bare date, a time
- * without an offset, or an impossible date.
+ * without an offset, an impossible date, or an offset beyond 14 hours (which `Date` or Postgres
+ * would refuse).
  */
 export function isIsoInstant(value: string): boolean {
-  return ISO_INSTANT_PATTERN.test(value) && DateTime.fromISO(value, { setZone: true }).isValid;
+  if (!ISO_INSTANT_PATTERN.test(value)) return false;
+  const parsed = DateTime.fromISO(value, { setZone: true });
+  return (
+    parsed.isValid &&
+    Math.abs(parsed.offset) <= MAX_UTC_OFFSET_MINUTES &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 /** Calendar arithmetic on a date, independent of any time zone. */

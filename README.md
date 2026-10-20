@@ -95,6 +95,14 @@ but never prints its value. `.env` is for local runs only; real environment vari
 - **One sending environment per Resend team.** The message id is Resend's idempotency key, so two
   databases sending through the same team would collide. Only production uses `resend`.
 - SMS is always simulated.
+- Admins read every message at `GET /api/v1/admin/messages` (the Message log); it shows the
+  stored, redacted copies only.
+- **Staff onboarding.** After the first admin, admins invite staff from the Staff screen
+  (`POST /api/v1/admin/staff`): the invite email links to `FRONTEND_BASE_URL` +
+  `/admin/set-password?token=…`, valid 72 hours. Staff "Forgot password" sends the same page a
+  1-hour link. The link exists only in the email itself (never in the Message log), so with
+  `EMAIL_DRIVER=simulated` an invite can't be completed by hand; tests read it from the recording
+  sender.
 
 ## Scripts
 
@@ -160,6 +168,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   'admin')` creates an active member through `StaffService` and signs them in through
   `StaffAuthService`, returning `authorization` (`Bearer …`), the tokens and the ids;
   `createStaffMember()` and `signInStaff()` do one half each.
+- `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
+  reads the token of a one-time link from an email the recording sender captured.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -195,6 +205,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   from a `@NoRequestTransaction()` route) and `OneTimeTokenService` (single-use links). Staff
   use them now; customers (U9) pass their own lifetime and account check.
 - **Staff** (`modules/staff`): `StaffService` reads members (`findById`, `findByEmail`, `list`).
+  Invites, staff "Forgot password" and the set-password page are `StaffOnboardingService`'s,
+  inside the module. `OneTimeTokenService.findLive()` reads a live link without using it, so a
+  caller can lock the owner first and then `consume()` it (the staff lock order).
 - **Images** (`modules/media`, `docs/gh-5-media/spec.md`). Import `MediaModule`. An upload route
   is `@Admin()`, `@Strict()` if it is a `POST`, and `@ImageUpload({ fields })`; it takes
   `@UploadedImage()` and returns `MediaService.upload({ kind, upload, actor, link })`, where

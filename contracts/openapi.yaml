@@ -686,6 +686,283 @@ paths:
         - 'Admin: auth'
       security:
         - staff: []
+  /admin/auth/password-reset-requests:
+    post:
+      description: |-
+        Public: the "Forgot password" link of the staff sign-in page. Always answers `202` with no body, whether or not the email belongs to a staff member, so show "If a staff account exists for that email, we've sent a link" either way.
+
+        - Only an active member gets an email: a link to `/admin/set-password` that works once, for 1 hour. Asking again voids the previous link.
+        - An invited member gets nothing (an admin resends their invite), nor does a deactivated one.
+        - Limited to 3 requests per hour per email and 20 per hour per address, shared with the customer "Forgot password" and resend-verification routes (`RATE_LIMITED`).
+        - `Idempotency-Key` is ignored.
+      operationId: requestPasswordReset
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffPasswordResetRequest'
+      responses:
+        '202':
+          description: Accepted; an email is sent if an active staff member has this address
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Staff "Forgot password"
+      tags:
+        - 'Admin: auth'
+      security: []
+  /admin/auth/password-setups:
+    post:
+      description: |-
+        Public: the Set your password page (`/admin/set-password?token=…`) sends the link's token with the new password. Invite and reset links both work here.
+
+        - An invite link makes the invited member `active` with this password; a reset link replaces an active member's password and signs them out everywhere.
+        - No session is opened: send the member to `/admin/login` to sign in with the new password.
+        - Each link works once. An unknown, used, expired or replaced link is `INVALID_TOKEN`: offer "Forgot password", or ask an admin to resend the invite.
+        - A password that breaks the rule (8 to 128 characters including a digit) is `VALIDATION_FAILED`, and the link still works. A deactivated member is `ACCOUNT_DEACTIVATED`.
+        - Limited to 20 per minute per address, shared with staff sign-in (`RATE_LIMITED`). `Idempotency-Key` is ignored.
+      operationId: setUpPassword
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffPasswordSetupRequest'
+      responses:
+        '204':
+          description: The password is set
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `INVALID_TOKEN`: The emailed token (verification, password reset or invite) is unknown, already used or expired. Ask for a new email.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                INVALID_TOKEN:
+                  summary: INVALID_TOKEN
+                  value:
+                    error:
+                      code: INVALID_TOKEN
+                      message: This link is invalid or has expired.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Set a staff password from an emailed link
+      tags:
+        - 'Admin: auth'
+      security: []
   /admin/me:
     get:
       description: 'Staff (either role): name, email and role for the dashboard shell, which shows only the screens the role may use. The role is read from the database on every request, so a role change shows on the next call.'
@@ -1018,6 +1295,274 @@ paths:
         - 'Admin: staff'
       security:
         - staff: []
+    post:
+      description: |-
+        Admin only: the Staff screen's Invite form. Creates the member as `invited` with the given name, email and role, and emails them a link to `/admin/set-password` that works once, for 72 hours. They become `active` when they set a password there, and then sign in.
+
+        - An email already used by any staff member, whatever the letter case and status, is `EMAIL_TAKEN`; nothing is sent.
+        - The link is only in the email: the response and the Message log never show it. Use "Resend invite" if it expired.
+        - Requires `Idempotency-Key`: a retry with the same key returns the same member and sends no second email.
+        - Recorded in the activity log.
+      operationId: inviteStaffMember
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteStaffMemberRequest'
+      responses:
+        '201':
+          description: 'The invited member, `status: invited`'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffMemberResponse'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password".'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                EMAIL_TAKEN:
+                  summary: EMAIL_TAKEN
+                  value:
+                    error:
+                      code: EMAIL_TAKEN
+                      message: An account with this email already exists.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Invite a staff member
+      tags:
+        - 'Admin: staff'
+      security:
+        - staff: []
   /admin/staff/{id}:
     patch:
       description: |-
@@ -1307,6 +1852,719 @@ paths:
         - 'Admin: staff'
       security:
         - staff: []
+  /admin/staff/{id}/invitations:
+    post:
+      description: |-
+        Admin only: the Staff screen's "Resend invite" for an `invited` member. Emails a new 72-hour set-password link; the previous link stops working at once.
+
+        - Only a member who is still `invited` can get one: an active or deactivated member is `NOT_INVITED` (an active member uses "Forgot password"; reactivating a deactivated member who never set a password makes them `invited` again).
+        - Requires `Idempotency-Key`: a retry with the same key sends no second email.
+        - Recorded in the activity log.
+      operationId: resendInvitation
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Staff member id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '201':
+          description: The invite was sent
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffInvitationResponse'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`NOT_INVITED`: Only a member who is still `invited` (has not set a password) can be sent an invite again. An active member uses "Forgot password" on the sign-in page; reactivate a deactivated member first.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_INVITED:
+                  summary: NOT_INVITED
+                  value:
+                    error:
+                      code: NOT_INVITED
+                      message: This staff member is not waiting for an invite.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Resend an invite
+      tags:
+        - 'Admin: staff'
+      security:
+        - staff: []
+  /admin/messages:
+    get:
+      description: |-
+        Admin only: the Message log. Every email and SMS the system queued, sent or simulated, newest first, with time, channel, recipient, subject, delivery status and the customer, staff member or booking it relates to.
+
+        - Filter by `channel`, `status`, and a time range: `from` (inclusive) and `to` (exclusive), as ISO 8601 instants with their offset.
+        - One-time links (invites, resets, verification) are never shown: they read `[one-time link hidden]`.
+        - Cursor-paginated: pass `nextCursor` back as `cursor`.
+      operationId: listMessages
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: channel
+          required: false
+          in: query
+          description: Only emails, or only SMS.
+          schema:
+            $ref: '#/components/schemas/MessageChannel'
+        - name: status
+          required: false
+          in: query
+          description: Only messages in this delivery status.
+          schema:
+            $ref: '#/components/schemas/MessageStatus'
+        - name: from
+          required: false
+          in: query
+          description: Only messages created at or after this instant (inclusive). ISO 8601 with its offset; send the start of the first Cairo day picked.
+          schema:
+            format: date-time
+            nullable: false
+            example: '2026-10-16T00:00:00+03:00'
+            type: string
+        - name: to
+          required: false
+          in: query
+          description: Only messages created before this instant (exclusive). ISO 8601 with its offset; send the start of the day after the last Cairo day picked. Must be later than `from`.
+          schema:
+            format: date-time
+            nullable: false
+            example: '2026-10-17T00:00:00+03:00'
+            type: string
+      responses:
+        '200':
+          description: One page of messages
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageSummaryResponsePage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: List messages
+      tags:
+        - 'Admin: messages'
+      security:
+        - staff: []
+  /admin/messages/{id}:
+    get:
+      description: 'Admin only: one message from the Message log, with its subject and bodies exactly as stored. One-time links read `[one-time link hidden]`; the real link exists only in the email the recipient received. Show `bodyHtml` in a sandboxed `iframe`.'
+      operationId: getMessage
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Message id, from the list.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+      responses:
+        '200':
+          description: The message
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDetailResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Open a message
+      tags:
+        - 'Admin: messages'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -1328,9 +2586,11 @@ tags:
   - name: Health
     description: Liveness and readiness
   - name: 'Admin: auth'
-    description: Staff sign-in, token refresh, sign-out and the signed-in member
+    description: Staff sign-in, token refresh, sign-out, the signed-in member, "Forgot password" and the set-password page
   - name: 'Admin: staff'
-    description: 'Staff accounts: list, roles and status (admins only)'
+    description: 'Staff accounts: list, invites, roles and status (admins only)'
+  - name: 'Admin: messages'
+    description: 'The Message log: every email and SMS with its delivery status (admins only)'
 servers:
   - url: /api/v1
     description: The server hosting these docs
@@ -1497,6 +2757,39 @@ components:
         - accessTokenExpiresAt
         - refreshToken
         - refreshTokenExpiresAt
+    StaffPasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          nullable: false
+          maxLength: 320
+          example: mona.adel@maqady.example
+          description: The staff email. Letter case and surrounding spaces do not matter.
+      required:
+        - email
+    StaffPasswordSetupRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          nullable: false
+          minLength: 1
+          maxLength: 128
+          example: q3VbI2vT0xSx5n2b7i1d9mJ8kQe4zW6yR0tP5uL3aGc
+          description: The `token` query parameter of the emailed link (`/admin/set-password?token=…`), unchanged. Invite and reset links both work here. A token that is unknown, used or expired is `INVALID_TOKEN`, never `VALIDATION_FAILED`.
+        password:
+          type: string
+          format: password
+          nullable: false
+          minLength: 8
+          maxLength: 128
+          example: Cinema2026
+          description: 'The new password: 8 to 128 characters including a digit. A password that breaks the rule is `VALIDATION_FAILED` and leaves the link usable.'
+      required:
+        - token
+        - password
     StaffStatus:
       type: string
       enum:
@@ -1595,6 +2888,304 @@ components:
           nullable: false
           example: deactivated
           description: '`deactivated` signs the member out everywhere and voids their unused invite or reset links; refused with `LAST_ADMIN` for the only active admin. `active` reactivates a deactivated member; one who never set a password returns to `invited` instead, so the invite can be resent. `active` on an invited member is `VALIDATION_FAILED`: they become active by setting their password.'
+    InviteStaffMemberRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          nullable: false
+          minLength: 1
+          maxLength: 100
+          example: Mona Adel
+          description: Full name, shown in the dashboard and the email. Surrounding spaces are removed.
+        email:
+          type: string
+          format: email
+          nullable: false
+          maxLength: 320
+          example: mona.adel@maqady.example
+          description: Where the invite goes, and the sign-in email afterwards. Unique among staff whatever the letter case (`EMAIL_TAKEN`). Surrounding spaces are removed.
+        role:
+          nullable: false
+          example: box_office
+          description: '`admin` sees every screen; `box_office` sees Bookings, Customers and Scan tickets. Can be changed later.'
+          allOf:
+            - $ref: '#/components/schemas/StaffRole'
+      required:
+        - fullName
+        - email
+        - role
+    StaffInvitationResponse:
+      type: object
+      properties:
+        staffUserId:
+          type: integer
+          nullable: false
+          example: 3
+          description: The invited staff member.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-23T10:00:00+03:00'
+          description: 'When the new link stops working: 72 hours after it was sent.'
+      required:
+        - staffUserId
+        - expiresAt
+    MessageChannel:
+      type: string
+      enum:
+        - email
+        - sms
+    MessageStatus:
+      type: string
+      enum:
+        - queued
+        - sent
+        - failed
+    MessageRelatedResponse:
+      type: object
+      properties:
+        customerId:
+          type: integer
+          nullable: true
+          example: 812
+          description: The customer the message was sent for (verification, reset, tickets); null if none.
+        staffUserId:
+          type: integer
+          nullable: true
+          example: 3
+          description: The staff member the message was sent to (invite, staff reset); null if none.
+        bookingId:
+          type: integer
+          nullable: true
+          example: 5120
+          description: The booking the message is about (tickets, refunds, showtime changes); null if none.
+      required:
+        - customerId
+        - staffUserId
+        - bookingId
+    MessageSummaryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 42
+          description: Message id.
+        channel:
+          nullable: false
+          example: email
+          description: '`email` is sent through Resend; `sms` is simulated (recorded, never sent).'
+          allOf:
+            - $ref: '#/components/schemas/MessageChannel'
+        template:
+          type: string
+          nullable: false
+          example: staff.invite
+          description: 'Which message this is, as `<owner>.<event>`: for example `staff.invite`, `staff.password_reset`. Show a friendly label per value; unknown values may appear as new messages are added.'
+        recipient:
+          type: string
+          nullable: false
+          example: mona.adel@maqady.example
+          description: The email address, or the phone number in E.164 for an SMS.
+        subject:
+          type: string
+          nullable: true
+          example: You're invited to the Maqady dashboard
+          description: The email subject; null for an SMS.
+        status:
+          nullable: false
+          example: sent
+          description: '`queued`: waiting to be sent, or to be retried after a temporary failure. `sent`: handed to the provider. `failed`: the provider refused it, or every attempt failed; it is not retried.'
+          allOf:
+            - $ref: '#/components/schemas/MessageStatus'
+        attempts:
+          type: integer
+          nullable: false
+          minimum: 0
+          maximum: 10
+          example: 1
+          description: Send attempts so far, up to 10.
+        lastErrorCode:
+          type: string
+          nullable: true
+          example: null
+          description: A short machine code for the last failure, such as `timeout`, `http_500`, `validation_error` or `attempts_exhausted`; null when none failed.
+        nextAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: For a `queued` message, when it is next tried (it goes out on the next request to the server after that); null once sent or failed.
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-20T12:00:03+03:00'
+          description: When the provider accepted it; null until then.
+        related:
+          nullable: false
+          description: The customer, staff member or booking the message is about, by id.
+          allOf:
+            - $ref: '#/components/schemas/MessageRelatedResponse'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-20T12:00:01+03:00'
+          description: When the message was created (queued); the list is newest first by this time.
+      required:
+        - id
+        - channel
+        - template
+        - recipient
+        - subject
+        - status
+        - attempts
+        - lastErrorCode
+        - nextAttemptAt
+        - sentAt
+        - related
+        - createdAt
+    MessageSummaryResponsePage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, in list order. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageSummaryResponse'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 42
+          description: How many items the whole list has, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
+    MessageDetailResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 42
+          description: Message id.
+        channel:
+          nullable: false
+          example: email
+          description: '`email` is sent through Resend; `sms` is simulated (recorded, never sent).'
+          allOf:
+            - $ref: '#/components/schemas/MessageChannel'
+        template:
+          type: string
+          nullable: false
+          example: staff.invite
+          description: 'Which message this is, as `<owner>.<event>`: for example `staff.invite`, `staff.password_reset`. Show a friendly label per value; unknown values may appear as new messages are added.'
+        recipient:
+          type: string
+          nullable: false
+          example: mona.adel@maqady.example
+          description: The email address, or the phone number in E.164 for an SMS.
+        subject:
+          type: string
+          nullable: true
+          example: You're invited to the Maqady dashboard
+          description: The email subject; null for an SMS.
+        status:
+          nullable: false
+          example: sent
+          description: '`queued`: waiting to be sent, or to be retried after a temporary failure. `sent`: handed to the provider. `failed`: the provider refused it, or every attempt failed; it is not retried.'
+          allOf:
+            - $ref: '#/components/schemas/MessageStatus'
+        attempts:
+          type: integer
+          nullable: false
+          minimum: 0
+          maximum: 10
+          example: 1
+          description: Send attempts so far, up to 10.
+        lastErrorCode:
+          type: string
+          nullable: true
+          example: null
+          description: A short machine code for the last failure, such as `timeout`, `http_500`, `validation_error` or `attempts_exhausted`; null when none failed.
+        nextAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: For a `queued` message, when it is next tried (it goes out on the next request to the server after that); null once sent or failed.
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-20T12:00:03+03:00'
+          description: When the provider accepted it; null until then.
+        related:
+          nullable: false
+          description: The customer, staff member or booking the message is about, by id.
+          allOf:
+            - $ref: '#/components/schemas/MessageRelatedResponse'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-20T12:00:01+03:00'
+          description: When the message was created (queued); the list is newest first by this time.
+        bodyText:
+          type: string
+          nullable: false
+          example: |-
+            Hello Mona Adel,
+
+            An admin has invited you to the Maqady dashboard as Box office.
+
+            Set your password within 72 hours.
+            [one-time link hidden]
+          description: 'The plain-text body as stored. Invite, reset and verification links read `[one-time link hidden]`: they are only in the email itself.'
+        bodyHtml:
+          type: string
+          nullable: true
+          example: <!doctype html><html><body>…</body></html>
+          description: The HTML body of an email as stored, a full document with one-time links hidden; null for an SMS. Show it in a sandboxed `iframe` (`sandbox` with no permissions, `srcdoc`), never inserted into the page.
+        providerMessageId:
+          type: string
+          nullable: true
+          example: 4ef9a417-02e9-4d39-ad75-9611e0fcc33c
+          description: The provider's message id once sent (Resend's email id); null until then.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-20T12:00:03+03:00'
+          description: When the delivery state last changed.
+      required:
+        - id
+        - channel
+        - template
+        - recipient
+        - subject
+        - status
+        - attempts
+        - lastErrorCode
+        - nextAttemptAt
+        - sentAt
+        - related
+        - createdAt
+        - bodyText
+        - bodyHtml
+        - providerMessageId
+        - updatedAt
     ErrorResponse:
       type: object
       properties:
