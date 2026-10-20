@@ -173,8 +173,12 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `createDraftMovie()`, `createPerson()` and `genreId('drama')` (genres are seeded by migration
   and survive the per-suite reset).
 - `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
-  the admin routes; `test/support/theaters-probe.module.ts` stands in for the publish requirement
-  and the deletion blocker that halls and showtimes register (`TheaterLifecycleRegistry`).
+  the admin routes; `test/support/theaters-probe.module.ts` stands in for the deletion blocker
+  that showtimes register (`TheaterLifecycleRegistry`).
+- `test/support/halls.ts` adds halls through the admin routes: `createHall()`,
+  `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
+  `test/support/halls-probe.module.ts` stands in for the hall rules showtimes and holds register
+  (`HallLifecycleRegistry`).
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
 - `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`
@@ -236,6 +240,14 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   tables. Refuse a movie's deletion by registering a blocker with
   `MovieLifecycleRegistry.addDeletionBlocker()` in `onModuleInit()`. Public responses reuse
   `GenreRefResponse` (`GenreRef`) and `VideoResponse` (`Video`, with `toVideoResponse()`).
+- **Halls** (`modules/halls`, `docs/gh-6-halls/spec.md`). Import `HallsModule` and read halls and
+  seat layouts through `HallReadService` (`findById`, `findLayout(s)`, `listByTheaters`, and
+  `lockForShare()` after the showtime lock when scheduling or holding seats); never query hall
+  tables. `hall-layout.ts` gives the seat list (`layoutSeats()`) and seat labels. Plug showtime
+  rules in through `HallLifecycleRegistry` from `onModuleInit()`: deletion and retirement
+  blockers, and layout participants (`beforeLock`, `blockingShowtimes` for `HALL_IN_USE`,
+  `afterSave`). Seat maps reuse `HallLayoutResponse` (`HallLayout`, with
+  `toHallLayoutResponse()`).
 
 ## Database and migrations
 
