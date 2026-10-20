@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 import { sha256Hex } from '../crypto/hashing';
 import { routeTemplateOf } from '../logging/logger.params';
+import { HOLD_TOKEN_HEADER } from './idempotency.constants';
 import type { HashedRequest } from './types';
 
 /**
@@ -18,19 +19,31 @@ export function canonicalJson(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-/** SHA-256 of the method, route template, path parameters and body (design §14.1). */
+/**
+ * SHA-256 of the method, route template, path parameters, body (design §14.1) and the guest's
+ * hold code. Guests share the `anonymous` scope and prove their access with the hold code, which
+ * the handler checks; a replay skips the handler, so the code must match for a replay too.
+ */
 export function hashRequest(request: HashedRequest): string {
   return sha256Hex(
-    canonicalJson([request.method, request.route, request.params, request.body ?? null]),
+    canonicalJson([
+      request.method,
+      request.route,
+      request.params,
+      request.body ?? null,
+      request.holdToken,
+    ]),
   );
 }
 
 /** The hashed parts of an Express request, read before validation transforms the body. */
 export function hashedPartsOf(request: Request): HashedRequest {
+  const holdToken = request.headers[HOLD_TOKEN_HEADER.toLowerCase()];
   return {
     method: request.method,
     route: routeTemplateOf(request) ?? request.path,
     params: { ...request.params },
     body: request.body as unknown,
+    holdToken: typeof holdToken === 'string' ? holdToken : null,
   };
 }

@@ -10,6 +10,7 @@ const base = {
   route: '/api/v1/showtimes/:id/holds',
   params: { id: '12' },
   body: { seats: ['C4', 'C5'], contact: { name: 'Mona', phone: '010' } },
+  holdToken: null,
 };
 
 describe('canonicalJson', () => {
@@ -41,6 +42,7 @@ describe('hashRequest', () => {
     ['path parameter', { params: { id: '13' } }],
     ['body', { body: { seats: ['C5', 'C4'], contact: { name: 'Mona', phone: '010' } } }],
     ['missing body', { body: undefined }],
+    ['hold code', { holdToken: 'a-guest-hold-code' }],
   ])('changes with the %s', (_part, change) => {
     expect(hashRequest({ ...base, ...change })).not.toBe(hashRequest(base));
   });
@@ -52,8 +54,22 @@ describe('hashRequest', () => {
       route: { path: '/showtimes/:id/holds' },
       baseUrl: '/api/v1',
       params: { id: '12' },
+      headers: {},
       body: base.body,
     } as unknown as Request;
     expect(hashedPartsOf(request)).toEqual(base);
+  });
+
+  it("reads a guest's hold code, so a replay never reaches someone without it", () => {
+    const request = {
+      method: 'POST',
+      path: '/api/v1/showtimes/12/holds',
+      route: { path: '/showtimes/:id/holds' },
+      baseUrl: '/api/v1',
+      params: { id: '12' },
+      headers: { 'x-hold-token': 'a-guest-hold-code' },
+      body: base.body,
+    } as unknown as Request;
+    expect(hashedPartsOf(request)).toEqual({ ...base, holdToken: 'a-guest-hold-code' });
   });
 });

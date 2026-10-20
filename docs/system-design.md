@@ -995,9 +995,11 @@ One global `WriteInterceptor` wraps every non-GET HTTP request. It ignores WebSo
      flight, the insert has already waited for it to commit, so the select sees the finished
      result.
    - The scope is the principal, or `anonymous` for guests.
-   - `request_hash` is the SHA-256 of the method, the route template, the path parameters and
-     the canonical JSON body. A live key with a different hash fails with
-     `IDEMPOTENCY_KEY_REUSED`.
+   - `request_hash` is the SHA-256 of the method, the route template, the path parameters,
+     the canonical JSON body and the `X-Hold-Token` header. A live key with a different hash
+     fails with `IDEMPOTENCY_KEY_REUSED`. Guests share the `anonymous` scope and prove access
+     with their hold code, which the handler checks; a replay skips the handler, so it needs
+     the same code (U1 review, `docs/gh-2-foundations/review.md`).
 3. Run the handler. Store the response status and the encrypted response body in the key row.
    Commit.
 4. Run the post-commit hooks: seat-map events, and deleting replaced storage files.

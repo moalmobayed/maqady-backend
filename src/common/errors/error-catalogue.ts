@@ -156,7 +156,7 @@ export const ERROR_CATALOGUE = {
     status: 422,
     message: 'This Idempotency-Key was already used for a different request.',
     description:
-      'The key was sent before, within 24 hours, with a different route, path or body. Use a new key for a new action; reuse a key only to retry the identical request.',
+      'The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.',
   },
   TIME_DOES_NOT_EXIST: {
     status: 422,

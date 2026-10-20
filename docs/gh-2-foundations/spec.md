@@ -197,7 +197,9 @@ and WebSocket contexts pass straight through.
 6. On `40P01` or `40001` (on the error or its `cause` chain) the whole attempt is retried once.
 
 `request_hash` = SHA-256 of canonical JSON (sorted keys) of `[method, route template, path
-params, body]`. Times come from the `Clock`.
+params, body, X-Hold-Token]`. The hold code is there because guests share the `anonymous` scope
+and a replay skips the handler that checks their code: another code, or none, is
+`IDEMPOTENCY_KEY_REUSED`, never a replay (review finding R1). Times come from the `Clock`.
 
 **Guards** (`APP_GUARD`, in order `JwtAuthGuard`, `RateLimitGuard`, `AccessGuard`; non-HTTP
 contexts pass).

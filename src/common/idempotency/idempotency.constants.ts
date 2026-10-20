@@ -1,6 +1,12 @@
 /** Request header carrying the client's key: a new UUID per user action (design §11). */
 export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 
+/**
+ * The guest's hold code (design §10.4). A replay skips the handler, which is where a guest's
+ * access is checked, so the code is part of the request hash: without it there is no replay.
+ */
+export const HOLD_TOKEN_HEADER = 'X-Hold-Token';
+
 /** Response header on a replayed response. */
 export const IDEMPOTENT_REPLAYED_HEADER = 'Idempotent-Replayed';
 

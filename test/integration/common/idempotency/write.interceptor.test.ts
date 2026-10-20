@@ -7,6 +7,7 @@ import {
   createFoundationsProbeTables,
   dropFoundationsProbeTables,
   FoundationsProbeModule,
+  GUEST_HOLD_TOKEN,
   AccessProbeModule,
   LOCKS_TABLE,
   ProbeState,
@@ -214,6 +215,41 @@ describe('WriteInterceptor: request transactions and idempotency (integration)',
       expect(anonymous.status).toBe(201);
       const scopes = (await keyRows(key)).map((row) => row.scope).sort();
       expect(scopes).toEqual(['anonymous', 'customer:1', 'customer:2']);
+    });
+  });
+
+  describe('for a guest, whose access is a hold code the handler checks', () => {
+    const pay = (key: string, holdToken?: string) => {
+      const request = testApp
+        .http()
+        .post('/api/v1/test-access/holds/AB12CD/payments')
+        .set('Idempotency-Key', key);
+      return holdToken === undefined ? request : request.set('X-Hold-Token', holdToken);
+    };
+
+    it('replays only to a retry that sends the same hold code', async () => {
+      const key = randomUUID();
+      const owner = await pay(key, GUEST_HOLD_TOKEN);
+      const retry = await pay(key, GUEST_HOLD_TOKEN);
+
+      expect(owner.status).toBe(201);
+      expect(retry.status).toBe(201);
+      expect(retry.headers[REPLAYED]).toBe('true');
+      expect(retry.body).toEqual(owner.body);
+    });
+
+    it("never replays the guest's response to a request with another hold code, or none", async () => {
+      const key = randomUUID();
+      await pay(key, GUEST_HOLD_TOKEN);
+      const stranger = await pay(key, 'someone-elses-code');
+      const withoutCode = await pay(key);
+
+      for (const response of [stranger, withoutCode]) {
+        expect(response.status).toBe(422);
+        expect(response.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+        expect(response.headers).not.toHaveProperty(REPLAYED);
+        expect(JSON.stringify(response.body)).not.toContain('ticket-secret');
+      }
     });
   });
 

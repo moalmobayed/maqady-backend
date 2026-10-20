@@ -37,4 +37,6 @@ export interface HashedRequest {
   readonly route: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly body: unknown;
+  /** The `X-Hold-Token` header, or null: a guest's replay needs the guest's hold code. */
+  readonly holdToken: string | null;
 }

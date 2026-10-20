@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Injectable,
   Module,
@@ -45,6 +46,9 @@ import type { ResolverEntry } from './types';
 export const WIDGETS_TABLE = 'zz_widgets';
 export const LOCKS_TABLE = 'zz_locks';
 export const LOCK_NAMES = ['a', 'b'] as const;
+
+/** The hold code the guest-payment probe accepts, standing in for a real hold's (U10). */
+export const GUEST_HOLD_TOKEN = 'probe-hold-code';
 
 /** How long the deadlock twins wait for each other before giving up (the test then fails). */
 const BARRIER_TIMEOUT_MS = 5_000;
@@ -266,6 +270,21 @@ export class AccessProbeController {
   @Get('admin')
   adminRoute(@CurrentPrincipal() principal?: Principal): { principal: Principal | null } {
     return { principal: principal ?? null };
+  }
+
+  /**
+   * A guest write whose handler checks the hold code, as the guest hold and payment routes will
+   * (U10): anyone without the code gets NOT_FOUND, and the response carries a secret.
+   */
+  @Guest()
+  @Strict()
+  @Post('holds/:ref/payments')
+  guestPayment(
+    @Param('ref') ref: string,
+    @Headers('x-hold-token') holdToken?: string,
+  ): { ref: string; ticketCode: string } {
+    if (holdToken !== GUEST_HOLD_TOKEN) throw new AppError('NOT_FOUND');
+    return { ref, ticketCode: 'ticket-secret' };
   }
 
   /** A customer write: its idempotency scope is the customer. */
