@@ -72,9 +72,25 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `DATA_ENCRYPTION_PREVIOUS_KEY` | yes, optional | After a key rotation, the old key; it only decrypts |
 | `QR_SIGNING_KEY` | later units | Ticket QR signatures; generate with `openssl rand -base64 32` |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET` | later units | Image storage; the key never leaves the server |
-| `FRONTEND_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM` | later units | Email links and sending ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
+| `FRONTEND_BASE_URL` | yes | Where email links point, for example `https://maqady.example`; no query, a trailing `/` is dropped |
+| `EMAIL_DRIVER` | yes | `simulated` (every email recorded as sent, nothing leaves; local runs and CI) or `resend` ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | with `resend` | The Resend API key (never logged) and the sender on the verified domain, `tickets@maqady.example` or `Maqady <tickets@maqady.example>` |
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all eleven |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
+
+### Email and SMS
+
+- Messages go through the `messages` outbox: queued in the transaction that caused them, sent
+  right after commit, and retried on later activity (any write, or `GET /api/v1/health/ready`),
+  never by a timer. One-time links are redacted in every stored copy.
+- Locally keep `EMAIL_DRIVER=simulated`: emails are recorded as sent without leaving, and the
+  stored copy is in `messages`.
+- With `EMAIL_DRIVER=resend`, Resend needs a verified domain before it delivers to anyone but the
+  account owner (design §16). The free plan sends 100 emails a day; the rest wait for the next
+  00:00 UTC.
+- **One sending environment per Resend team.** The message id is Resend's idempotency key, so two
+  databases sending through the same team would collide. Only production uses `resend`.
+- SMS is always simulated.
 
 ## Scripts
 
@@ -128,6 +144,10 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/foundations-probe.module.ts` holds test-only routes and principal resolvers for
   exercising the guards and the write interceptor. They are registered by the suites, never by
   the app.
+- `createTestApp({ overrides })` replaces a genuinely external service at its boundary:
+  `test/support/messaging/recording-email-sender.ts` stands in for Resend (it records, answers a
+  scripted outcome, and can hold sends), and `OutboxDrainService.whenIdle()` waits for the
+  background drains before asserting.
 - Point `TEST_DATABASE_URL` at your own `*_test` database when other runs share the server.
 
 ## Writing a feature (the shared foundations)
@@ -149,6 +169,11 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `PageResponseOf()` from `common/pagination`; audit records go through `AuditService.record()`.
 - **Rate limits.** Every route has the default limit; opt into a named one with
   `@RateLimit('search')`.
+- **Messages.** Define a template (`MessageTemplate<P>`, with `renderSimpleHtml()` and
+  `links.oneTime()` for single-use links) in `src/modules/<owner>/templates/`, register it with
+  `MessageTemplateRegistry` in the module's `onModuleInit()`, and call
+  `MessagingService.queue({ template, recipient, params, related })` inside the write. List
+  tokens in `secretParams`; `queue()` refuses a stored copy that would contain one.
 
 ## Database and migrations
 
@@ -190,7 +215,7 @@ src/
   common/                                config, database, errors, logging, swagger, auth,
                                          idempotency, crypto, time, money, pagination,
                                          rate-limit, audit
-  modules/<feature>/                     one Nest module per feature (health so far)
+  modules/<feature>/                     one Nest module per feature (health, messaging)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

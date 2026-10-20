@@ -134,7 +134,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
-| `health` | Liveness and readiness | database |
+| `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
 Rules:
 
@@ -193,7 +193,7 @@ Rules:
 | `one_time_tokens` | Single-use links | `purpose` (`verify_email`, `customer_password_reset`, `staff_invite`, `staff_password_reset`); one owner FK as above; `token_hash` UNIQUE; `expires_at`; `used_at` |
 | `idempotency_keys` | Stored results of writes | UNIQUE (`scope`, `key`); `request_hash`; `response_status`; `response_ciphertext` (the response body, encrypted, §14.1); `created_at`. A key older than 24 hours counts as absent. |
 | `audit_events` | Activity log | `actor_kind` (`staff`, `customer`, `system`) plus actor FKs; `action` (for example `booking.refunded`); `entity_type`, `entity_id`; `booking_id`; `changed_fields TEXT[]`; `metadata JSONB`. Never personal data: names of changed fields, not their values. |
-| `messages` | The outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`; `body` with one-time links redacted; `status` (`queued`, `sent`, `failed`); `attempts`; `provider_message_id`; `sent_at`; FKs to the related customer, staff user or booking |
+| `messages` | The outbox and the Message log | `channel` (`email`, `sms`); `template`; `recipient`; `subject`, `body_text` and `body_html` with one-time links redacted; `status` (`queued`, `sent`, `failed`); `attempts`; `last_error_code`; `next_attempt_at`; `payload_ciphertext` (the template parameters, encrypted, while `queued` or `failed`; NULL once `sent`, §13.1); `provider_message_id`; `sent_at`; `related_customer_id`, `related_staff_user_id`, `related_booking_id` (FKs added by the units that create those tables) |
 | `staff_alert_reads` | Bell read state | PK (`staff_user_id`, `alert_key`); `seen_at` |
 | `hold_refusals` | Seat conflicts, for the PRD's seat-conflict rate | `showtime_id`, `refused_at`, `seat_count`. Written in its own transaction after a refused hold rolls back. |
 
@@ -899,26 +899,47 @@ generated contract (§19).
 ### 13.1 Messaging
 
 - **Senders.** `EmailSender` and `SmsSender` are interfaces. `ResendEmailSender` sends email
-  through Resend's HTTP API. `SimulatedSmsSender` only records the message.
+  through Resend's HTTP API; `EMAIL_DRIVER=simulated` swaps in `SimulatedEmailSender` for local
+  runs and CI. `SimulatedSmsSender` only records the message.
 - **Outbox.** A message is written to `messages` as `queued`, in the same transaction as the
-  change that caused it, so a rolled-back change never sends anything.
-  - After commit, a post-commit hook sends it. The row records `sent` with Resend's message id,
-    or a failure and the attempt count.
-  - Queued and failed messages are retried opportunistically. Write requests drain a few after
-    commit (`FOR UPDATE SKIP LOCKED`), and the daily keep-alive ping drains the rest (§16).
-    Retries only change when an email arrives, never whether data is correct.
-  - Resend's free plan allows 100 emails a day. A message refused for the daily quota stays
-    queued and goes out the next day.
-  - Each send carries the message id as its idempotency key, so where the provider supports it,
-    a retry never sends twice.
-- **Templates.** TypeScript functions in `messaging/templates/`, one per PRD trigger (PRD "Email
-  and SMS"), rendering a plain-text body and a simple HTML body. Links are built from
-  `FRONTEND_BASE_URL`.
-- **One-time links.** Verification, reset and invite links appear only in the email itself. The
-  stored `body` keeps the link redacted, so the Message log never shows a usable token. PRD veto
-  call 16 is withdrawn.
-- **SMS.** A simulated SMS is recorded as `sent` immediately.
-- **The Message log** lists every email and SMS with its delivery status.
+  change that caused it, so a rolled-back change never sends anything
+  (`MessagingService.queue()`).
+  - After commit, a post-commit hook asks for a drain; it never waits on the network. The row
+    records `sent` with the provider's message id, or a failure, its error code and the attempt
+    count.
+  - A drain claims up to 10 due `queued` messages in one autocommit statement
+    (`FOR UPDATE SKIP LOCKED`), moving their `next_attempt_at` 5 minutes ahead as a lease, then
+    sends them outside any transaction. Concurrent drains take disjoint rows.
+  - Queued messages are retried opportunistically. Every successful write request drains one
+    batch after commit, and the daily keep-alive ping (`GET /health/ready`) drains up to 10
+    batches (§16). Retries only change when a message arrives, never whether data is correct.
+  - A temporary failure (a 5xx, a timeout, an API-key problem) counts an attempt and waits 1,
+    5, 15, 60 or 180 minutes, then 6 hours. The 10th attempt marks the message `failed`
+    (`attempts_exhausted`). A refusal that can never succeed (a 4xx such as
+    `validation_error`) marks it `failed` at once. **`failed` is terminal**; nothing resends it.
+  - Resend's free plan allows 100 emails a day. A message refused for the daily (or monthly)
+    quota stays queued, uncounted, until the next 00:00 UTC, and the rest of its batch waits
+    with it. Calls are spaced 500 ms apart, under Resend's default rate limit.
+  - Each send carries the message id as its idempotency key, so a retry never sends twice.
+    Message ids are per database, so only one environment sends through a given Resend team;
+    the others use the simulated driver.
+- **Templates.** TypeScript objects, one per PRD trigger (PRD "Email and SMS"), rendering a
+  subject, a plain-text body and a simple HTML body. Links are built from `FRONTEND_BASE_URL`.
+  *Deviation (U3):* each template lives in the module that owns its trigger
+  (`src/modules/<owner>/templates/`) and is registered with `MessageTemplateRegistry` in that
+  module's `onModuleInit()`, rather than in `messaging/templates/`, so `messaging` depends on no
+  feature module.
+- **One-time links.** Verification, reset and invite links appear only in the email itself.
+  The stored `subject`, `body_text` and `body_html` are rendered with the link redacted
+  (`[one-time link hidden]`), so the Message log never shows a usable token, and `queue()`
+  refuses a stored render that contains a secret parameter. PRD veto call 16 is withdrawn.
+  *Deviation (U3):* a retry must rebuild the real link, so the template parameters are kept in
+  `payload_ciphertext`, encrypted like stored idempotency responses (§14.1) with AAD
+  `messages:<id>`, while the message is `queued` or `failed`, and cleared once it is `sent`. The
+  Message log never reads that column.
+- **SMS.** A simulated SMS goes through the same outbox and is recorded as `sent` on its first
+  attempt, right after commit.
+- **The Message log** lists every email and SMS with its delivery status (U2b).
 - **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
@@ -1113,7 +1134,8 @@ Environment variables are validated at boot, and a missing or malformed value st
 - `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`;
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET`;
 - `FRONTEND_BASE_URL`, `CORS_ORIGINS`;
-- `RESEND_API_KEY`, `EMAIL_FROM`;
+- `EMAIL_DRIVER` (`resend` or `simulated`), and with `resend` also `RESEND_API_KEY` and
+  `EMAIL_FROM`;
 - the rate limits;
 - `LOG_LEVEL`, `PORT`.
 
@@ -1198,9 +1220,11 @@ The testing policy in `CLAUDE.md` binds this section.
   - The `maqady` schema, left out of the Data API's exposed schemas (or the Data API turned off).
   - A public `media` bucket.
   - The session-pooler connection string in `DATABASE_URL`.
-- **Resend setup.** Verify the sending domain in Resend, then set `RESEND_API_KEY` and
-  `EMAIL_FROM` (an address on that domain). Until a domain is verified, Resend delivers only to
-  the account owner's own address.
+- **Resend setup.** Verify the sending domain in Resend, then set `EMAIL_DRIVER=resend`,
+  `RESEND_API_KEY` and `EMAIL_FROM` (an address on that domain). Until a domain is verified,
+  Resend delivers only to the account owner's own address. Only production sends through the
+  Resend team: message ids are the idempotency keys, and two databases' ids would collide.
+  Local runs and CI use `EMAIL_DRIVER=simulated`.
 - **Keep-alive (optional).** A daily scheduled GitHub Actions job calls `/health/ready`, so
   the Supabase project shows activity and isn't paused, and queued emails are drained. It
   affects availability only.
@@ -1257,13 +1281,14 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-17 | Contract generated and committed; CI drift check | Builder (§19) |
 | D-18 | Noun routes, including auth; one access decorator per route, checked at boot | Builder (§11) |
 | D-19 | Refunds per charge, on each charge's own rail | Builder (§7.7) |
-| D-20 | Stored idempotency responses encrypted at rest; one-time links never stored | Builder (§13.1, §14.1) |
+| D-20 | Stored idempotency responses encrypted at rest; one-time links never stored readable (a queued or failed message keeps its parameters encrypted, cleared once sent) | Builder (§13.1, §14.1; U3) |
 | D-21 | Budget stored as a display label, not money | Builder (§6.1) |
 | D-22 | A showtime can be cancelled until it ends, but moved only before it starts | Builder (§7.7, §8) |
 | D-23 | NestJS 11 on CommonJS, TypeScript 6, Jest 30 with ts-jest. NestJS 12 ships only as ES modules, which Jest loads from CommonJS only on Node 24.9+, and the suite must also run on Node 22. Move to NestJS 12 once the minimum Node version allows it | Builder (U0, `docs/gh-1-scaffold/spec.md`) |
 | D-24 | The default rate limit counts per route, by signed-in customer else IP; named limits count across the routes that declare them | Builder (U1, `docs/gh-2-foundations/spec.md`) |
 | D-25 | A `@Guest()` route accepts no token or a valid customer token; an invalid token is `UNAUTHENTICATED`, never a silent guest | Builder (U1) |
 | D-26 | Only `2xx` responses are stored for an idempotency key, with their status and body (not other headers); errors roll the key back | Builder (U1, §14.1) |
+| D-27 | Outbox retries: at most 10 attempts with a 1 min to 6 h backoff; `failed` is terminal; a quota 429 holds email until the next 00:00 UTC; the message id is the Resend idempotency key, so one sending environment per Resend team; templates registered by their owning modules | Builder (U3, `docs/gh-3-messaging/spec.md`) |
 
 ## 19. Kit and process reconciliations
 
