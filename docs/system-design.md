@@ -1266,8 +1266,8 @@ the frontend early: a deployed API with real reads comes before the booking flow
 |---|---|---|
 | U0 Scaffold and deploy | Nest app, scripts (`typecheck`, `lint`, `test`, `build`, `contract`), Docker Compose, CI (Postgres, contract check, no Redis), config, logging, error filter, health, Knex provider with type parsers and the migrations runner, Dockerfile, a first Render deploy (including the `X-Forwarded-For` check) | — |
 | U1 Foundations | `TransactionRepository`, the write interceptor with idempotency and encryption, audit service, `Clock`, time and money helpers, cursor pagination, rate-limit setup, access decorators and the boot-time route check, the error catalogue | U0 |
-| U2 Staff access | `staff_users`, sessions, admin bootstrap command, staff sign-in, refresh with grace, sign-out, `GET /admin/me`, invites, forgot password and set-password, the last-admin rule, staff management | U1 |
-| U3 Messaging | `messages` outbox, templates, Resend email sender, simulated SMS sender, delivery retries, Message log API | U1 |
+| U2 Staff access | `staff_users`, sessions, admin bootstrap command, staff sign-in, refresh with grace, sign-out, `GET /admin/me`, invites, forgot password and set-password, the last-admin rule, staff management, the Message log API | U1, U3 |
+| U3 Messaging | `messages` outbox, templates, Resend email sender, simulated SMS sender, delivery retries. Built before U2, because staff invites need email; its admin API ships with U2. | U1 |
 | U4 Media and theaters | Image pipeline, storage adapter, theaters with hours, special dates, phones, facilities, photos, prices, publish and selling | U2 |
 | U5 Halls | Hall CRUD, layout editor API, the hall lock and in-use rule, retire and delete | U4 |
 | U6 Catalog | Genres, movies, people, credits, photos, YouTube videos, publishing, featured carousel | U4 |
