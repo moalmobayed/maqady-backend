@@ -139,6 +139,16 @@ describe('Admin people routes (integration)', () => {
       expectError(await patchPerson(987654, { bio: 'x' }), 404, 'NOT_FOUND');
       expectError(await get(`${PEOPLE}/987654`), 404, 'NOT_FOUND');
     });
+
+    it('refuses null roles, which are cleared with [], and keeps the set roles', async () => {
+      const person = await createPerson(testApp, admin, { roles: ['actor', 'director'] });
+
+      const response = await patchPerson(person.id, { roles: null });
+
+      expectError(response, 400, 'VALIDATION_FAILED');
+      expect(response.body.error.details.fields[0].field).toBe('roles');
+      expect((await get(`${PEOPLE}/${person.id}`)).body.roles).toEqual(['actor', 'director']);
+    });
   });
 
   describe('PUT /admin/people/{id}/credits', () => {

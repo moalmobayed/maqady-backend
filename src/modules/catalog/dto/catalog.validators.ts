@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   registerDecorator,
+  ValidateIf,
   type ValidationArguments,
   type ValidationOptions,
 } from 'class-validator';
@@ -29,6 +30,14 @@ export function TrimToNull(): PropertyDecorator {
     const trimmed = value.trim();
     return trimmed === '' ? null : trimmed;
   });
+}
+
+/**
+ * An optional field that can't be cleared: absent skips its validation, but `null` is validated
+ * (and refused) like any other value. `@IsOptional()` would let `null` through to the service.
+ */
+export function OptionalNotNull(): PropertyDecorator {
+  return ValidateIf((_object: object, value: unknown) => value !== undefined);
 }
 
 /** True when none of `fields` was sent: a `PATCH` must change something. */

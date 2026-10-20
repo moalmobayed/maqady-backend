@@ -14,7 +14,7 @@ import {
 import { MAX_GENRES_PER_MOVIE, MAX_RUNTIME_MINUTES, TEXT_LIMITS } from '../catalog.constants';
 import { AGE_RATINGS } from '../enums';
 import type { AgeRating } from '../types';
-import { IsCalendarDate, TrimToNull } from './catalog.validators';
+import { IsCalendarDate, OptionalNotNull, TrimToNull } from './catalog.validators';
 
 /**
  * The optional details shared by `POST /admin/movies` and `PATCH /admin/movies/{id}`. Text is
@@ -67,7 +67,7 @@ export class MovieDetailsFields {
     description:
       'Shown on the movie page, tickets and at the cinema entrance. A new movie defaults to `12+`.',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsIn(AGE_RATINGS)
   ageRating?: AgeRating;
 
@@ -146,7 +146,7 @@ export class MovieDetailsFields {
     description:
       'Genre ids, at most 5, in display order: the first is the genre Now showing cards show. Replaces the whole list; `[]` clears it. At least one is required before publishing. An unknown id is `VALIDATION_FAILED` on `genreIds`.',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_GENRES_PER_MOVIE)
   @ArrayUnique()

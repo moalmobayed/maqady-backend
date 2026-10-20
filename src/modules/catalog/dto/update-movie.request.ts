@@ -13,7 +13,7 @@ import {
 import { FEATURED_POSITION_MAX, FEATURED_POSITION_MIN, TEXT_LIMITS } from '../catalog.constants';
 import { MOVIE_STATUSES } from '../enums';
 import type { MovieStatus } from '../types';
-import { noneSent, Trim } from './catalog.validators';
+import { noneSent, OptionalNotNull, Trim } from './catalog.validators';
 import { MovieDetailsFields } from './movie-fields';
 
 /** Every field `PATCH /admin/movies/{id}` accepts; at least one must be sent. */
@@ -64,7 +64,7 @@ export class UpdateMovieRequest extends MovieDetailsFields {
     description:
       "`draft` (admins only), `coming_soon` (listed, no sales), `now_showing` (bookable) or `archived` (hidden, history kept). Allowed changes: draft → coming soon, now showing or archived; coming soon → draft, now showing or archived; now showing → archived; archived → coming soon or now showing. Anything else is `CONFLICT` with `details.from` and `details.to`. Coming soon and Now showing need a synopsis, runtime, release date and a genre (`MOVIE_NOT_PUBLISHABLE`). Moving to draft or archived frees the movie's carousel position.",
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsIn(MOVIE_STATUSES)
   status?: MovieStatus;
 

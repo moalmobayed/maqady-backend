@@ -11,7 +11,7 @@ import {
 import { IMDB_HOSTS, INSTAGRAM_HOSTS, TEXT_LIMITS } from '../catalog.constants';
 import { CREDIT_ROLES } from '../enums';
 import type { CreditRole } from '../types';
-import { IsCalendarDate, IsHttpsUrlOn, TrimToNull } from './catalog.validators';
+import { IsCalendarDate, IsHttpsUrlOn, OptionalNotNull, TrimToNull } from './catalog.validators';
 
 /**
  * The optional details shared by `POST /admin/people` and `PATCH /admin/people/{id}`. Text is
@@ -122,7 +122,7 @@ export class PersonDetailsFields {
     description:
       'The roles shown on the person even without credits; replaces the set. Credited roles are reported separately (`creditedRoles`).',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(CREDIT_ROLES.length)
   @ArrayUnique()

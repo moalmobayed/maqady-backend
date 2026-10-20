@@ -259,6 +259,68 @@ describe('Admin movie media routes (integration, local storage)', () => {
     });
   });
 
+  describe('fields that cannot be cleared', () => {
+    it.each([
+      ['kind', { kind: null }],
+      ['position', { position: null }],
+    ])('refuses null on a video %s and changes nothing', async (field, body) => {
+      const movie = await createDraftMovie(testApp, admin);
+      expectStatus(
+        await addVideo(movie.id, { url: 'https://youtu.be/aaaaaaaaaaa', title: 'A', kind: 'clip' }),
+        201,
+      );
+      const added = await addVideo(movie.id, {
+        url: 'https://youtu.be/bbbbbbbbbbb',
+        title: 'B',
+        kind: 'teaser',
+      });
+      const second = (expectStatus(added, 201).body.videos as VideoBody[])[1]!;
+
+      const response = await adminWrite(
+        testApp,
+        admin,
+        'patch',
+        `${MOVIES}/${movie.id}/videos/${second.id}`,
+      ).send(body);
+
+      expectError(response, 400, 'VALIDATION_FAILED');
+      expect(
+        (response.body.error.details.fields as { field: string }[]).map((entry) => entry.field),
+      ).toEqual([field]);
+      const rows = await testApp
+        .knex('movie_videos')
+        .select('youtube_id', 'kind', 'sort_order')
+        .where({ movie_id: movie.id })
+        .orderBy('sort_order');
+      expect(rows).toEqual([
+        { youtube_id: 'aaaaaaaaaaa', kind: 'clip', sort_order: 0 },
+        { youtube_id: 'bbbbbbbbbbb', kind: 'teaser', sort_order: 1 },
+      ]);
+    });
+
+    it('refuses null on a photo position and changes nothing', async () => {
+      const movie = await createDraftMovie(testApp, admin);
+      expectStatus(await uploadPhoto(movie.id, await jpeg(640, 480), { kind: 'still' }), 201);
+      const added = await uploadPhoto(movie.id, await jpeg(640, 480), { kind: 'still' });
+      const second = (expectStatus(added, 201).body.photos as PhotoBody[])[1]!;
+
+      const response = await adminWrite(
+        testApp,
+        admin,
+        'patch',
+        `${MOVIES}/${movie.id}/photos/${second.id}`,
+      ).send({ position: null });
+
+      expectError(response, 400, 'VALIDATION_FAILED');
+      const rows = await testApp
+        .knex('movie_photos')
+        .select('id', 'sort_order')
+        .where({ movie_id: movie.id })
+        .orderBy('sort_order');
+      expect(rows.at(1)).toEqual({ id: second.id, sort_order: 1 });
+    });
+  });
+
   describe('photos and the backdrop', () => {
     it('uploads a photo through the pipeline, sets it as the backdrop and deletes it', async () => {
       const movie = await createDraftMovie(testApp, admin, { title: 'The Last Lighthouse' });

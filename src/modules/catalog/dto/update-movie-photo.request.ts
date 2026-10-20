@@ -13,7 +13,7 @@ import {
 import { MAX_MOVIE_PHOTOS, TEXT_LIMITS } from '../catalog.constants';
 import { MOVIE_PHOTO_KINDS } from '../enums';
 import type { MoviePhotoKind } from '../types';
-import { noneSent, TrimToNull } from './catalog.validators';
+import { noneSent, OptionalNotNull, TrimToNull } from './catalog.validators';
 
 const UPDATE_PHOTO_FIELDS = ['kind', 'caption', 'position'] as const;
 
@@ -54,7 +54,7 @@ export class UpdateMoviePhotoRequest {
     description:
       'Moves the photo to this place in the list (0 is first); past the end means last. The others keep their order.',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsInt()
   @Min(0)
   @Max(MAX_MOVIE_PHOTOS - 1)

@@ -13,7 +13,7 @@ import {
 import { MAX_MOVIE_VIDEOS, MAX_VIDEO_DURATION_SECONDS, TEXT_LIMITS } from '../catalog.constants';
 import { VIDEO_KINDS } from '../enums';
 import type { VideoKind } from '../types';
-import { noneSent, Trim } from './catalog.validators';
+import { noneSent, OptionalNotNull, Trim } from './catalog.validators';
 
 const UPDATE_VIDEO_FIELDS = ['title', 'kind', 'durationSeconds', 'position'] as const;
 
@@ -45,7 +45,7 @@ export class UpdateMovieVideoRequest {
     example: 'teaser',
     description: 'Trailer, Teaser, Clip or Featurette.',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsIn(VIDEO_KINDS)
   kind?: VideoKind;
 
@@ -71,7 +71,7 @@ export class UpdateMovieVideoRequest {
     description:
       'Moves the video to this place in the list (0 is first); past the end means last. The others keep their order.',
   })
-  @IsOptional()
+  @OptionalNotNull()
   @IsInt()
   @Min(0)
   @Max(MAX_MOVIE_VIDEOS - 1)

@@ -24,6 +24,10 @@ function expectError(response: Response, status: number, code: string): void {
   expect({ status: response.status, code: response.body?.error?.code }).toEqual({ status, code });
 }
 
+function fieldsOf(response: Response): string[] {
+  return (response.body.error.details.fields as { field: string }[]).map((entry) => entry.field);
+}
+
 interface AuditRow {
   action: string;
   entity_type: string;
@@ -223,6 +227,38 @@ describe('Admin movie routes (integration)', () => {
       expectError(await patch(987654, { title: 'x' }), 404, 'NOT_FOUND');
       expectError(await get(`${MOVIES}/987654`), 404, 'NOT_FOUND');
       expectError(await get(`${MOVIES}/abc`), 400, 'VALIDATION_FAILED');
+    });
+
+    it.each([
+      ['ageRating', { ageRating: null }],
+      ['status', { status: null }],
+      ['genreIds', { genreIds: null }],
+    ])('refuses null on %s, which cannot be cleared, and changes nothing', async (field, body) => {
+      const movie = await createDraftMovie(testApp, admin, { ageRating: '16+' });
+      const before = await auditOf(movie.id);
+
+      const response = await patch(movie.id, body);
+
+      expectError(response, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(response)).toEqual([field]);
+      const rows = await testApp
+        .knex('movies')
+        .select('age_rating', 'status')
+        .where({ id: movie.id });
+      expect(rows).toEqual([{ age_rating: '16+', status: 'draft' }]);
+      expect(await auditOf(movie.id)).toEqual(before);
+    });
+
+    it.each([
+      ['ageRating', { ageRating: null }],
+      ['genreIds', { genreIds: null }],
+    ])('refuses null on %s when creating', async (field, body) => {
+      const response = await adminWrite(testApp, admin, 'post', MOVIES).send({
+        title: 'Null field',
+        ...body,
+      });
+      expectError(response, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(response)).toEqual([field]);
     });
   });
 
