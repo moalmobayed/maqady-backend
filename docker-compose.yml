@@ -1,0 +1,23 @@
+# Local Postgres for development and the integration tests: `docker compose up -d`.
+# Creates maqady_dev (POSTGRES_DB) and, on the first start of an empty volume, maqady_test.
+# The service itself runs on the host with `npm run dev`; migrations create the extensions.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: maqady_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d maqady_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
