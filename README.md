@@ -22,7 +22,9 @@ pino · Jest · Docker. Hosted on Render, with Postgres and storage on Supabase.
 
 ```bash
 npm ci
-cp .env.example .env          # local defaults; no secrets needed yet
+cp .env.example .env          # local defaults; then fill in the three secrets:
+#   JWT_SECRET_CUSTOMER, JWT_SECRET_STAFF and DATA_ENCRYPTION_KEY, each from
+#   openssl rand -base64 32   (the two JWT secrets must differ)
 
 # Postgres, either:
 docker compose up -d          # postgres:16 with maqady_dev and maqady_test
@@ -65,10 +67,13 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `CORS_ORIGINS` | yes | Comma-separated frontend origins, for example `https://maqady.example` |
 | `PORT` | yes | Default `3000`; Render sets it |
 | `LOG_LEVEL` | yes | `fatal` … `trace`, or `silent`. Default `info` |
-| `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY` | later units | Secrets; generate with `openssl rand -base64 32` |
+| `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF` | yes | Access-token secrets, one per audience: base64 of at least 32 bytes, and different from each other. Generate with `openssl rand -base64 32` |
+| `DATA_ENCRYPTION_KEY` | yes | Encrypts stored idempotency responses (AES-256-GCM): base64 of exactly 32 bytes |
+| `DATA_ENCRYPTION_PREVIOUS_KEY` | yes, optional | After a key rotation, the old key; it only decrypts |
+| `QR_SIGNING_KEY` | later units | Ticket QR signatures; generate with `openssl rand -base64 32` |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STORAGE_BUCKET` | later units | Image storage; the key never leaves the server |
 | `FRONTEND_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM` | later units | Email links and sending ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
-| rate limits | later units | Named by the rate-limit unit (design §10.6) |
+| `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all eleven |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
 ## Scripts
@@ -116,6 +121,35 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 `test/support/test-app.ts` boots the whole app for a suite: `createTestApp()`, then
 `testApp.http().get('/api/v1/…')`, and `testApp.close()` in `afterAll`.
 
+- `createTestApp({ clock })` replaces the `Clock` with a `TestClock` (`test/support/clock.ts`),
+  which a test sets or advances to test expiry and summer-time rules without sleeping.
+- The test configuration supplies fixed secrets and raises every rate limit, so concurrency tests
+  aren't throttled; `buildTestConfig({}, { RATE_LIMIT_DEFAULT: '3/1m' })` lowers one.
+- `test/support/foundations-probe.module.ts` holds test-only routes and principal resolvers for
+  exercising the guards and the write interceptor. They are registered by the suites, never by
+  the app.
+- Point `TEST_DATABASE_URL` at your own `*_test` database when other runs share the server.
+
+## Writing a feature (the shared foundations)
+
+- **Access.** Every route declares exactly one of `@Public()`, `@Guest()`, `@Customer()`,
+  `@Staff()` or `@Admin()` (`common/auth`), on the method or on the controller. The app refuses
+  to start otherwise. The principal is `@CurrentPrincipal()`. An owner-only route is
+  `@Customer()` (or `@Guest()` with a hold code) and its service answers `NOT_FOUND` for anyone
+  else's resource.
+- **Writes.** Every `POST`, `PUT`, `PATCH` and `DELETE` runs in one transaction opened by the
+  global `WriteInterceptor`. Mark creating `POST`s `@Strict()` (the `Idempotency-Key` header is
+  then required); auth routes `@NoIdempotencyStorage()`; uploads `@NoRequestTransaction()`.
+- **Repositories** take their executor from `TransactionContext.executor()`, never inject Knex,
+  so they join the request transaction. `TransactionRepository.run()` opens one elsewhere (a GET
+  that writes), `savepoint()` isolates per-item inserts, and `afterCommit()` defers side effects
+  until the commit.
+- **Time** comes from the injected `Clock`; conversions go through `common/time` only.
+  **Money** is `common/money`; lists use `PageQuery`, `toPageRequest()`, `toPage()` and
+  `PageResponseOf()` from `common/pagination`; audit records go through `AuditService.record()`.
+- **Rate limits.** Every route has the default limit; opt into a named one with
+  `@RateLimit('search')`.
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -153,7 +187,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 src/
   main.ts, app.module.ts, app.setup.ts   boot, root module, HTTP settings
   cli/                                   migrate and contract commands
-  common/                                config, database, errors, logging, swagger
+  common/                                config, database, errors, logging, swagger, auth,
+                                         idempotency, crypto, time, money, pagination,
+                                         rate-limit, audit
   modules/<feature>/                     one Nest module per feature (health so far)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
