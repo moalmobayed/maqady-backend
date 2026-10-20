@@ -1,5 +1,8 @@
 import { TestClock } from '../../../../support/clock';
-import { RESEND_EMAILS_URL } from '../../../../../src/modules/messaging/messaging.constants';
+import {
+  RESEND_EMAILS_URL,
+  RESEND_TIMEOUT_MS,
+} from '../../../../../src/modules/messaging/messaging.constants';
 import { ResendEmailSender } from '../../../../../src/modules/messaging/senders/resend-email.sender';
 import {
   outcomeOfFetchError,
@@ -163,6 +166,34 @@ describe('ResendEmailSender', () => {
       kind: 'retry',
       errorCode: 'network_error',
     });
+  });
+
+  it('abandons a call that Resend never answers once the 10-second timeout fires', async () => {
+    // The drain runs one send at a time, and the 5-minute lease assumes a send ends within the
+    // timeout: a call with no working timeout would stop the outbox until a restart.
+    const timeouts: number[] = [];
+    jest.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      timeouts.push(ms);
+      return AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+    });
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init!.signal!;
+          const abandon = (): void => reject(signal.reason as Error);
+          if (signal.aborted) abandon();
+          signal.addEventListener('abort', abandon);
+        }),
+    );
+
+    const outcome = await Promise.race([
+      sender.send(EMAIL),
+      new Promise((resolve) => setTimeout(() => resolve('still waiting on Resend'), 1_000)),
+    ]);
+
+    expect(outcome).toEqual({ kind: 'retry', errorCode: 'timeout' });
+    expect(timeouts).toEqual([RESEND_TIMEOUT_MS]);
+    expect(RESEND_TIMEOUT_MS).toBe(10_000);
   });
 
   it('never reports Resend’s message, which can echo the recipient', async () => {
