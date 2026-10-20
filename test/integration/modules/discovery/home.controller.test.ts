@@ -15,6 +15,7 @@ import {
   uploadPoster,
   uploadTheaterPhoto,
 } from '../../../support/discovery';
+import { addActiveHall } from '../../../support/halls';
 import { mediaDirectory, removeMediaDirectory } from '../../../support/media';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -167,6 +168,7 @@ describe('GET /home', () => {
     );
     await uploadTheaterPhoto(testApp, admin, theaters.zamalek, 'cover');
     for (const id of [theaters.zamalek, theaters.hidden, theaters.paused]) {
+      await addActiveHall(testApp, admin.authorization, id);
       await setTheaterStatus(testApp, admin.authorization, id, 'active');
     }
     await setTheaterStatus(testApp, admin.authorization, theaters.paused, 'sales_paused');

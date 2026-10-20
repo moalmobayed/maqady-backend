@@ -19,6 +19,7 @@ const COUNTED_TABLES = [
   'theater_photos',
   'theater_hours',
   'theater_special_dates',
+  'halls',
   'people',
   'person_roles',
   'movies',
@@ -71,6 +72,7 @@ describe('npm run seed', () => {
     expect(first).toEqual([
       `Created the seed admin ${SEED_ADMIN_EMAIL}.`,
       'theaters: 6 created, 0 already there',
+      'halls: 5 created, 0 already there',
       'publish-theaters: 5 created, 0 already there',
       'people: 18 created, 0 already there',
       'movies: 12 created, 0 already there',
@@ -81,6 +83,7 @@ describe('npm run seed', () => {
     expect(afterFirst).toMatchObject({
       staff_users: 1,
       theaters: 6,
+      halls: 5,
       people: 18,
       movies: 12,
       movie_videos: 24,
@@ -93,6 +96,7 @@ describe('npm run seed', () => {
     await runSeed(testApp.app, baseUrl, {}, (line) => second.push(line));
     expect(second).toEqual([
       'theaters: 0 created, 6 already there',
+      'halls: 0 created, 5 already there',
       'publish-theaters: 0 created, 5 already there',
       'people: 0 created, 18 already there',
       'movies: 0 created, 12 already there',

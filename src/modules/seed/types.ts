@@ -188,6 +188,13 @@ export interface SeedPersonRow {
   readonly photo: unknown;
 }
 
+/** A hall of `GET /admin/theaters/{id}/halls` (and the create answer), as the seed reads it. */
+export interface SeedHallRow {
+  readonly id: number;
+  readonly name: string;
+  readonly status: string;
+}
+
 export interface SeedAdminTheater {
   readonly id: number;
   readonly status: string;

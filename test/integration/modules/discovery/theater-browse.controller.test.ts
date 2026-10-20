@@ -5,6 +5,7 @@ import type {
 import { expectStatus, idsOf } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
 import { countQueries, draftValidator, uploadTheaterPhoto } from '../../../support/discovery';
+import { addActiveHall } from '../../../support/halls';
 import { mediaDirectory, removeMediaDirectory } from '../../../support/media';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -59,6 +60,7 @@ describe('The public theater reads', () => {
       }),
       200,
     );
+    await addActiveHall(testApp, admin.authorization, id);
     await setTheaterStatus(testApp, admin.authorization, id, 'active');
     return id;
   };

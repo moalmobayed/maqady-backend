@@ -252,8 +252,9 @@ queries of `/theaters` for 1 and 4 theaters and of `/movies` for pages of 2 and 
 - `HomeTickerSource`: replace `NoShowtimesTickerSource` with a showtimes-backed source in
   `DiscoveryModule.providers`.
 - `TheaterHallCountSource`: replace `NoHallsCountSource` with U5's count of active halls.
-- `npm run seed`: append steps to `SEED_STEPS` (`src/modules/seed/seed.steps.ts`): halls go
-  before `publish-theaters` (U5 makes an active hall a publish requirement), showtimes last.
+- `npm run seed`: append steps to `SEED_STEPS` (`src/modules/seed/seed.steps.ts`): showtimes
+  last. The `halls` step (added when U5 merged, since an active hall is a publish requirement)
+  already gives each published theater an active `Hall 1`.
 
 ## Seed
 
@@ -275,6 +276,8 @@ queries of `/theaters` for 1 and 4 theaters and of `/movies` for pages of 2 and 
      and Dokki in Giza) with weekly hours (all closing after midnight, later on Thursday and
      Friday nights for two), prices, phones, facilities, a generated 16:9 cover, gallery photos
      and, for Zamalek, holiday hours 3 days ahead. Sheikh Zayed hides its contacts.
+   - `halls`: an active `Hall 1` (the standard 12 × 16 layout) for each theater to publish,
+     the `active_hall` publish requirement.
    - `publish-theaters`: publishes them (one kept as a draft, to show it never appears).
    - `people`: 18 people with roles and generated square photos.
    - `movies`: 12 movies across the genres (7 Now showing, 4 Coming soon, 1 draft) with
@@ -307,8 +310,7 @@ committed; they go through the real image pipeline into the local storage driver
 - **U8b**: replace `NoShowtimesTickerSource` (ticker) and `NoHallsCountSource` (count of active
   halls); add the theater page's halls, `GET /movies/{id}/showtimes`,
   `GET /theaters/{id}/showtimes`, the Movies page "show date" filter and the movie side panel
-  (next show today, cinemas showing it, "from" price); append halls (before `publish-theaters`)
-  and showtimes to `SEED_STEPS`.
+  (next show today, cinemas showing it, "from" price); append showtimes to `SEED_STEPS`.
 - **Frontend and owner**: the draft says to delete `contracts/drafts/home-page.openapi.yaml` once
   the generated contract covers it, which it now does (qa.md "Contract comparison"). This unit
   was told not to edit it; deleting it means moving the comparison tests to the committed

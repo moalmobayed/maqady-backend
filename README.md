@@ -147,8 +147,9 @@ pages and the admin dashboard.
   videos are Blender Foundation open movies on YouTube, so the embeds play.
 - It is idempotent: each step finds what exists by name or title and adds only what is missing,
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
-- Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Halls go before
-  `publish-theaters` and showtimes at the end, when those units add them.
+- Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
+  active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
+  only with an active hall; showtimes go at the end, when that unit adds them.
 
 ## Dependencies
 

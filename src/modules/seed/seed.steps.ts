@@ -1,5 +1,5 @@
 import { addDays } from '../../common/time/time';
-import { SEED_IMAGE_SIZES, SEED_LIST_LIMIT, SEED_PRICES } from './seed.constants';
+import { SEED_HALL_NAME, SEED_IMAGE_SIZES, SEED_LIST_LIMIT, SEED_PRICES } from './seed.constants';
 import { SEED_MOVIES, SEED_PEOPLE, SEED_THEATERS } from './seed-data';
 import { placeholderImage } from './seed-images';
 import type {
@@ -9,6 +9,7 @@ import type {
   SeedContext,
   SeedCreatedRow,
   SeedGenreRow,
+  SeedHallRow,
   SeedMovie,
   SeedNamedRow,
   SeedPage,
@@ -22,11 +23,13 @@ import type {
 /**
  * The steps of `npm run seed`, in order. Each finds what exists through the admin list routes
  * and creates only what is missing, so the seed can run again (or resume after a failure)
- * without duplicating anything. U8b appends: halls before `publish-theaters` (an active hall
- * becomes a publish requirement with U5), showtimes at the end.
+ * without duplicating anything. `halls` gives each theater to publish an active hall (its
+ * `active_hall` publish requirement, U5) before `publish-theaters`; U8b appends showtimes at the
+ * end.
  */
 export const SEED_STEPS: readonly SeedStep[] = [
   { name: 'theaters', run: seedTheaters },
+  { name: 'halls', run: seedHalls },
   { name: 'publish-theaters', run: publishTheaters },
   { name: 'people', run: seedPeople },
   { name: 'movies', run: seedMovies },
@@ -134,6 +137,31 @@ async function completeTheater(
       });
     }
   }
+}
+
+/** Each theater to publish gets the standard-layout hall `SEED_HALL_NAME`, made active. */
+async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
+  const { api } = context;
+  let created = 0;
+  let kept = 0;
+  for (const theater of SEED_THEATERS) {
+    const id = context.theaterIds.get(theater.name);
+    if (id === undefined || !theater.publish) continue;
+    const halls = await listAll<SeedHallRow>(api, `/admin/theaters/${id}/halls`);
+    let hall = halls.find((row) => row.name === SEED_HALL_NAME);
+    if (hall === undefined) {
+      hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, {
+        name: SEED_HALL_NAME,
+      });
+      created += 1;
+    } else {
+      kept += 1;
+    }
+    if (hall.status !== 'active') {
+      await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
+    }
+  }
+  return { created, kept };
 }
 
 async function publishTheaters(context: SeedContext): Promise<SeedStepResult> {

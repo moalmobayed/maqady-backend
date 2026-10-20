@@ -29,3 +29,6 @@ export const SEED_PRICES = {
 
 /** The admin lists the seed reads to find what exists, one page of the maximum size. */
 export const SEED_LIST_LIMIT = 100;
+
+/** The hall the seed adds to each theater it publishes (the standard 12 × 16 layout). */
+export const SEED_HALL_NAME = 'Hall 1';
