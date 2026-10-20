@@ -1,3 +1,9 @@
+import { AccessTokenService } from '../../../../src/common/auth/access-token.service';
+import {
+  AccessProbeModule,
+  TestPrincipalResolvers,
+  TestPrincipalResolversModule,
+} from '../../../support/foundations-probe.module';
 import { createLogCapture } from '../../../support/log-capture';
 import {
   createProbeTable,
@@ -50,7 +56,7 @@ describe('Request logging (integration)', () => {
     testApp = await createTestApp({
       config: buildTestConfig({ logLevel: 'info' }),
       logDestination: capture.stream,
-      imports: [ProbeModule],
+      imports: [ProbeModule, AccessProbeModule, TestPrincipalResolversModule],
     });
     await createProbeTable(testApp.knex, testApp.config.database.schema);
   });
@@ -84,6 +90,31 @@ describe('Request logging (integration)', () => {
     expect(capture.entries().filter((entry) => entry.correlationId === correlationId)).toHaveLength(
       1,
     );
+  });
+
+  it('records the principal kind and id on the line of an authenticated request', async () => {
+    testApp.app
+      .get(TestPrincipalResolvers)
+      .set('customer', 70, { kind: 'customer', id: 7, sessionId: 70 });
+    const token = testApp.app
+      .get(AccessTokenService)
+      .sign({ audience: 'customer', subjectId: 7, sessionId: 70 });
+    const signedIn = await testApp
+      .http()
+      .get('/api/v1/test-access/customer')
+      .set('Authorization', `Bearer ${token}`);
+    const anonymous = await testApp.http().get('/api/v1/health');
+
+    expect(signedIn.status).toBe(200);
+    expect(await requestLine(capture, signedIn.headers['x-request-id'] as string)).toMatchObject({
+      route: '/api/v1/test-access/customer',
+      principalKind: 'customer',
+      principalId: 7,
+    });
+    expect(await requestLine(capture, anonymous.headers['x-request-id'] as string)).toMatchObject({
+      principalKind: null,
+      principalId: null,
+    });
   });
 
   it('never logs bodies, query strings, tokens or cookies', async () => {

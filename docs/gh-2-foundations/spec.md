@@ -218,6 +218,10 @@ the `Clock`, malformed claims → `UNAUTHENTICATED`), then asks the audience's r
 `AppError` (`ACCOUNT_BLOCKED`, `ACCOUNT_DEACTIVATED`, `SESSION_REVOKED`). The principal is on
 `request.principal` and `@CurrentPrincipal()`.
 
+**Request lines** (design §14.4) carry `principalKind` (`customer`, `staff`) and `principalId`
+from `request.principal`, both null for guests and public routes; never more of the principal
+(review finding R3).
+
 **Owner** (for U10–U12): declare the route `@Customer()` or `@Guest()`; the service loads the
 resource by the principal's id (or the hold code) and answers `404 NOT_FOUND` for anyone else's.
 

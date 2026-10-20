@@ -152,6 +152,28 @@ describe('requestLogLine', () => {
       route: '/api/v1/bookings/:ref',
       statusCode: 200,
       responseTime: 12,
+      principalKind: null,
+      principalId: null,
+    });
+  });
+
+  it('records the kind and id of the principal the guards resolved, never more of it', () => {
+    const line = requestLogLine(
+      request({
+        method: 'GET',
+        route: { path: '/api/v1/admin/bookings' },
+        principal: { kind: 'staff', id: 3, sessionId: 30, role: 'admin' },
+      }),
+      response(200),
+      5,
+    );
+    expect(line).toEqual({
+      method: 'GET',
+      route: '/api/v1/admin/bookings',
+      statusCode: 200,
+      responseTime: 5,
+      principalKind: 'staff',
+      principalId: 3,
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import type { DestinationStream } from 'pino';
+import type { Principal } from '../auth/types';
 import type { LogLevel } from '../config/types';
 
 export interface LoggingOptions {
@@ -18,14 +19,20 @@ export interface SerializedError {
   readonly cause?: SerializedError;
 }
 
-/** The one line logged per request (design §14.4). Auth units add the principal kind and id. */
+/** The one line logged per request (design §14.4). */
 export interface RequestLogLine {
   readonly method: string | undefined;
   /** The matched route template, such as `/api/v1/health/ready`; null when no route matched. */
   readonly route: string | null;
   readonly statusCode: number;
   readonly responseTime: number;
+  /** Who the guards resolved: `customer` or `staff`, and their id; null for guests and public routes. */
+  readonly principalKind: Principal['kind'] | null;
+  readonly principalId: number | null;
 }
+
+/** A request after the guards ran: `principal` is set when a valid token was presented. */
+export type AuthenticatedRequest = IncomingMessage & { readonly principal?: Principal };
 
 /** A request after Express routing: `route.path` is the matched template. */
 export type RoutedRequest = IncomingMessage & {

@@ -4,7 +4,7 @@ import { type LevelWithSilent, stdTimeFunctions } from 'pino';
 import type { Options } from 'pino-http';
 import { REQUEST_ID_HEADER, resolveCorrelationId } from './correlation-id';
 import { serializeError } from './error-serializer';
-import type { LoggingOptions, RequestLogLine, RoutedRequest } from './types';
+import type { AuthenticatedRequest, LoggingOptions, RequestLogLine, RoutedRequest } from './types';
 
 /**
  * Header paths censored wherever a header object is logged. Request lines never include headers;
@@ -77,11 +77,14 @@ export function requestLogLine(
   res: ServerResponse,
   responseTime: number,
 ): RequestLogLine {
+  const { principal } = req as AuthenticatedRequest;
   return {
     method: req.method,
     route: routeTemplateOf(req),
     statusCode: res.statusCode,
     responseTime,
+    principalKind: principal?.kind ?? null,
+    principalId: principal?.id ?? null,
   };
 }
 
