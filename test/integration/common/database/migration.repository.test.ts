@@ -101,6 +101,40 @@ describe('Migrations (integration)', () => {
     expect(names).toContain('0010_01_create_schema');
   });
 
+  describe('when several processes boot at once against an empty database', () => {
+    const RACE_DATABASE = 'maqady_race_test';
+    const INSTANCES = 4;
+    const racers: Knex[] = [];
+
+    afterAll(async () => {
+      await Promise.all(racers.map((knex) => knex.destroy()));
+      await testApp.knex.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [RACE_DATABASE]);
+    });
+
+    it('migrates once, and every process starts', async () => {
+      await testApp.knex.raw('DROP DATABASE IF EXISTS ?? WITH (FORCE)', [RACE_DATABASE]);
+      await testApp.knex.raw('CREATE DATABASE ??', [RACE_DATABASE]);
+      const url = new URL(testDatabaseUrl());
+      url.pathname = `/${RACE_DATABASE}`;
+      const config = buildTestConfig({ database: { url: url.toString(), schema: TEST_SCHEMA } });
+
+      // One Knex per process, as in a deploy that starts several instances side by side.
+      for (let i = 0; i < INSTANCES; i += 1) racers.push(createKnex(config.database));
+      const results = await Promise.allSettled(
+        racers.map((knex) => new MigrationRepository(knex, config).migrateLatest()),
+      );
+
+      const failures = results.flatMap((result) =>
+        result.status === 'rejected' ? [String((result.reason as Error).message)] : [],
+      );
+      expect(failures).toEqual([]);
+      const applied = results.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value.applied : [],
+      );
+      expect(applied).toEqual(['0010_01_create_schema']);
+    });
+  });
+
   describe('on a Supabase-style database, where an extensions schema exists', () => {
     const SCRATCH_DATABASE = 'maqady_scratch_test';
     let scratch: Knex | undefined;

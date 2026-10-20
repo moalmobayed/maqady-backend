@@ -22,6 +22,12 @@ export const APPLICATION_NAME = 'maqady-backend';
  */
 export const EXTENSION_SCHEMAS = ['extensions', 'public'] as const;
 
+/**
+ * Advisory-lock name that serializes migration runs in one database. Knex's own lock can't:
+ * creating the schema and Knex's tables happens before it, and concurrent first runs collide.
+ */
+export const MIGRATION_ADVISORY_LOCK = 'maqady-backend:migrations';
+
 /** Knex's bookkeeping table; it lives in the service's schema (with `<name>_lock`). */
 export const MIGRATIONS_TABLE = 'knex_migrations';
 

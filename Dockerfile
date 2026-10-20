@@ -28,6 +28,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
-# dist/main.js validates the environment, runs pending migrations under Knex's lock, then
+# dist/main.js validates the environment, runs pending migrations under an advisory lock, then
 # listens on PORT. A failed migration stops the container before it serves anything.
 CMD ["node", "--enable-source-maps", "dist/main.js"]

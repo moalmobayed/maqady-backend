@@ -1039,8 +1039,10 @@ has no `LIMIT`, hence the sub-select. This only tidies up (ADR 0003).
 - Knex error messages quote the SQL with its placeholders, never the bound values
   (`compileSqlOnError: false`).
 - Migrations run at boot before the server listens, and through `npm run migrate`. The runner
-  creates the schema if it is missing, then runs `knex.migrate.latest()` under Knex's lock.
-  Each migration receives `(knex, { schema })`.
+  takes a transaction-scoped advisory lock (`pg_advisory_xact_lock`) on its own connection,
+  creates the schema if it is missing, then runs `knex.migrate.latest()`. The advisory lock
+  serializes concurrent runs, including the first, when Knex's own lock table doesn't exist
+  yet. Each migration receives `(knex, { schema })`.
 
 ### 14.3 Errors
 
@@ -1177,8 +1179,8 @@ The testing policy in `CLAUDE.md` binds this section.
      `git diff --exit-code` fails the job if the committed copy is stale. The script builds the
      app without a database or a listener.
 - **Deployment.** Render builds the Dockerfile from `main`.
-  - On boot the service runs `knex migrate:latest` before listening. Knex's migration lock
-    makes that safe, and migrations stay backward-compatible (§6.1).
+  - On boot the service runs `knex migrate:latest` before listening. The runner's advisory
+    lock makes concurrent boots safe (§14.2), and migrations stay backward-compatible (§6.1).
   - The health check path is `/api/v1/health`.
   - Secrets live in Render's environment settings.
   - The first deploy confirms how Render fills `X-Forwarded-For`, so the proxy-trust setting

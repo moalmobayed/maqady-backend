@@ -99,8 +99,9 @@ refuse a database whose name doesn't end in `_test`.
   `SET idle_in_transaction_session_timeout = '15s'` and `SET TIME ZONE 'UTC'`.
 - Type parsers: `BIGINT` → safe-integer number (an unsafe value throws), `NUMERIC` → float,
   `DATE` → string, and the array forms of all three.
-- Migrations run at boot before `listen`, and through `npm run migrate`. The runner creates
-  `DB_SCHEMA` if it is missing, then runs `knex.migrate.latest()` under Knex's lock.
+- Migrations run at boot before `listen`, and through `npm run migrate`. Under a
+  transaction-scoped advisory lock, so concurrent runs wait for each other, the runner creates
+  `DB_SCHEMA` if it is missing, then runs `knex.migrate.latest()`.
 
 **Migration `0010_01_create_schema`**
 

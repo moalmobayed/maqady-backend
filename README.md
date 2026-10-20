@@ -138,7 +138,7 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 ## Deploying (Render and Supabase)
 
 - Render builds the `Dockerfile`. The container runs `node dist/main.js`, which migrates under
-  Knex's lock, then listens on `PORT`. Set the health check path to `/api/v1/health`.
+  an advisory lock, then listens on `PORT`. Set the health check path to `/api/v1/health`.
 - Set the environment variables above in Render; secrets live only there.
 - `DATABASE_URL` is Supabase's **session pooler** URL (port 5432): the direct connection is IPv6
   only. Supabase requires TLS. With `sslmode=require`, node-pg also verifies the certificate, so
