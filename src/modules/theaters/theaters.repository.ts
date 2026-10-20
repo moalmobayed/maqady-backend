@@ -68,7 +68,8 @@ export class TheatersRepository {
   /**
    * The theater, locked against every other theater write and against U5's and U7's
    * `FOR SHARE` until the transaction ends. `FOR NO KEY UPDATE`, so other transactions' foreign
-   * key checks (a new hall or showtime row) are not blocked.
+   * key checks (a new hall or showtime row) are not blocked, except after an `UPDATE` of `name`
+   * or `cover_image_id`: Postgres takes `FOR UPDATE` for a change to a uniquely indexed column.
    */
   async findByIdForWrite(id: number): Promise<TheaterRow | undefined> {
     return this.theaters()
