@@ -30,8 +30,8 @@ export interface IssuedSession {
 
 /**
  * What `SessionService.refresh()` takes. `assertOwnerLive` throws the owner's own error (for
- * example `ACCOUNT_DEACTIVATED`) when the account may no longer refresh; the rotation then rolls
- * back.
+ * example `ACCOUNT_DEACTIVATED`) when the account may no longer refresh. It runs before the
+ * session's own checks, so that error wins over `SESSION_REVOKED`, and nothing is written.
  */
 export interface RefreshSessionInput {
   readonly audience: TokenAudience;

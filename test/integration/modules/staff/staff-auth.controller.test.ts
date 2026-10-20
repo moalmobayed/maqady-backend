@@ -281,15 +281,21 @@ describe('Staff auth routes (integration)', () => {
       expectError(await refresh('Z'.repeat(43)), 401, 'UNAUTHENTICATED');
     });
 
-    it('refuses a deactivated member with ACCOUNT_DEACTIVATED and keeps the token unrotated', async () => {
+    it('refuses a member an admin deactivated with ACCOUNT_DEACTIVATED, as every route does, and rotates nothing', async () => {
+      const admin = await staffSession(testApp, 'admin');
       const session = await staffSession(testApp, 'box_office');
-      await testApp
-        .knex('staff_users')
-        .update({ status: 'deactivated' })
-        .where({ id: session.staffUserId });
+      const deactivated = await testApp
+        .http()
+        .patch(`/api/v1/admin/staff/${session.staffUserId}`)
+        .set('Authorization', admin.authorization)
+        .send({ status: 'deactivated' });
+      expect(deactivated.status).toBe(200);
+
+      // The deactivation also revoked the session; the account's state is still the answer.
       expectError(await refresh(session.refreshToken), 403, 'ACCOUNT_DEACTIVATED');
+      expectError(await me(session.accessToken), 403, 'ACCOUNT_DEACTIVATED');
       expect(await sessionRows(session.staffUserId)).toEqual([
-        expect.objectContaining({ rotated_at: null, revoked_at: null }),
+        expect.objectContaining({ rotated_at: null, revoked_reason: 'account_deactivated' }),
       ]);
     });
   });

@@ -700,6 +700,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - After 30 seconds, presenting an already-rotated token revokes the whole family
     (`SESSION_REVOKED`).
   - A token nobody issued answers `UNAUTHENTICATED`; the frontend signs in again on any 401.
+  - The account is checked before the session, as on every request (§10.3): a deactivated
+    staff member gets `ACCOUNT_DEACTIVATED` and a blocked customer `ACCOUNT_BLOCKED`, although
+    the deactivation or block also revoked the session (U2a).
 - **Revocation.**
   - Sign-out revokes the family.
   - Blocking a customer, or deactivating or demoting a staff member, revokes all their

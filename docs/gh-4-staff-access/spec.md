@@ -56,7 +56,7 @@ reuse unchanged. Later units get a test helper that hands them a real token of e
 | One `sessions` row per refresh token; `family_id UUID` groups a sign-in's chain; `sid` in the access token is the row id of the newest token | Rotation keeps history (`rotated_at`, `replaced_by_id`) and reuse detection needs the old row. Revoking sets `revoked_at` on every row of the family, so any access token of the family is refused at once. |
 | Session expiry is absolute: a rotated row inherits the family's `expires_at` (sign-in + 12 h for staff, + 30 days for U9's customers) | §10.2 says a refresh token "lasts" 12 hours / 30 days. Read literally, the lifetime belongs to the sign-in, not to each rotation, and a sliding window would let a stolen token live forever by refreshing every 15 minutes. A staff session is a shift; a customer signs in again monthly. One rule for both audiences, recorded in §10.2. |
 | `POST /admin/auth/tokens` is `@NoRequestTransaction()` + `@NoIdempotencyStorage()`; `SessionService.refresh()` opens its own transaction and throws `SESSION_REVOKED` only after the family revocation committed | Inside the request transaction the error would roll the revocation back, and reuse detection would never stick. Accepted deviation from §10.2/§14.1 ("auth routes run in the transaction"); both sections now say refresh routes are the exception. U9's `POST /auth/tokens` uses the same two decorators. |
-| Refresh order of checks: unknown (or the other audience's) → `UNAUTHENTICATED`; revoked → `SESSION_REVOKED`; expired → `SESSION_EXPIRED`; already rotated and `now < rotated_at + 30 s` → `REFRESH_CONFLICT` (no write); rotated later → revoke the family, `SESSION_REVOKED`; then the caller's account check | Expired or revoked families need no reuse handling; the grace window never revokes (§10.2). An unknown well-formed token is `UNAUTHENTICATED`, not `SESSION_REVOKED`: there is no session to call revoked, and the frontend sends the user to sign-in on any 401. |
+| Refresh order of checks: unknown (or the other audience's) → `UNAUTHENTICATED`; the caller's account check (staff: `ACCOUNT_DEACTIVATED` unless `active`); revoked → `SESSION_REVOKED`; expired → `SESSION_EXPIRED`; already rotated and `now < rotated_at + 30 s` → `REFRESH_CONFLICT` (no write); rotated later → revoke the family, `SESSION_REVOKED` | The account comes first, as in the resolver: a deactivation revokes every session with it, so with the account check last a deactivated member's refresh could only ever answer `SESSION_REVOKED`, never the `ACCOUNT_DEACTIVATED` the contract promises (review F1). Expired or revoked families need no reuse handling; the grace window never revokes (§10.2). An unknown well-formed token is `UNAUTHENTICATED`, not `SESSION_REVOKED`: there is no session to call revoked, and the frontend sends the user to sign-in on any 401. |
 | The presented row is read `FOR UPDATE` | Two concurrent refreshes of one token serialize: the second sees `rotated_at` and gets `REFRESH_CONFLICT`. |
 | Sign-in is `@NoIdempotencyStorage()` and runs in the request transaction; sign-out also `@NoIdempotencyStorage()` | §10.2: auth responses are never stored. Sign-out is naturally idempotent. |
 | Sign-in: unknown email, or an `invited` member without a password, still runs one scrypt against a fixed dummy hash and answers `INVALID_CREDENTIALS` | Timing and answer never reveal whether the email exists. |
@@ -271,10 +271,10 @@ stored parameters, `timingSafeEqual` the keys.
 6. `AccessTokenService.sign({ audience: 'staff', subjectId: id, sessionId })`.
 
 **Refresh** (`SessionService.refresh`, its own transaction; refuses with `INTERNAL` when a
-transaction is already open): the order in Decisions. On success insert the new row (same
-`family_id`, owner and `expires_at`, `created_at = now`), then mark the old row `rotated_at = now,
-replaced_by_id = new.id`, call `assertOwnerLive(ownerId)` (staff: `ACCOUNT_DEACTIVATED` unless
-`active`; a throw rolls the rotation back), and return. Reuse after the grace window ends that
+transaction is already open): the order in Decisions, with `assertOwnerLive(ownerId)` (staff:
+`ACCOUNT_DEACTIVATED` unless `active`) right after the row is found, before anything is written.
+On success insert the new row (same `family_id`, owner and `expires_at`, `created_at = now`),
+then mark the old row `rotated_at = now, replaced_by_id = new.id`, and return. Reuse after the grace window ends that
 transaction, then, in a second one, revokes the family with `refresh_reuse` and writes audit
 `session.reuse_detected` (actor system), commits, and throws `SESSION_REVOKED`. The second
 transaction locks the live heads first like every revocation, so concurrent replays and sign-outs

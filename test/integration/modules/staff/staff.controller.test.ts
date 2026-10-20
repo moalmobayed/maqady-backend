@@ -246,8 +246,8 @@ describe('Staff management routes (integration)', () => {
           .http()
           .post('/api/v1/admin/auth/tokens')
           .send({ refreshToken: member.refreshToken }),
-        401,
-        'SESSION_REVOKED',
+        403,
+        'ACCOUNT_DEACTIVATED',
       );
       const revoked = await testApp
         .knex('sessions')
