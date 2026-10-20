@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../app.module';
 import { configureApp } from '../app.setup';
-import type { AppConfig } from '../common/config/types';
+import { loadConfig } from '../common/config/load-config';
 import { serializeError } from '../common/logging/error-serializer';
 import {
   buildOpenApiDocument,
@@ -15,13 +15,17 @@ import {
 /**
  * Placeholder configuration: the document depends on code only, and nothing here is ever
  * contacted. The app is created but never listens, and Knex connects only on a first query.
+ * The secrets are fixed dummies, never used to sign or encrypt anything.
  */
-const CONTRACT_CONFIG: AppConfig = {
-  port: 3000,
-  logLevel: 'silent',
-  corsOrigins: ['http://localhost:5173'],
-  database: { url: 'postgres://contract@127.0.0.1:5432/contract', schema: 'maqady' },
-};
+const CONTRACT_CONFIG = loadConfig({
+  DATABASE_URL: 'postgres://contract@127.0.0.1:5432/contract',
+  DB_SCHEMA: 'maqady',
+  CORS_ORIGINS: 'http://localhost:5173',
+  LOG_LEVEL: 'silent',
+  JWT_SECRET_CUSTOMER: Buffer.alloc(32, 1).toString('base64'),
+  JWT_SECRET_STAFF: Buffer.alloc(32, 2).toString('base64'),
+  DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+});
 
 /** `npm run contract`: writes `contracts/openapi.yaml` from the controllers and DTOs. */
 async function main(): Promise<void> {

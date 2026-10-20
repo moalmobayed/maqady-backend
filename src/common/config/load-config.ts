@@ -1,8 +1,11 @@
 import { plainToInstance } from 'class-transformer';
 import { type ValidationError, validateSync } from 'class-validator';
+import { RATE_LIMIT_NAMES } from '../rate-limit/enums';
+import { parseRateLimitRule, RATE_LIMIT_DEFINITIONS } from '../rate-limit/rate-limit.constants';
+import type { RateLimitName, RateLimitRule, RateLimitsConfig } from '../rate-limit/types';
 import { EnvironmentVariables } from './environment-variables';
 import type { AppConfig, LogLevel } from './types';
-import { splitList } from './validators';
+import { decodeSecret, splitList } from './validators';
 
 export const DEFAULT_PORT = 3000;
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
@@ -29,8 +32,16 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
 
   const variables = plainToInstance(EnvironmentVariables, present);
   const errors = validateSync(variables);
-  if (errors.length > 0) {
-    throw new ConfigValidationError(errors.map(describeProblem));
+  const problems = errors.map(describeProblem);
+  if (
+    problems.length === 0 &&
+    sameSecret(variables.JWT_SECRET_CUSTOMER, variables.JWT_SECRET_STAFF)
+  ) {
+    // One secret for both audiences would let a customer token pass as a staff token.
+    problems.push('JWT_SECRET_STAFF must differ from JWT_SECRET_CUSTOMER');
+  }
+  if (problems.length > 0) {
+    throw new ConfigValidationError(problems);
   }
 
   return {
@@ -38,7 +49,35 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     logLevel: variables.LOG_LEVEL ?? DEFAULT_LOG_LEVEL,
     corsOrigins: splitList(variables.CORS_ORIGINS),
     database: { url: variables.DATABASE_URL, schema: variables.DB_SCHEMA },
+    auth: {
+      customerTokenSecret: variables.JWT_SECRET_CUSTOMER,
+      staffTokenSecret: variables.JWT_SECRET_STAFF,
+    },
+    encryption: {
+      key: variables.DATA_ENCRYPTION_KEY,
+      ...(variables.DATA_ENCRYPTION_PREVIOUS_KEY
+        ? { previousKey: variables.DATA_ENCRYPTION_PREVIOUS_KEY }
+        : {}),
+    },
+    rateLimits: rateLimitsFrom(present),
   };
+}
+
+function sameSecret(first: string, second: string): boolean {
+  const a = decodeSecret(first);
+  const b = decodeSecret(second);
+  return a !== undefined && b !== undefined && a.equals(b);
+}
+
+/** Every limit of design §10.6: the variable when set (already validated), else the default. */
+function rateLimitsFrom(present: Readonly<Record<string, string>>): RateLimitsConfig {
+  const entries = RATE_LIMIT_NAMES.map((name): [RateLimitName, RateLimitRule] => {
+    const { variable, defaultRule } = RATE_LIMIT_DEFINITIONS[name];
+    const rule = parseRateLimitRule(present[variable] ?? defaultRule);
+    if (!rule) throw new ConfigValidationError([`${variable} is not a valid rate limit`]);
+    return [name, rule];
+  });
+  return Object.fromEntries(entries) as Record<RateLimitName, RateLimitRule>;
 }
 
 function describeProblem(error: ValidationError): string {

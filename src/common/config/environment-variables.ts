@@ -4,7 +4,8 @@ import { Type } from 'class-transformer';
 import { IsDefined, IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 import { LOG_LEVELS } from './enums';
 import type { LogLevel } from './types';
-import { IsOriginList, IsPostgresUrl } from './validators';
+import { ACCESS_TOKEN_SECRET_MIN_BYTES, DATA_ENCRYPTION_KEY_BYTES } from './config.constants';
+import { IsOriginList, IsPostgresUrl, IsRateLimitRule, IsSecret } from './validators';
 
 /**
  * The raw environment variables this service reads, as validated at boot.
@@ -37,4 +38,68 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsIn(LOG_LEVELS, { message: `must be one of ${LOG_LEVELS.join(', ')}` })
   LOG_LEVEL?: LogLevel;
+
+  // Secrets (design §10.2, §14.1). Messages never echo the value.
+
+  @IsDefined({ message: 'is required' })
+  @IsSecret({ minBytes: ACCESS_TOKEN_SECRET_MIN_BYTES })
+  JWT_SECRET_CUSTOMER!: string;
+
+  @IsDefined({ message: 'is required' })
+  @IsSecret({ minBytes: ACCESS_TOKEN_SECRET_MIN_BYTES })
+  JWT_SECRET_STAFF!: string;
+
+  @IsDefined({ message: 'is required' })
+  @IsSecret({ exactBytes: DATA_ENCRYPTION_KEY_BYTES })
+  DATA_ENCRYPTION_KEY!: string;
+
+  @IsOptional()
+  @IsSecret({ exactBytes: DATA_ENCRYPTION_KEY_BYTES })
+  DATA_ENCRYPTION_PREVIOUS_KEY?: string;
+
+  // Rate limits (design §10.6), `<count>/<window>`. Unset means the design's default.
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_DEFAULT?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_SIGN_IN_EMAIL?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_SIGN_IN_IP?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_REGISTRATION_IP?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_EMAIL_REQUEST_EMAIL?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_EMAIL_REQUEST_IP?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_HOLD_IP?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_HOLD_CUSTOMER?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_PAYMENT?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_TICKET_EMAIL?: string;
+
+  @IsOptional()
+  @IsRateLimitRule()
+  RATE_LIMIT_SEARCH?: string;
 }
