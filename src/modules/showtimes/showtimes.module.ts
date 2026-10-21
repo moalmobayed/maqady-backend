@@ -22,8 +22,10 @@ import { ShowtimesService } from './showtimes.service';
  *
  * - `ShowtimeReadService`: showtimes by id, by movie, by theater and date (U8, U10, U14);
  * - the booking seams `ShowtimeCancellationService` (U14), `ShowtimeTicketHolderService`
- *   (U10/U11) and `ShowtimeSeatClaimService` (U10), bound here to their no-bookings defaults
- *   until those units rebind them.
+ *   (U10/U11) and `ShowtimeSeatClaimService` (U10), bound here to their no-bookings defaults.
+ *   Those units replace the bindings here, in this module's `providers` (`useExisting` the
+ *   implementation their own module exports, that module imported here): this module's own
+ *   provider wins over an imported one, so a binding made only in their module has no effect.
  */
 @Module({
   imports: [TheatersModule, HallsModule, CatalogModule],

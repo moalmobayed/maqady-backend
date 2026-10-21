@@ -288,8 +288,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   and read showtimes through `ShowtimeReadService` (`findById(s)` in any status; `listScheduled`
   by movie or theater over up to 31 cinema dates; `nextScheduledPerMovie` for the ticker;
   `movieIdsScheduled`; `listUnendedInHall`), each a fixed number of queries; never query
-  `showtimes`. Bookings plug in by rebinding three seams the module binds to no-bookings
-  defaults: `ShowtimeCancellationService` (refunds on cancel), `ShowtimeTicketHolderService`
+  `showtimes`. Bookings plug in by replacing, in `ShowtimesModule`'s own `providers` (a binding
+  made only in the bookings module has no effect: the module's own provider wins), three seams
+  it binds to no-bookings defaults: `ShowtimeCancellationService` (refunds on cancel), `ShowtimeTicketHolderService`
   (whom a move notifies) and `ShowtimeSeatClaimService` (live claims behind `HALL_IN_USE`).
   Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
   `toShowtimePricesResponse()`).

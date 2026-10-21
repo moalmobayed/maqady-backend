@@ -8,8 +8,11 @@ import type { ShowtimeCancellationInput, ShowtimeCancellationOutcome } from './t
  * once, in the request transaction, with the showtime locked `FOR UPDATE` and before its status
  * changes, so an in-flight payment has committed and a later one sees the cancellation.
  *
- * `ShowtimesModule` binds `NoBookingsShowtimeCancellation` until bookings exist; U14 rebinds the
- * token (`{ provide: ShowtimeCancellationService, useClass: … }`) in the module that owns them.
+ * `ShowtimesModule` binds `NoBookingsShowtimeCancellation` until bookings exist. U14 replaces that
+ * binding in `ShowtimesModule`'s own `providers` (importing the module that owns bookings, then
+ * `{ provide: ShowtimeCancellationService, useExisting: … }`). Binding the token only in the
+ * owning module changes nothing: a module's own provider wins over an imported one, so
+ * `ShowtimesService` would keep the no-bookings default and refund nobody.
  */
 export abstract class ShowtimeCancellationService {
   abstract cancelBookings(input: ShowtimeCancellationInput): Promise<ShowtimeCancellationOutcome>;

@@ -8,7 +8,9 @@ import { Injectable } from '@nestjs/common';
  * showtimes that have not ended, and refuses the layout save with `HALL_IN_USE` for every one
  * named.
  *
- * `ShowtimesModule` binds `NoSeatClaims` until seat claims exist; U10 rebinds the token.
+ * `ShowtimesModule` binds `NoSeatClaims` until seat claims exist. U10 replaces that binding in
+ * `ShowtimesModule`'s own `providers` (`useExisting` the implementation its module exports);
+ * binding the token only in another module leaves this default in force.
  */
 export abstract class ShowtimeSeatClaimService {
   abstract showtimeIdsWithLiveClaims(showtimeIds: readonly number[]): Promise<ReadonlySet<number>>;

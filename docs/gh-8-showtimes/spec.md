@@ -92,7 +92,7 @@ service; bookings (U10–U14) plug into two seams this unit defines.
 | Theater and movie deletion are blocked by any showtime row (`has_showtimes`); FKs with no action back it | PRD "Theaters and movies" 2; U4b and U6 follow-ups. |
 | Move notifications: for each ticket holder an email (`showtime.moved`) and, with a phone, an SMS (`showtime.moved_sms`), queued in the move's transaction with one `MessagingService.queueMany()` call | PRD "Notifications"; one multi-row insert, never one per holder. |
 | Templates show times as `formatCairoDisplay()` (`Fri 16 Oct 2026, 19:30`), a new `common/time` helper | Only `common/time` converts instants to wall clocks (`CLAUDE.md`). |
-| The three booking seams are abstract classes (DI tokens) in `showtimes`; `ShowtimesModule` binds the defaults, and U10/U14 rebind them to bookings' and seating's implementations | Design §5: showtimes calls bookings, bookings never calls showtimes' repository. |
+| The three booking seams are abstract classes (DI tokens) in `showtimes`; `ShowtimesModule` binds the defaults, and U10/U14 rebind them to bookings' and seating's implementations by replacing the bindings in `ShowtimesModule`'s own `providers` (`useExisting`, the owning module imported). A binding made only in the owning module has no effect: a Nest module's own provider wins over an imported one | Design §5: showtimes calls bookings, bookings never calls showtimes' repository. |
 | `HALL_IN_USE` is decided here: the `hall_in_use` participant lists the hall's scheduled showtimes with `ends_at > now` and keeps those `ShowtimeSeatClaimService.showtimeIdsWithLiveClaims()` names | The task scope ("HALL_IN_USE for showtimes that have not ended"); U10 only supplies the claims, so the rule has one owner. Design §9 said U10 registers the participant: updated. |
 | `HallReadService.findByIds()` (3 queries) is added to U5's module | `ShowtimeReadService` needs hall names and zone seat counts of many showtimes' halls in a fixed number of queries; U5 had no batch summary read. |
 | The dates of one request never conflict with one another | The same wall-clock start on two cinema dates is at least 23 hours apart and a runtime is at most 600 minutes (`chk_movies_runtime_minutes`), so neither the dry run nor the batch simulates earlier dates of the request. |
@@ -531,6 +531,8 @@ implementations of our own interfaces, `test/support/showtimes/`):
 
 ## Follow-ups
 
+- Every rebinding below replaces the default in `ShowtimesModule`'s `providers` (see Decisions);
+  declaring the token only in the owning module leaves the no-bookings default in force.
 - **U10** (holds, #11): rebind `ShowtimeTicketHolderService` (confirmed bookings' contacts, one
   query) and `ShowtimeSeatClaimService` (live claims judged by `claimed_until`, one query) from
   the module that owns bookings and seat claims; read showtimes through `ShowtimeReadService`
