@@ -2,7 +2,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Knex } from 'knex';
 import { APP_CONFIG } from '../config/config.constants';
 import type { AppConfig } from '../config/types';
-import { KNEX, MIGRATION_ADVISORY_LOCK, MIGRATIONS_TABLE } from './database.constants';
+import {
+  KNEX,
+  MIGRATION_ADVISORY_LOCK,
+  MIGRATION_LOCK_HOLDER_IDLE_TIMEOUT,
+  MIGRATION_LOCK_TIMEOUT,
+  MIGRATIONS_TABLE,
+} from './database.constants';
 import { MIGRATIONS } from './migration-list';
 import { ListedMigrationSource } from './migration-source';
 import type { MigrationResult } from './types';
@@ -30,10 +36,14 @@ export class MigrationRepository {
     const { schema } = this.config.database;
 
     const [batch, applied] = await this.knex.transaction(async (lock) => {
-      // The holder sits idle while the migrations run on other connections, and a waiter may
-      // wait for a whole run, so neither session limit applies to this transaction.
+      // A waiter may wait for a whole run, but no longer than MIGRATION_LOCK_TIMEOUT; the holder
+      // sits idle while the migrations run on other connections, for at most
+      // MIGRATION_LOCK_HOLDER_IDLE_TIMEOUT, so a holder whose process died frees the lock.
       await lock.raw("SET LOCAL statement_timeout = '0'");
-      await lock.raw("SET LOCAL idle_in_transaction_session_timeout = '0'");
+      await lock.raw(`SET LOCAL lock_timeout = '${MIGRATION_LOCK_TIMEOUT}'`);
+      await lock.raw(
+        `SET LOCAL idle_in_transaction_session_timeout = '${MIGRATION_LOCK_HOLDER_IDLE_TIMEOUT}'`,
+      );
       await lock.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [MIGRATION_ADVISORY_LOCK]);
 
       // Knex keeps its bookkeeping tables in the schema, so it must exist before Knex looks.

@@ -1,5 +1,9 @@
 import type { Knex } from 'knex';
-import { MIGRATIONS_DIRECTORY } from '../../../../src/common/database/database.constants';
+import * as databaseConstants from '../../../../src/common/database/database.constants';
+import {
+  MIGRATION_ADVISORY_LOCK,
+  MIGRATIONS_DIRECTORY,
+} from '../../../../src/common/database/database.constants';
 import { createKnex } from '../../../../src/common/database/knex.factory';
 import { DirectoryMigrationSource } from '../../../../src/common/database/migration-source';
 import { MigrationRepository } from '../../../../src/common/database/migration.repository';
@@ -137,6 +141,35 @@ describe('Migrations (integration)', () => {
       const names = await scratch.withSchema(TEST_SCHEMA).from('knex_migrations').pluck('name');
       expect(names).toContain('0010_01_create_schema');
     });
+  });
+
+  describe('when a dead process still holds the migration lock', () => {
+    let holder: Knex;
+
+    afterAll(async () => {
+      await holder.destroy();
+    });
+
+    it('gives up waiting with a lock timeout instead of hanging', async () => {
+      // A process that died mid-run, while a pooler kept its server session open, still holds
+      // the lock in an open transaction. Hold it the same way from another connection, then boot.
+      holder = createKnex(testApp.config.database);
+      const deadRun = await holder.transaction();
+      // The repository reads the limit when it migrates, so a short one keeps this test fast.
+      const constants: { MIGRATION_LOCK_TIMEOUT: string } = databaseConstants;
+      jest.replaceProperty(constants, 'MIGRATION_LOCK_TIMEOUT', '300ms');
+      try {
+        await deadRun.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [MIGRATION_ADVISORY_LOCK]);
+        const started = Date.now();
+        await expect(
+          new MigrationRepository(testApp.knex, testApp.config).migrateLatest(),
+        ).rejects.toThrow('canceling statement due to lock timeout');
+        expect(Date.now() - started).toBeLessThan(5_000);
+      } finally {
+        jest.restoreAllMocks();
+        await deadRun.rollback();
+      }
+    }, 20_000);
   });
 
   describe('when several processes boot at once against an empty database', () => {
