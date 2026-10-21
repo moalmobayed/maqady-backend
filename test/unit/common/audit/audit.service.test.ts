@@ -12,6 +12,7 @@ describe('AuditService', () => {
   beforeEach(() => {
     repository = {
       insert: jest.fn().mockResolvedValue(41),
+      insertMany: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<AuditRepository>;
     service = new AuditService(repository, new TestClock(NOW));
   });
@@ -70,5 +71,33 @@ describe('AuditService', () => {
   ])('refuses %s with INTERNAL, writing nothing', async (_case, overrides) => {
     await expect(service.record(event(overrides))).rejects.toMatchObject({ code: 'INTERNAL' });
     expect(repository.insert).not.toHaveBeenCalled();
+  });
+
+  it('records a batch in one insert, every row checked first (U11 settlement)', async () => {
+    await service.recordMany([
+      event({ bookingId: 12, metadata: { reason: 'claims_lost' } }),
+      event({
+        actor: { kind: 'system' },
+        action: 'payment.refunded',
+        entity: { type: 'payment', id: 7 },
+      }),
+    ]);
+    expect(repository.insertMany).toHaveBeenCalledTimes(1);
+    expect(repository.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({ occurred_at: NOW, action: 'booking.refunded', booking_id: 12 }),
+      expect.objectContaining({
+        actor_kind: 'system',
+        actor_staff_user_id: null,
+        actor_customer_id: null,
+        entity_type: 'payment',
+        entity_id: 7,
+      }),
+    ]);
+
+    repository.insertMany.mockClear();
+    await expect(
+      service.recordMany([event(), event({ metadata: { contactName: 'Mona' } })]),
+    ).rejects.toMatchObject({ code: 'INTERNAL' });
+    expect(repository.insertMany).not.toHaveBeenCalled();
   });
 });

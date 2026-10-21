@@ -1,4 +1,5 @@
 import {
+  paymentStatusOf,
   bookingStatusOf,
   bookingStatusPredicate,
   isLiveHold,
@@ -85,4 +86,23 @@ describe('booking statuses decided by the clock (design 7.4)', () => {
       bindings: [],
     });
   });
+});
+
+describe('the booking payment status (design 7.4; PRD "Statuses")', () => {
+  it.each([
+    ['refunded', false, 'succeeded', 'refunded'],
+    ['confirmed', false, 'succeeded', 'paid'],
+    ['confirmed', true, 'succeeded', 'paid'],
+    ['held', false, null, 'unpaid'],
+    ['held', false, 'cancelled', 'unpaid'],
+    ['held', false, 'processing', 'processing'],
+    ['held', true, 'processing', 'processing'],
+    ['held', true, 'declined', 'declined'],
+    ['held', true, 'cancelled', 'declined'],
+  ] as const)(
+    'a %s booking (declined before: %s, latest charge %s) is %s',
+    (status, hasDeclinedPayment, latestSaleStatus, expected) => {
+      expect(paymentStatusOf({ status, hasDeclinedPayment, latestSaleStatus })).toBe(expected);
+    },
+  );
 });

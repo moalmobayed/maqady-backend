@@ -1,5 +1,6 @@
 import {
   hmacSha256,
+  hmacSha256Bytes,
   randomToken,
   safeEqual,
   sha256Hex,
@@ -18,6 +19,18 @@ describe('hashing helpers', () => {
       'hex',
     ).toString('base64url');
     expect(hmacSha256('Jefe', 'what do ya want for nothing?')).toBe(expected);
+  });
+
+  it('hmacSha256Bytes is the raw 32-byte digest of the same HMAC (RFC 4231 test case 2)', () => {
+    const digest = hmacSha256Bytes(Buffer.from('Jefe'), 'what do ya want for nothing?');
+    expect(digest).toHaveLength(32);
+    expect(digest.toString('hex')).toBe(
+      '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
+    );
+    // A 16-byte truncation is not the first 22 characters of the full base64url digest.
+    expect(digest.subarray(0, 16).toString('base64url')).not.toBe(
+      hmacSha256('Jefe', 'what do ya want for nothing?').slice(0, 22),
+    );
   });
 
   it('randomToken is 32 random bytes as base64url', () => {

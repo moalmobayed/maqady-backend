@@ -1,5 +1,6 @@
 import {
   addMoney,
+  formatMoneyDisplay,
   isCurrency,
   isSameMoney,
   money,
@@ -41,5 +42,17 @@ describe('Money', () => {
     const dollars = { amount: 100, currency: 'USD' } as unknown as Money;
     expect(() => money(100, 'USD' as Money['currency'])).toThrow('Unsupported currency');
     expect(() => addMoney(money(100), dollars)).toThrow('different currencies');
+  });
+
+  it('formats money for people: whole pounds with grouping, piastres only when there are some', () => {
+    expect(formatMoneyDisplay(money(38000))).toBe('EGP 380');
+    expect(formatMoneyDisplay(money(19050))).toBe('EGP 190.50');
+    expect(formatMoneyDisplay(money(123400))).toBe('EGP 1,234');
+    expect(formatMoneyDisplay(money(123456789))).toBe('EGP 1,234,567.89');
+    expect(formatMoneyDisplay(money(5))).toBe('EGP 0.05');
+    expect(formatMoneyDisplay(money(0))).toBe('EGP 0');
+    expect(() => formatMoneyDisplay({ amount: 1.5, currency: 'EGP' })).toThrow(
+      'whole number of minor units',
+    );
   });
 });
