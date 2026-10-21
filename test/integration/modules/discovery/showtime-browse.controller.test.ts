@@ -284,12 +284,13 @@ describe('The public showtime lists', () => {
           date,
           '15:00',
         );
+        // A movie Zamalek didn't show before, so its list has more movie cards to read.
         await scheduleShowtime(
           testApp,
           admin,
-          { movieId: world.movies.nile, hallId: world.halls.downtown },
+          { movieId: world.movies.nile, hallId: world.halls.zamalek },
           date,
-          '15:00',
+          '13:00',
         );
       }
       clock.set(WORLD_NOW);
@@ -297,6 +298,13 @@ describe('The public showtime lists', () => {
       const theaterAfter = await countQueries(testApp, () => get(theaterPath));
       expect(movieAfter).toBe(movieBefore);
       expect(theaterAfter).toBe(theaterBefore);
+      const zamalek = await ok<TheaterShowtimesResponse>(theaterPath);
+      const movieIds = new Set(
+        zamalek.days.flatMap((day) => day.movies.map((group) => group.movie.id)),
+      );
+      expect(movieIds).toEqual(
+        new Set([world.movies.lighthouse, world.movies.tomorrowOnly, world.movies.nile]),
+      );
       const lighthouse = await ok<MovieShowtimesResponse>(moviePath);
       expect(
         lighthouse.theaters.find((row) => row.id === world.theaters.zamalek)!.showtimeCount,
