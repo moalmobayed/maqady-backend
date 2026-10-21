@@ -94,11 +94,13 @@ describe('DirectoryMigrationSource', () => {
 
 describe('ListedMigrationSource', () => {
   const recorder = (label: string) => ({
-    up: async (knex: Knex, context: MigrationContext) => {
+    up: (knex: Knex, context: MigrationContext): Promise<void> => {
       (knex as unknown as { calls: unknown[] }).calls.push([label, 'up', context.schema]);
+      return Promise.resolve();
     },
-    down: async (knex: Knex, context: MigrationContext) => {
+    down: (knex: Knex, context: MigrationContext): Promise<void> => {
       (knex as unknown as { calls: unknown[] }).calls.push([label, 'down', context.schema]);
+      return Promise.resolve();
     },
   });
 

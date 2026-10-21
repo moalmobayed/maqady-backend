@@ -1,0 +1,73 @@
+# Checks the staging deployment and fills it with the development seed (README "Seeding a
+# deployed environment"). Run it from Actions → Seed staging → Run workflow; a push that
+# changes this file runs it too. Needs the STAGING_ADMIN_PASSWORD repository secret: the
+# password of staging's first admin (BOOTSTRAP_ADMIN_PASSWORD on the host). Idempotent.
+name: Seed staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: The staging API's base URL, ending in /api/v1
+        default: https://maqady-backend.vercel.app/api/v1
+  push:
+    branches: [main-jf8hqi]
+    paths: ['.github/workflows/seed-staging.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-staging
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SEED_API_URL: ${{ inputs.api_url || 'https://maqady-backend.vercel.app/api/v1' }}
+      SEED_ADMIN_EMAIL: staging-admin@maqady.local
+      SEED_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check the deployment
+        run: |
+          for path in health health/ready; do
+            printf '%s: ' "$path"
+            curl -sS --max-time 120 -w ' (HTTP %{http_code})\n' "$SEED_API_URL/$path"
+          done
+          curl -sS -o /dev/null --max-time 60 -w 'docs: HTTP %{http_code}\n' "${SEED_API_URL%/api/v1}/api/docs/"
+          curl -sS -o /dev/null --max-time 60 -w 'docs json: HTTP %{http_code}\n' "${SEED_API_URL%/api/v1}/api/docs/openapi.json"
+          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 "$SEED_API_URL/health/ready")" = 200
+
+      - name: Require the admin password secret
+        run: |
+          if [ -z "$SEED_ADMIN_PASSWORD" ]; then
+            echo "::error::Add the STAGING_ADMIN_PASSWORD repository secret (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Seed
+        run: npm run seed:remote
+
+      - name: Summarise GET /home
+        run: |
+          curl -sS --max-time 60 "$SEED_API_URL/home" | node -e '
+            let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+              const h = JSON.parse(s);
+              console.log(JSON.stringify({
+                cinemaDate: h.cinemaDate, featured: h.featured.length, ticker: h.ticker.length,
+                genres: h.genres.length, nowShowing: h.nowShowing.total, comingSoon: h.comingSoon.total,
+                cinemas: h.cinemas.length,
+                firstPoster: h.nowShowing.items[0]?.poster?.variants?.[0]?.url ?? null,
+              }, null, 2));
+            });'
