@@ -1,4 +1,5 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { WsAdapter } from '@nestjs/platform-ws';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
@@ -50,5 +51,7 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
     next(toUnreadableBodyError(error)),
   );
   app.setGlobalPrefix(API_PREFIX);
+  // The live seat map at /ws (design §12): plain WebSocket on the same HTTP server.
+  app.useWebSocketAdapter(new WsAdapter(app));
   setupSwagger(app, buildOpenApiDocument(app));
 }

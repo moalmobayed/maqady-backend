@@ -16,6 +16,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
@@ -25,6 +26,7 @@ import { MediaModule } from './modules/media/media.module';
 import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
+import { SeatingModule } from './modules/seating/seating.module';
 import { ShowtimesModule } from './modules/showtimes/showtimes.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TheatersModule } from './modules/theaters/theaters.module';
@@ -73,6 +75,8 @@ export class AppModule {
         HallsModule,
         DiscoveryModule,
         ShowtimesModule,
+        SeatingModule,
+        BookingsModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
