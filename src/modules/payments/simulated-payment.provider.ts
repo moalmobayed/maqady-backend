@@ -38,7 +38,9 @@ export class SimulatedPaymentProvider extends PaymentProvider {
   charge(request: ChargeRequest): Promise<ChargeResult> {
     const outcome = outcomeOf(request.token);
     if (!outcome || outcome.method !== request.method) {
-      throw new AppError('INTERNAL', 'The simulated provider got a token it does not know.');
+      return Promise.reject(
+        new AppError('INTERNAL', 'The simulated provider got a token it does not know.'),
+      );
     }
     const now = this.clock.now();
     const settlesAt = outcome.slow ? addToInstant(now, { seconds: SIMULATED_SETTLE_SECONDS }) : now;
@@ -54,7 +56,7 @@ export class SimulatedPaymentProvider extends PaymentProvider {
     const match = SIMULATED_CHARGE_REFERENCE_PATTERN.exec(request.providerReference);
     const outcome = match ? outcomeOf(match[1]!) : undefined;
     if (!match || !outcome) {
-      throw new AppError('INTERNAL', 'Not a simulated charge reference.');
+      return Promise.reject(new AppError('INTERNAL', 'Not a simulated charge reference.'));
     }
     const settlesAt = new Date(Number(match[2]));
     const ready = this.clock.now().getTime() >= settlesAt.getTime();
@@ -70,7 +72,7 @@ export class SimulatedPaymentProvider extends PaymentProvider {
 
   refund(request: RefundRequest): Promise<RefundResult> {
     if (!SIMULATED_CHARGE_REFERENCE_PATTERN.test(request.chargeReference)) {
-      throw new AppError('INTERNAL', 'Not a simulated charge reference.');
+      return Promise.reject(new AppError('INTERNAL', 'Not a simulated charge reference.'));
     }
     return Promise.resolve({
       status: 'succeeded',
