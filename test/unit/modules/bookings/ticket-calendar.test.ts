@@ -59,7 +59,7 @@ describe('the calendar file (RFC 5545)', () => {
       ]),
     );
     expect(lines.find((line) => line.startsWith('DESCRIPTION:'))).toBe(
-      'DESCRIPTION:Booking MQ-7K3P9Q. Hall Hall 1. Seats F7\\, F8. Admits 2. Show the ticket QR code at the entrance.',
+      'DESCRIPTION:Booking MQ-7K3P9Q. Hall 1. Seats F7\\, F8. Admits 2. Show the ticket QR code at the entrance.',
     );
     expect(lines.some((line) => line.includes('VTIMEZONE'))).toBe(false);
   });

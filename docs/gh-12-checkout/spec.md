@@ -447,7 +447,7 @@ formatMoneyDisplay(value: Money): string;
 - `booking.tickets` (email): subject `Your Maqady tickets · <reference>`; the details, the action
   "Show ticket QR code" → `links.oneTime('/ticket', qrCode)`, the booking page
   `links.page('/my-bookings/<reference>')`, the entrance line and the policy line.
-- `booking.tickets_sms` (sms): `Maqady <ref>: <movie>, <startsAt>, <theater> hall <hall>, seats
+- `booking.tickets_sms` (sms): `Maqady <ref>: <movie>, <startsAt>, <theater>, <hall>, seats
   <seats>. Ticket: <one-time link>`.
 
 ## Tests

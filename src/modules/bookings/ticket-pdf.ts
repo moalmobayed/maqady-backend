@@ -64,7 +64,7 @@ export function renderTicketPdf(details: TicketDetails, now: Date): Promise<Buff
   text(`Rated ${details.ageRating}`, 10, 'Helvetica', 10);
   text(details.theaterName, 13, 'Helvetica-Bold');
   text(`${details.theaterAddress}, ${details.theaterDistrict}, ${details.theaterCity}`, 10);
-  text(`Hall ${details.hallName}`, 11, 'Helvetica', 10);
+  text(details.hallName, 11, 'Helvetica', 10);
   text(formatCairoDisplay(details.startsAt), 13, 'Helvetica-Bold');
   text(`Cinema day ${details.cinemaDate}`, 9, 'Helvetica', 10);
   const seats = details.seats.map((seat) => `${seat.label} (${ZONE_NAMES[seat.zone]})`);

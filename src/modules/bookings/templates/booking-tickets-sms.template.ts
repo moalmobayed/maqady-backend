@@ -11,6 +11,6 @@ export const bookingTicketsSmsTemplate: MessageTemplate<BookingTicketsParams> = 
   channel: 'sms',
   secretParams: ['qrCode'],
   render: (params, links) => ({
-    text: `Maqady ${params.reference}: ${params.movieTitle}, ${params.startsAt}, ${params.theaterName} hall ${params.hallName}, seats ${params.seats}. Ticket: ${links.oneTime(TICKET_LINK_PATH, params.qrCode)}`,
+    text: `Maqady ${params.reference}: ${params.movieTitle}, ${params.startsAt}, ${params.theaterName}, ${params.hallName}, seats ${params.seats}. Ticket: ${links.oneTime(TICKET_LINK_PATH, params.qrCode)}`,
   }),
 };

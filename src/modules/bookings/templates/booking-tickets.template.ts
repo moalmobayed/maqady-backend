@@ -26,7 +26,7 @@ export const bookingTicketsTemplate: MessageTemplate<BookingTicketsParams> = {
       `${params.movieTitle} (${params.ageRating})`,
       `${params.startsAt}`,
       `${params.theaterName}, ${params.theaterAddress}`,
-      `Hall ${params.hallName} · Seats ${params.seats}`,
+      `${params.hallName} · Seats ${params.seats}`,
       `Admits ${params.admits} · Total paid ${params.total}`,
     ];
     const entrance = `Show the ticket QR code at the entrance. It admits ${params.admits}.`;

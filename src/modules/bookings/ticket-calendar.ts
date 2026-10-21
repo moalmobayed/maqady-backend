@@ -33,7 +33,7 @@ export function ticketCalendar(details: TicketDetails, now: Date): string {
     `SUMMARY:${escapeText(`${details.movieTitle} · ${details.theaterName}`)}`,
     `LOCATION:${escapeText(location)}`,
     `DESCRIPTION:${escapeText(
-      `Booking ${details.reference}. Hall ${details.hallName}. Seats ${seats}. Admits ${details.admits}. Show the ticket QR code at the entrance.`,
+      `Booking ${details.reference}. ${details.hallName}. Seats ${seats}. Admits ${details.admits}. Show the ticket QR code at the entrance.`,
     )}`,
     'END:VEVENT',
     'END:VCALENDAR',

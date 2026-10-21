@@ -48,7 +48,7 @@ describe('the tickets messages (design 7.9, 13.1)', () => {
       'The Nile Light (12+)',
       'Fri 16 Oct 2026, 19:30',
       'Zamalek, 26th of July St, Zamalek, Cairo',
-      'Hall Hall 1 · Seats F7, F8',
+      'Hall 1 · Seats F7, F8',
       'Admits 2 · Total paid EGP 380',
       "This booking can't be cancelled or refunded.",
     ]) {
@@ -67,7 +67,7 @@ describe('the tickets messages (design 7.9, 13.1)', () => {
   it('sends the SMS with the essentials and the same link, redacted in its stored copy', () => {
     const stored = bookingTicketsSmsTemplate.render(PARAMS, storageLinks(BASE));
     expect(stored).toEqual({
-      text: 'Maqady MQ-7K3P9Q: The Nile Light, Fri 16 Oct 2026, 19:30, Zamalek hall Hall 1, seats F7, F8. Ticket: [one-time link hidden]',
+      text: 'Maqady MQ-7K3P9Q: The Nile Light, Fri 16 Oct 2026, 19:30, Zamalek, Hall 1, seats F7, F8. Ticket: [one-time link hidden]',
     });
     for (const form of SECRET_FORMS) expect(stored.text).not.toContain(form);
     const sent = bookingTicketsSmsTemplate.render(PARAMS, deliveryLinks(BASE));

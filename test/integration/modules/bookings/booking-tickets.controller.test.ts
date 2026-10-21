@@ -272,7 +272,7 @@ describe('Tickets (integration)', () => {
         showtime.movieTitle,
         theater.name,
         theater.address,
-        `Hall ${hallName}`,
+        hallName,
         formatCairoDisplay(showtime.startsAt),
         'Seats C4 (Middle), C5 (Middle)',
         'Admits 2',

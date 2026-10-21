@@ -16,7 +16,7 @@ const DETAILS: TicketDetails = {
   theaterAddress: '26th of July St',
   theaterDistrict: 'Zamalek',
   theaterCity: 'Cairo',
-  hallName: '1',
+  hallName: 'Hall 1',
   startsAt: new Date('2026-10-16T19:30:00+03:00'),
   endsAt: new Date('2026-10-16T21:30:00+03:00'),
   cinemaDate: '2026-10-16',
