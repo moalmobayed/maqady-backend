@@ -130,6 +130,22 @@ export class EnvironmentVariables {
   @IsRateLimitRule()
   RATE_LIMIT_SEARCH?: string;
 
+  // The live seat map's limits (design §10.6, §12). Unset means the design's default.
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'must be an integer between 1 and 10000' })
+  @Min(1, { message: 'must be an integer between 1 and 10000' })
+  @Max(10000, { message: 'must be an integer between 1 and 10000' })
+  WS_CONNECTIONS_PER_IP?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'must be an integer between 1 and 100' })
+  @Min(1, { message: 'must be an integer between 1 and 100' })
+  @Max(100, { message: 'must be an integer between 1 and 100' })
+  WS_SUBSCRIPTIONS_PER_CONNECTION?: number;
+
   // Email (design §13.1, ADR 0004). The key is a secret: messages never echo it.
 
   @IsDefined({ message: 'is required' })
