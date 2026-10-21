@@ -261,7 +261,9 @@ describe('Settlement (integration)', () => {
     const responses = await Promise.all(
       Array.from({ length: 10 }, () => getBooking(reference, customer.authorization)),
     );
-    expect(responses.map((response) => response.body.status)).toEqual(Array(10).fill('confirmed'));
+    expect(responses.map((response) => String(response.body.status))).toEqual(
+      Array(10).fill('confirmed'),
+    );
     const audit = await auditOf(bookingId);
     expect(audit.filter((row) => row.action === 'booking.confirmed')).toHaveLength(1);
     expect(audit.filter((row) => row.action === 'payment.succeeded')).toHaveLength(1);

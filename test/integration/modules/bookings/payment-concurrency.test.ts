@@ -75,7 +75,7 @@ describe('Concurrent payments (integration)', () => {
     );
 
     const statuses = responses.map((response) =>
-      response.status === 201 ? response.body.payment.status : response.body.error.code,
+      String(response.status === 201 ? response.body.payment.status : response.body.error.code),
     );
     expect(statuses.filter((status) => status === 'succeeded')).toHaveLength(1);
     expect(statuses.filter((status) => status === 'ALREADY_PAID')).toHaveLength(9);
