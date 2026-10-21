@@ -32,12 +32,12 @@ import { showtimeMovedTemplate } from './templates/showtime-moved.template';
 import type {
   AdminShowtime,
   AdminShowtimeDetail,
+  BatchDateOutcome,
   BatchItemDetail,
   BatchItemResult,
   BatchOutcome,
   ConflictDetail,
   CreateShowtimesInput,
-  DateCheck,
   ShowtimeAuditDetails,
   ShowtimeChanges,
   ShowtimeCheckOutcome,
@@ -50,6 +50,7 @@ import type {
   ShowtimeSpan,
   ShowtimeTicketHolder,
   ShowtimeTimeline,
+  OpeningWindowDetail,
   ScheduleRequest,
   TimelineFilter,
   TimelineHall,
@@ -127,7 +128,7 @@ export class ShowtimesService {
       });
 
       const created = new Map<CalendarDate, ShowtimeRow>();
-      const outcomes: { check: DateCheck; conflicts: readonly ShowtimeConflict[] }[] = [];
+      const outcomes: BatchDateOutcome[] = [];
       for (const check of checks) {
         // The forecast of `conflict` is not trusted either way: the constraint decides.
         if ((check.result !== 'available' && check.result !== 'conflict') || !check.span) {
@@ -497,7 +498,7 @@ function pricesOrFail(theater: TheaterSummary): ZonePrices {
   return theater.defaultPrices;
 }
 
-function formatWindow(window: OpeningWindow): { opensAt: string; closesAt: string } {
+function formatWindow(window: OpeningWindow): OpeningWindowDetail {
   return { opensAt: formatCairoIso(window.opensAt), closesAt: formatCairoIso(window.closesAt) };
 }
 

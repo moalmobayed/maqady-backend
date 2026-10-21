@@ -399,6 +399,18 @@ export interface BatchItemDetail {
   readonly conflicts: readonly ConflictDetail[];
 }
 
+/** `OUTSIDE_OPENING_HOURS` `details.window`: the date's window in Cairo ISO. */
+export interface OpeningWindowDetail {
+  readonly opensAt: string;
+  readonly closesAt: string;
+}
+
+/** One date of a batch create once it was attempted: its check and the showtimes in its way. */
+export interface BatchDateOutcome {
+  readonly check: DateCheck;
+  readonly conflicts: readonly ShowtimeConflict[];
+}
+
 /** The columns a move rewrites. */
 export interface ShowtimeMoveColumns {
   readonly starts_at: Date;
