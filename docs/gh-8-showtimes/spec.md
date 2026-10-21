@@ -287,7 +287,9 @@ All under `/api/v1`, `@Admin()`, `@ApiTags('Admin: showtimes')`, summary, descri
   (`IsIn(SHOWTIME_STATUSES)`).
 - `ShowtimePricesRequest`: `front`, `middle`, `back`: `MoneyRequest` (U4b).
 - `CheckShowtimesRequest`: `movieId`, `hallId` (positive ints); `dates` (`CalendarDate[]`, 1–31,
-  `ArrayUnique`, each `isCalendarDate`; span ≤ 31 days, else `VALIDATION_FAILED` on `dates`);
+  `ArrayUnique`, each `isCalendarDate` and at the latest `LAST_CINEMA_DATE` `9999-11-30`, so its
+  cinema day and a month of opening hours after it can be read — the same rule for every cinema
+  date the unit accepts; span ≤ 31 days, else `VALIDATION_FAILED` on `dates`);
   `startTime` (`^([01]\d|2[0-3]):[0-5]\d$`).
 - `CreateShowtimesRequest`: the above plus optional `prices` (`ShowtimePricesRequest`) and
   `skipUnavailable` (boolean, required).

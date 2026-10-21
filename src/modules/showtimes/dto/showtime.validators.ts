@@ -1,18 +1,32 @@
 import { ValidateBy, type ValidationArguments } from 'class-validator';
 import { addDays, isCalendarDate } from '../../../common/time/time';
-import { MAX_DATE_SPAN_DAYS, START_TIME_MESSAGE, START_TIME_PATTERN } from '../showtimes.constants';
+import {
+  LAST_CINEMA_DATE,
+  MAX_DATE_SPAN_DAYS,
+  START_TIME_MESSAGE,
+  START_TIME_PATTERN,
+} from '../showtimes.constants';
 
 /** Validation decorators of the showtime request DTOs. */
 
-/** A real calendar date written `YYYY-MM-DD` (so `2026-02-30` is refused); `each` for arrays. */
+/**
+ * A real calendar date written `YYYY-MM-DD` (so `2026-02-30` is refused) that the scheduling
+ * reads can work with: its cinema day ends the next calendar day and the opening-hours reads span
+ * up to 31 days, so the date `MAX_DATE_SPAN_DAYS` after it must still be a `YYYY-MM-DD` date.
+ * `9999-11-30` is the last one; `9999-12-31` (whose cinema day ends in the year 10000) is
+ * refused. `each` for arrays.
+ */
 export function IsCinemaDate(each = false): PropertyDecorator {
   return ValidateBy(
     {
       name: 'isCinemaDate',
       validator: {
-        validate: (value: unknown) => typeof value === 'string' && isCalendarDate(value),
+        validate: (value: unknown) =>
+          typeof value === 'string' &&
+          isCalendarDate(value) &&
+          isCalendarDate(addDays(value, MAX_DATE_SPAN_DAYS)),
         defaultMessage: (args?: ValidationArguments) =>
-          `${args?.property ?? 'date'} must hold dates written YYYY-MM-DD`,
+          `${args?.property ?? 'date'} must hold dates written YYYY-MM-DD, at the latest ${LAST_CINEMA_DATE}`,
       },
     },
     { each },

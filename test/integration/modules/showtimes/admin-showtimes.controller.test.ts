@@ -629,6 +629,39 @@ describe('Admin showtimes (integration)', () => {
       expect(most.body.results).toHaveLength(31);
       expect(await showtimeCount()).toBe(0);
     });
+
+    it('refuses a cinema date too close to the end of the calendar, on every route', async () => {
+      // 9999-12-31 is a real date, but its cinema day ends on 10000-01-01, and the opening-hours
+      // reads look up to 31 days ahead: 9999-11-30 is the last date they can work with.
+      const fixture = await createSchedulingFixture(testApp, admin);
+      const showtime = await scheduleShowtime(testApp, admin, fixture, '2026-10-16', '19:30');
+      const last = '9999-12-31';
+      for (const startTime of ['19:30', '00:30']) {
+        expectError(await check(batch(fixture, [last], startTime)), 400, 'VALIDATION_FAILED');
+        expectError(
+          await create(batch(fixture, [last], startTime, { skipUnavailable: true })),
+          400,
+          'VALIDATION_FAILED',
+        );
+        expectError(
+          await patch(showtime.id, { cinemaDate: last, startTime }),
+          400,
+          'VALIDATION_FAILED',
+        );
+      }
+      expectError(
+        await timeline({ theaterId: fixture.theaterId, date: last }),
+        400,
+        'VALIDATION_FAILED',
+      );
+      expectError(await check(batch(fixture, ['9999-12-01'], '19:30')), 400, 'VALIDATION_FAILED');
+      // The last accepted cinema date works end to end.
+      expect((await check(batch(fixture, ['9999-11-30'], '00:30'))).status).toBe(200);
+      expect((await timeline({ theaterId: fixture.theaterId, date: '9999-11-30' })).status).toBe(
+        200,
+      );
+      expect(await showtimeCount()).toBe(1);
+    });
   });
 
   describe('the dry run', () => {

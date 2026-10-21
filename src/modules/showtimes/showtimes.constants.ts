@@ -13,6 +13,12 @@ export const MAX_BATCH_DATES = 31;
 /** The dates of one request lie within this many days, first and last included. */
 export const MAX_DATE_SPAN_DAYS = 31;
 
+/**
+ * The last cinema date a request may name: `MAX_DATE_SPAN_DAYS` after it is still a four-digit
+ * year, so its cinema day and a month of opening hours after it can be read.
+ */
+export const LAST_CINEMA_DATE = '9999-11-30';
+
 /** U8's reads by date range answer at most this many cinema dates. */
 export const MAX_READ_RANGE_DAYS = 31;
 

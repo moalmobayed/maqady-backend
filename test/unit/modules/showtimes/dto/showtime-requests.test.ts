@@ -6,6 +6,7 @@ import { CreateShowtimesRequest } from '../../../../../src/modules/showtimes/dto
 import { ShowtimeIdParams } from '../../../../../src/modules/showtimes/dto/showtime-id.params';
 import { TimelineQuery } from '../../../../../src/modules/showtimes/dto/timeline.query';
 import { UpdateShowtimeRequest } from '../../../../../src/modules/showtimes/dto/update-showtime.request';
+import { LAST_CINEMA_DATE } from '../../../../../src/modules/showtimes/showtimes.constants';
 
 /** The fields the global ValidationPipe refuses, or [] when the input is valid. */
 async function invalidFields(
@@ -45,6 +46,9 @@ describe('showtime request DTOs', () => {
         await invalidFields(CheckShowtimesRequest, { ...CHECK, dates: datesFrom(31) }),
       ).toEqual([]);
       expect(
+        await invalidFields(CheckShowtimesRequest, { ...CHECK, dates: [LAST_CINEMA_DATE] }),
+      ).toEqual([]);
+      expect(
         await invalidFields(CreateShowtimesRequest, {
           ...CHECK,
           skipUnavailable: true,
@@ -63,6 +67,8 @@ describe('showtime request DTOs', () => {
         'dates',
       ],
       ['an impossible date', { dates: ['2026-02-30'] }, 'dates'],
+      ['the last date of the calendar', { dates: ['9999-12-31'] }, 'dates'],
+      ['a date less than 31 days before the year 10000', { dates: ['9999-12-01'] }, 'dates'],
       ['a date that is not a string', { dates: [20261016] }, 'dates'],
       ['24:00', { startTime: '24:00' }, 'startTime'],
       ['7:30 without its leading zero', { startTime: '7:30' }, 'startTime'],
@@ -108,6 +114,11 @@ describe('showtime request DTOs', () => {
       ['an empty body', {}, ['startTime']],
       ['a date without a time', { cinemaDate: '2026-10-17' }, ['startTime']],
       ['an impossible date', { cinemaDate: '2026-02-30', startTime: '13:00' }, ['cinemaDate']],
+      [
+        'the last date of the calendar',
+        { cinemaDate: '9999-12-31', startTime: '13:00' },
+        ['cinemaDate'],
+      ],
       ['a cancellation without a reason', { status: 'cancelled' }, ['cancelReason']],
       ['a reason without the status', { cancelReason: 'low_sales' }, ['status']],
       ['an unknown reason', { status: 'cancelled', cancelReason: 'weather' }, ['cancelReason']],
@@ -142,6 +153,9 @@ describe('showtime request DTOs', () => {
       ]);
       expect(
         await invalidFields(TimelineQuery, { theaterId: '1', date: '16-10-2026' }, 'query'),
+      ).toEqual(['date']);
+      expect(
+        await invalidFields(TimelineQuery, { theaterId: '1', date: '9999-12-31' }, 'query'),
       ).toEqual(['date']);
       expect(
         await invalidFields(
