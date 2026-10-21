@@ -9,6 +9,7 @@ import type {
   BookingSeatRow,
   NewBookingRow,
   SqlPredicate,
+  TicketHolderRow,
 } from './types';
 
 const BOOKING_COLUMNS = [
@@ -30,6 +31,7 @@ const BOOKING_COLUMNS = [
   'contact_phone',
   'confirmed_at',
   'refunded_at',
+  'qr_version',
   'created_at',
   'updated_at',
 ] as const;
@@ -148,6 +150,73 @@ export class BookingsRepository {
       .returning<BookingRow[]>(BOOKING_COLUMNS);
     if (!updated) throw new AppError('INTERNAL', 'The booking update returned no row.');
     return updated;
+  }
+
+  /** These bookings in any status, in id order; unknown ids are absent. */
+  async findByIds(ids: readonly number[]): Promise<BookingRow[]> {
+    if (ids.length === 0) return [];
+    return this.bookings()
+      .select<BookingRow[]>(BOOKING_COLUMNS)
+      .whereIn('id', [...new Set(ids)])
+      .orderBy('id');
+  }
+
+  /**
+   * Confirms these held bookings (design §7.5 step 6): `confirmed`, `confirmed_at`, the first QR
+   * version. Only rows still `held` change; returns them.
+   */
+  async confirm(ids: readonly number[], now: Date): Promise<BookingRow[]> {
+    if (ids.length === 0) return [];
+    return this.bookings()
+      .whereIn('id', [...new Set(ids)])
+      .where({ status: 'held' })
+      .update({ status: 'confirmed', confirmed_at: now, qr_version: 1, updated_at: now })
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+  }
+
+  /** Records that these holds had a declined payment: once they end they read as Failed. */
+  async markDeclined(ids: readonly number[], now: Date): Promise<void> {
+    if (ids.length === 0) return;
+    await this.bookings()
+      .whereIn('id', [...new Set(ids)])
+      .update({ has_declined_payment: true, updated_at: now });
+  }
+
+  /** Moves a hold's end to `until` (a processing payment keeps its seats, design §7.5). */
+  async extendHold(id: number, until: Date, now: Date): Promise<BookingRow> {
+    const [updated] = await this.bookings()
+      .where({ id, status: 'held' })
+      .update({ hold_expires_at: until, updated_at: now })
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The hold to extend is no longer held.');
+    return updated;
+  }
+
+  /**
+   * Refunds these bookings: `refunded` at `now`. A hold refunded at once by settlement (design
+   * §7.5) never had a confirmation, so it is given one at the same instant and the first QR
+   * version, as the lifecycle CHECK of a refunded booking requires; its QR code was never issued.
+   */
+  async markRefunded(ids: readonly number[], now: Date): Promise<void> {
+    if (ids.length === 0) return;
+    await this.bookings()
+      .whereIn('id', [...new Set(ids)])
+      .whereIn('status', ['held', 'confirmed'])
+      .update({
+        status: 'refunded',
+        confirmed_at: this.db.executor().raw('COALESCE(confirmed_at, ?)', [now]),
+        refunded_at: now,
+        qr_version: this.db.executor().raw('COALESCE(qr_version, 1)'),
+        updated_at: now,
+      });
+  }
+
+  /** The contacts of a showtime's confirmed bookings, in id order (U7's move notifications). */
+  async ticketHoldersOf(showtimeId: number): Promise<TicketHolderRow[]> {
+    return this.bookings()
+      .select<TicketHolderRow[]>('id', 'reference', 'customer_id', 'contact_email', 'contact_phone')
+      .where({ showtime_id: showtimeId, status: 'confirmed' })
+      .orderBy('id');
   }
 
   private bookings(): Knex.QueryBuilder {

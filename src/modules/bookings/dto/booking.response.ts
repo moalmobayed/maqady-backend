@@ -1,13 +1,25 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
 import { MoneyResponse } from '../../../common/money/dto/money-response.dto';
-import { BOOKING_CHANNELS, BOOKING_DISPLAY_STATUSES, HOLD_OWNERS } from '../enums';
-import type { BookingChannel, BookingDisplayStatus, HoldOwner } from '../types';
+import {
+  BOOKING_CHANNELS,
+  BOOKING_DISPLAY_STATUSES,
+  HOLD_OWNERS,
+  PAYMENT_STATUS_DISPLAYS,
+} from '../enums';
+import type {
+  BookingChannel,
+  BookingDisplayStatus,
+  HoldOwner,
+  PaymentStatusDisplay,
+} from '../types';
 import { BookingSeatResponse } from './booking-seat.response';
 import { BookingShowtimeResponse } from './booking-showtime.response';
+import { PaymentResponse } from './payment.response';
+import { TicketResponse } from './ticket.response';
 
 /**
- * A booking as its holder sees it (design §7.4, §11). Checkout and My Bookings (U11, U12) add
- * their fields to this schema.
+ * A booking as its holder sees it (design §7.4, §7.9, §11): the checkout summary, the
+ * confirmation and the booking page. My Bookings (U12) adds its fields to this schema.
  */
 @ApiSchema({ name: 'Booking' })
 export class BookingResponse {
@@ -108,4 +120,39 @@ export class BookingResponse {
     description: 'When the hold was made.',
   })
   createdAt!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-10-16T19:02:10+03:00',
+    description: 'When the booking was confirmed (paid); null while held.',
+  })
+  confirmedAt!: string | null;
+
+  @ApiProperty({
+    enum: PAYMENT_STATUS_DISPLAYS,
+    enumName: 'BookingPaymentStatus',
+    nullable: false,
+    example: 'paid',
+    description:
+      'Decided with `status`: `unpaid`; `processing` while a payment is being confirmed ("Confirming your payment"); `declined` after a declined payment (a `failed` booking once the hold ended); `paid` (confirmed or completed); `refunded`.',
+  })
+  paymentStatus!: PaymentStatusDisplay;
+
+  @ApiProperty({
+    type: () => PaymentResponse,
+    nullable: true,
+    description:
+      'The latest payment attempt, for "EGP 380 · Visa •••• 4242"; null before the first one.',
+  })
+  payment!: PaymentResponse | null;
+
+  @ApiProperty({
+    type: () => TicketResponse,
+    nullable: true,
+    description:
+      'The ticket with its QR code while the booking is `confirmed` or `completed`; null otherwise. The PDF and the calendar file come from `GET /bookings/{ref}/ticket.pdf` and `/calendar.ics`.',
+  })
+  ticket!: TicketResponse | null;
 }

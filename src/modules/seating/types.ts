@@ -84,6 +84,40 @@ export interface ClaimOutcome {
   readonly missing: readonly string[];
 }
 
+/** A claim row as checkout and settlement lock it: whose it is and until when. */
+export interface LockedClaimRow {
+  readonly showtime_id: number;
+  readonly seat_label: string;
+  readonly booking_id: number;
+  readonly claimed_until: Date | null;
+}
+
+/** A seat a claim write changed or deleted. */
+export interface ChangedClaimRow {
+  readonly showtime_id: number;
+  readonly seat_label: string;
+}
+
+/** Seats of one showtime, as checkout and settlement name the claims they lock (U11). */
+export interface ShowtimeSeats {
+  readonly showtimeId: number;
+  readonly labels: readonly string[];
+}
+
+/** Seats as parallel arrays for one `unnest` (a booking id of 0 where the statement needs none). */
+export interface ClaimKeyArrays {
+  readonly showtimeIds: number[];
+  readonly labels: string[];
+  readonly bookingIds: number[];
+}
+
+/** One booking's seats on its showtime: what confirming, extending or deleting its claims takes. */
+export interface BookingClaims {
+  readonly showtimeId: number;
+  readonly bookingId: number;
+  readonly labels: readonly string[];
+}
+
 // --- Availability ---------------------------------------------------------------------------
 
 /** A taken seat of a showtime. */

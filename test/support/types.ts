@@ -288,3 +288,44 @@ export interface SeatMapTestClient {
   pending(): readonly SeatMapMessage[];
   close(): Promise<void>;
 }
+
+/** What `customerHold()` may change about the customer it registers (U11). */
+export interface CustomerHoldOptions {
+  readonly fullName?: string;
+  /** Set through `PATCH /me` before the hold, so the hold's contact has a phone. */
+  readonly phone?: string;
+}
+
+/** A signed-in customer's live hold, made through the real routes (U11). */
+export interface CustomerHoldFixture {
+  readonly customer: CustomerSessionFixture;
+  readonly reference: string;
+  readonly bookingId: number;
+  /** The `201` body of the hold. */
+  readonly hold: Record<string, unknown> & { reference: string; holdExpiresAt: string };
+}
+
+/** What `pay()` sends: the method and test token. */
+export interface PaymentBody {
+  readonly method: string;
+  readonly token: string;
+}
+
+/** A `payments` row as the checkout suites read it. */
+export interface StoredPayment {
+  readonly id: number;
+  readonly booking_id: number;
+  readonly kind: string;
+  readonly purpose: string;
+  readonly method: string;
+  readonly status: string;
+  readonly amount: number;
+  readonly refund_of_payment_id: number | null;
+  readonly provider_idempotency_key: string | null;
+  readonly provider_reference: string | null;
+  readonly card_brand: string | null;
+  readonly card_last4: string | null;
+  readonly wallet_type: string | null;
+  readonly settles_at: Date | null;
+  readonly completed_at: Date | null;
+}

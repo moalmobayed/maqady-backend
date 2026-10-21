@@ -19728,7 +19728,7 @@ paths:
         - Picking new seats replaces the browser's previous hold: a customer's live hold (on any showtime), and the guest hold whose code is sent in `X-Hold-Token`. Their seats are released at once. A customer has at most one live hold.
         - A guest gets a private `holdCode`, shown only in this answer (and its replay). Keep it for the browser session: send it as `X-Hold-Token` to read or release the hold, and to claim it after signing in (`POST /holds/{ref}/claims`).
         - A seat someone else holds or bought: `SEAT_TAKEN` with `details.seats`; nothing changes, the previous hold stays. Refresh the map and pick again.
-        - `SHOWTIME_NOT_BOOKABLE` with `details.reason`: `cancelled`, `started`, `sales_paused`, `movie_unavailable` or `hall_unavailable`. A seat not in this hall: `VALIDATION_FAILED` on `seats.<index>`. A blocked customer: `ACCOUNT_BLOCKED`.
+        - `SHOWTIME_NOT_BOOKABLE` with `details.reason`: `cancelled`, `started`, `sales_paused`, `movie_unavailable` or `hall_unavailable`. A seat not in this hall: `VALIDATION_FAILED` on `seats.<index>`. A blocked customer: `ACCOUNT_BLOCKED`. A previous hold whose payment is still processing is never replaced: `PAYMENT_IN_PROGRESS` (wait for its result).
         - Everyone on the seat map gets `seat.held` (and `seat.released` for a replaced hold) once the hold is saved. Recorded in the booking's history.
       operationId: createHold
       parameters:
@@ -19907,6 +19907,8 @@ paths:
             `SHOWTIME_NOT_BOOKABLE`: The showtime started, was cancelled, or its theater paused sales. Pick another showtime.
 
             `SEAT_TAKEN`: Another customer holds or bought at least one of the seats. `details.seats` lists them; pick other seats.
+
+            `PAYMENT_IN_PROGRESS`: A payment of this booking is still processing, so its seats stay held for it: it can be neither paid again nor released (nor replaced by a new hold) until the result is in. Show "Confirming your payment" and read the booking again in a few seconds. `details` is null.
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -19924,7 +19926,8 @@ paths:
                     error:
                       code: SHOWTIME_NOT_BOOKABLE
                       message: This showtime can no longer be booked.
-                      details: null
+                      details:
+                        reason: sales_paused
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
                 SEAT_TAKEN:
                   summary: SEAT_TAKEN
@@ -19932,6 +19935,14 @@ paths:
                     error:
                       code: SEAT_TAKEN
                       message: Some of these seats were just taken.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                PAYMENT_IN_PROGRESS:
+                  summary: PAYMENT_IN_PROGRESS
+                  value:
+                    error:
+                      code: PAYMENT_IN_PROGRESS
+                      message: A payment for this booking is already in progress.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '413':
@@ -20034,7 +20045,7 @@ paths:
         A signed-in customer, with the guest hold's code in `X-Hold-Token` (required). Requires an `Idempotency-Key`. Call it right after signing in or creating an account in the booking flow (PRD Seats 3).
 
         - The hold becomes the customer's, with their name, email and phone as its contact, and the code stops working. The countdown is not restarted: `holdExpiresAt` stays.
-        - The customer's other live hold, if any, is released (one live hold per customer), and its seats are announced free on the seat map.
+        - The customer's other live hold, if any, is released (one live hold per customer), and its seats are announced free on the seat map; while that hold's payment is still processing it is kept and the claim is refused (`PAYMENT_IN_PROGRESS`).
         - A hold the customer already owns answers `201` as it is (a second tab).
         - An unknown reference, someone else's booking, or a code that does not match: `NOT_FOUND`. The code matches but the hold ran out: `HOLD_EXPIRED` (pick seats again). No `X-Hold-Token`: `VALIDATION_FAILED`.
         - Recorded in the booking's history.
@@ -20205,7 +20216,10 @@ paths:
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '409':
-          description: '`HOLD_EXPIRED`: The hold ran out before this action. Choose the seats again.'
+          description: |-
+            `HOLD_EXPIRED`: The hold ran out (or was released, or replaced by a newer hold) before this action, so its seats are no longer yours: "Your seats were released. Pick seats again." Nothing was charged. `details` is null.
+
+            `PAYMENT_IN_PROGRESS`: A payment of this booking is still processing, so its seats stay held for it: it can be neither paid again nor released (nor replaced by a new hold) until the result is in. Show "Confirming your payment" and read the booking again in a few seconds. `details` is null.
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -20223,6 +20237,14 @@ paths:
                     error:
                       code: HOLD_EXPIRED
                       message: Your seat hold has expired.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                PAYMENT_IN_PROGRESS:
+                  summary: PAYMENT_IN_PROGRESS
+                  value:
+                    error:
+                      code: PAYMENT_IN_PROGRESS
+                      message: A payment for this booking is already in progress.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '413':
@@ -20320,7 +20342,7 @@ paths:
         - customer: []
   /holds/{ref}:
     delete:
-      description: 'The owner (send the access token), or a guest with the hold code in `X-Hold-Token`. An `Idempotency-Key` is optional. The seats are free at once (announced on the seat map) and the booking reads as `abandoned` from then on. A hold that already ended answers `204` and changes nothing. A paid booking is never released here: `ALREADY_PAID`. Anyone else, and any unknown reference: `NOT_FOUND`. Recorded in the booking''s history.'
+      description: 'The owner (send the access token), or a guest with the hold code in `X-Hold-Token`. An `Idempotency-Key` is optional. The seats are free at once (announced on the seat map) and the booking reads as `abandoned` from then on. A hold that already ended answers `204` and changes nothing. A paid booking is never released here: `ALREADY_PAID`; nor is a hold whose payment is still processing: `PAYMENT_IN_PROGRESS`. Anyone else, and any unknown reference: `NOT_FOUND`. Recorded in the booking''s history.'
       operationId: releaseHold
       parameters:
         - name: ref
@@ -20473,7 +20495,10 @@ paths:
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '409':
-          description: '`ALREADY_PAID`: A successful payment exists. Show the tickets instead of paying again.'
+          description: |-
+            `ALREADY_PAID`: A successful payment exists (the booking is confirmed or refunded), so it is never charged or released again. Show the booking and its tickets instead. `details` is null.
+
+            `PAYMENT_IN_PROGRESS`: A payment of this booking is still processing, so its seats stay held for it: it can be neither paid again nor released (nor replaced by a new hold) until the result is in. Show "Confirming your payment" and read the booking again in a few seconds. `details` is null.
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -20491,6 +20516,14 @@ paths:
                     error:
                       code: ALREADY_PAID
                       message: This booking is already paid.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                PAYMENT_IN_PROGRESS:
+                  summary: PAYMENT_IN_PROGRESS
+                  value:
+                    error:
+                      code: PAYMENT_IN_PROGRESS
+                      message: A payment for this booking is already in progress.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '413':
@@ -20589,7 +20622,7 @@ paths:
         - customer: []
   /bookings/{ref}:
     get:
-      description: 'The owner (send the access token) in any status, or a guest with the hold code in `X-Hold-Token` while the hold lasts and nobody claimed it. Anyone else, a guest whose hold ended, and any unknown reference: `NOT_FOUND`. The checkout summary: the showtime, the seats by zone with their prices, the total, the countdown (`holdExpiresAt` against `serverTime`) and the status, decided now.'
+      description: 'The owner (send the access token) in any status, or a guest with the hold code in `X-Hold-Token` while the hold lasts and nobody claimed it. Anyone else, a guest whose hold ended, and any unknown reference: `NOT_FOUND`. The checkout summary: the showtime, the seats by zone with their prices, the total, the countdown (`holdExpiresAt` against `serverTime`) and the status, decided now. A payment still processing is settled first when its result is due, so polling this route after `payment.settlesAt` shows the result (`confirmed` with its `ticket`, or `held` with `paymentStatus: declined`); with `paymentStatus: processing`, poll again in a few seconds. The confirmation page and the booking page read it too: `payment` ("EGP 380 · Visa •••• 4242"), `ticket` with its QR payload, `confirmedAt`.'
       operationId: getBooking
       parameters:
         - name: ref
@@ -20781,6 +20814,776 @@ paths:
         - Seats and holds
       security:
         - {}
+        - customer: []
+  /bookings/{ref}/payments:
+    post:
+      description: |-
+        The signed-in customer who owns the hold (a guest claims it first, `POST /holds/{ref}/claims`). Requires an `Idempotency-Key`: a new one per press of Pay, the same one to retry that press. Rate-limited per booking (10 in 5 minutes). Paying does not need a verified email (PRD Accounts 2).
+
+        - The total is the hold's own (`total`); there are no fees. The provider is simulated: the test `token` decides the result, and no card number is ever sent.
+        - `201` with `payment.status` `succeeded`: the booking is `confirmed`, its seats are sold (announced as `seat.booked` on the seat map), and the tickets email (and SMS with a phone on file) is on its way. `booking.ticket` holds the QR payload.
+        - `201` with `declined`: a normal result, not an error. The seats stay held until the timer ends; try again or switch method with a new `Idempotency-Key`. `cancelled` (a wallet closed) is not a decline.
+        - `201` with `processing`: show "Confirming your payment". The seats stay held until `payment.settlesAt` plus 30 seconds, even past the timer (PRD Seats 5); read `GET /bookings/{ref}` after `settlesAt` for the result. Paying again meanwhile is `PAYMENT_IN_PROGRESS`.
+        - Pressing Pay twice never charges twice: the same key replays the first answer (`Idempotent-Replayed: true`); another key finds the booking paid (`ALREADY_PAID`) or still processing.
+        - `HOLD_EXPIRED`: the hold ended (at `holdExpiresAt` exactly, too) or lost a seat; nothing was charged ("Your seats were released. Pick seats again."). `SHOWTIME_NOT_BOOKABLE` with `details.reason`: the showtime started or was cancelled, the theater paused sales, the movie or hall is no longer available. Someone else's booking, a guest's hold, or an unknown reference: `NOT_FOUND`. A blocked customer: `ACCOUNT_BLOCKED`.
+        - Recorded in the booking's history.
+      operationId: createPayment
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: The payment result and the booking after it
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResult'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `SHOWTIME_NOT_BOOKABLE`: The showtime started, was cancelled, or its theater paused sales. Pick another showtime.
+
+            `HOLD_EXPIRED`: The hold ran out (or was released, or replaced by a newer hold) before this action, so its seats are no longer yours: "Your seats were released. Pick seats again." Nothing was charged. `details` is null.
+
+            `ALREADY_PAID`: A successful payment exists (the booking is confirmed or refunded), so it is never charged or released again. Show the booking and its tickets instead. `details` is null.
+
+            `PAYMENT_IN_PROGRESS`: A payment of this booking is still processing, so its seats stay held for it: it can be neither paid again nor released (nor replaced by a new hold) until the result is in. Show "Confirming your payment" and read the booking again in a few seconds. `details` is null.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SHOWTIME_NOT_BOOKABLE:
+                  summary: SHOWTIME_NOT_BOOKABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_BOOKABLE
+                      message: This showtime can no longer be booked.
+                      details:
+                        reason: sales_paused
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                HOLD_EXPIRED:
+                  summary: HOLD_EXPIRED
+                  value:
+                    error:
+                      code: HOLD_EXPIRED
+                      message: Your seat hold has expired.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                ALREADY_PAID:
+                  summary: ALREADY_PAID
+                  value:
+                    error:
+                      code: ALREADY_PAID
+                      message: This booking is already paid.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                PAYMENT_IN_PROGRESS:
+                  summary: PAYMENT_IN_PROGRESS
+                  value:
+                    error:
+                      code: PAYMENT_IN_PROGRESS
+                      message: A payment for this booking is already in progress.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Pay for a hold (card or wallet, simulated)
+      tags:
+        - Checkout
+      security:
+        - customer: []
+  /bookings/{ref}/ticket.pdf:
+    get:
+      description: |-
+        The signed-in customer who owns the booking, while it is `confirmed` or `completed`. Fetch it with the `Authorization` header and save the file: no token ever goes in a URL. Built on demand, never cached (`Cache-Control: private, no-store`). A booking without a ticket (held, failed, abandoned, refunded): `TICKET_NOT_AVAILABLE` with `details.status`. Someone else's booking or an unknown reference: `NOT_FOUND`.
+
+        An A5 page with the movie and its age rating, the theater and its address, the hall, the date and time, the seats with their zones, "Admits n", the booking reference and the QR code, saved as `maqady-ticket-<reference>.pdf`.
+      operationId: downloadTicket
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+      responses:
+        '200':
+          description: 'The PDF ticket (`Content-Disposition: attachment`)'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`TICKET_NOT_AVAILABLE`: Only a confirmed booking, or a completed one (its showtime has ended), has a ticket to download or add to a calendar. `details.status` is the booking status now: `held`, `failed`, `abandoned` or `refunded`.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                TICKET_NOT_AVAILABLE:
+                  summary: TICKET_NOT_AVAILABLE
+                  value:
+                    error:
+                      code: TICKET_NOT_AVAILABLE
+                      message: This booking has no ticket.
+                      details:
+                        status: held
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Download the PDF ticket
+      tags:
+        - Tickets
+      security:
+        - customer: []
+  /bookings/{ref}/calendar.ics:
+    get:
+      description: |-
+        The signed-in customer who owns the booking, while it is `confirmed` or `completed`. Fetch it with the `Authorization` header and save the file: no token ever goes in a URL. Built on demand, never cached (`Cache-Control: private, no-store`). A booking without a ticket (held, failed, abandoned, refunded): `TICKET_NOT_AVAILABLE` with `details.status`. Someone else's booking or an unknown reference: `NOT_FOUND`.
+
+        An iCalendar file (RFC 5545) with one event: the movie and theater, the showtime's start and end (in UTC, so every calendar shows its own time zone), the theater's address as the location, and the reference, hall and seats. Saved as `maqady-<reference>.ics`.
+      operationId: downloadCalendar
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+      responses:
+        '200':
+          description: 'The calendar file (`Content-Disposition: attachment`)'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            text/calendar:
+              schema:
+                type: string
+                example: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n…"
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`TICKET_NOT_AVAILABLE`: Only a confirmed booking, or a completed one (its showtime has ended), has a ticket to download or add to a calendar. `details.status` is the booking status now: `held`, `failed`, `abandoned` or `refunded`.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                TICKET_NOT_AVAILABLE:
+                  summary: TICKET_NOT_AVAILABLE
+                  value:
+                    error:
+                      code: TICKET_NOT_AVAILABLE
+                      message: This booking has no ticket.
+                      details:
+                        status: held
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Add to calendar (.ics)
+      tags:
+        - Tickets
+      security:
         - customer: []
 info:
   title: Maqady API
@@ -26675,6 +27478,140 @@ components:
         - zone
         - price
         - isWheelchair
+    BookingPaymentStatus:
+      type: string
+      enum:
+        - unpaid
+        - processing
+        - declined
+        - paid
+        - refunded
+      description: 'Decided with `status`: `unpaid`; `processing` while a payment is being confirmed ("Confirming your payment"); `declined` after a declined payment (a `failed` booking once the hold ended); `paid` (confirmed or completed); `refunded`.'
+    PaymentResultStatus:
+      type: string
+      enum:
+        - processing
+        - succeeded
+        - declined
+        - cancelled
+      description: '`succeeded`: paid, the booking is confirmed. `declined`: show "declined" and offer to try again or switch method while the hold lasts (a new `Idempotency-Key`). `cancelled`: the wallet was closed; not a decline. `processing`: show "Confirming your payment" and read `GET /bookings/{ref}` again after `settlesAt`.'
+    PaymentMethod:
+      type: string
+      enum:
+        - card
+        - wallet
+        - cash
+        - card_terminal
+      description: '`card` or `wallet` online; `cash` or `card_terminal` at the box office.'
+    CardBrand:
+      type: string
+      enum:
+        - visa
+        - mastercard
+        - meeza
+      description: The card brand.
+    PaymentCard:
+      type: object
+      properties:
+        brand:
+          nullable: false
+          example: visa
+          description: The card brand.
+          allOf:
+            - $ref: '#/components/schemas/CardBrand'
+        last4:
+          type: string
+          nullable: false
+          pattern: ^[0-9]{4}$
+          example: '4242'
+          description: The last four digits, for "Visa •••• 4242".
+      required:
+        - brand
+        - last4
+    WalletType:
+      type: string
+      enum:
+        - apple_pay
+        - google_pay
+      description: The wallet, for a wallet payment; null otherwise.
+    Payment:
+      type: object
+      properties:
+        status:
+          nullable: false
+          example: succeeded
+          description: '`succeeded`: paid, the booking is confirmed. `declined`: show "declined" and offer to try again or switch method while the hold lasts (a new `Idempotency-Key`). `cancelled`: the wallet was closed; not a decline. `processing`: show "Confirming your payment" and read `GET /bookings/{ref}` again after `settlesAt`.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentResultStatus'
+        method:
+          nullable: false
+          example: card
+          description: '`card` or `wallet` online; `cash` or `card_terminal` at the box office.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          nullable: false
+          description: 'The amount charged: exactly the booking''s total.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        card:
+          nullable: true
+          description: The card, for a card payment; null otherwise.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/PaymentCard'
+        walletType:
+          nullable: true
+          example: null
+          description: The wallet, for a wallet payment; null otherwise.
+          allOf:
+            - $ref: '#/components/schemas/WalletType'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:02:10+03:00'
+          description: When the payment was made (Cairo time).
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:02:10+03:00'
+          description: When it reached its result ("paid on"); null while processing.
+        settlesAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: 'While processing: when the result is expected. Read the booking again after it (the seats stay held until then plus 30 seconds). Null once there is a result.'
+      required:
+        - status
+        - method
+        - amount
+        - card
+        - walletType
+        - createdAt
+        - completedAt
+        - settlesAt
+    Ticket:
+      type: object
+      properties:
+        qrCode:
+          type: string
+          nullable: false
+          pattern: ^MQ1\.MQ-[2-9A-HJKMNP-Z]{6}\.[1-9][0-9]{0,4}\.[A-Za-z0-9_-]{22}$
+          example: MQ1.MQ-7K3P9Q.1.Rk2xV9bQm4Tz8LpW3nYc1A
+          description: 'The signed QR payload: draw it as a QR code (error correction M). It admits the whole booking once at the entrance and cannot be guessed or forged; the reference alone admits nobody. Keep it private.'
+        admits:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 8
+          example: 2
+          description: 'How many people it admits: the seat count ("Admits 2").'
+      required:
+        - qrCode
+        - admits
     Hold:
       type: object
       properties:
@@ -26743,6 +27680,30 @@ components:
           nullable: false
           example: '2026-10-16T19:00:00+03:00'
           description: When the hold was made.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:02:10+03:00'
+          description: When the booking was confirmed (paid); null while held.
+        paymentStatus:
+          nullable: false
+          example: paid
+          description: 'Decided with `status`: `unpaid`; `processing` while a payment is being confirmed ("Confirming your payment"); `declined` after a declined payment (a `failed` booking once the hold ended); `paid` (confirmed or completed); `refunded`.'
+          allOf:
+            - $ref: '#/components/schemas/BookingPaymentStatus'
+        payment:
+          nullable: true
+          description: The latest payment attempt, for "EGP 380 · Visa •••• 4242"; null before the first one.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Payment'
+        ticket:
+          nullable: true
+          description: The ticket with its QR code while the booking is `confirmed` or `completed`; null otherwise. The PDF and the calendar file come from `GET /bookings/{ref}/ticket.pdf` and `/calendar.ics`.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Ticket'
         holdCode:
           type: string
           nullable: true
@@ -26761,6 +27722,10 @@ components:
         - holdExpiresAt
         - serverTime
         - createdAt
+        - confirmedAt
+        - paymentStatus
+        - payment
+        - ticket
         - holdCode
     Booking:
       type: object
@@ -26830,6 +27795,30 @@ components:
           nullable: false
           example: '2026-10-16T19:00:00+03:00'
           description: When the hold was made.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:02:10+03:00'
+          description: When the booking was confirmed (paid); null while held.
+        paymentStatus:
+          nullable: false
+          example: paid
+          description: 'Decided with `status`: `unpaid`; `processing` while a payment is being confirmed ("Confirming your payment"); `declined` after a declined payment (a `failed` booking once the hold ended); `paid` (confirmed or completed); `refunded`.'
+          allOf:
+            - $ref: '#/components/schemas/BookingPaymentStatus'
+        payment:
+          nullable: true
+          description: The latest payment attempt, for "EGP 380 · Visa •••• 4242"; null before the first one.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Payment'
+        ticket:
+          nullable: true
+          description: The ticket with its QR code while the booking is `confirmed` or `completed`; null otherwise. The PDF and the calendar file come from `GET /bookings/{ref}/ticket.pdf` and `/calendar.ics`.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Ticket'
       required:
         - reference
         - status
@@ -26842,6 +27831,83 @@ components:
         - holdExpiresAt
         - serverTime
         - createdAt
+        - confirmedAt
+        - paymentStatus
+        - payment
+        - ticket
+    OnlinePaymentMethod:
+      type: string
+      enum:
+        - card
+        - wallet
+      description: '`card` (Visa, Mastercard, Meeza) or `wallet` (Apple Pay, Google Pay).'
+    SimulatedPaymentToken:
+      type: string
+      enum:
+        - sim_card_visa
+        - sim_card_mastercard
+        - sim_card_meeza
+        - sim_card_declined
+        - sim_card_slow
+        - sim_card_slow_declined
+        - sim_wallet_apple_pay
+        - sim_wallet_google_pay
+        - sim_wallet_cancelled
+      description: |-
+        The simulated test token, which decides the result (no real money moves):
+
+        - `sim_card_visa`, `sim_card_mastercard`, `sim_card_meeza`: approved (Visa •••• 4242, Mastercard •••• 4444, Meeza •••• 0011).
+        - `sim_card_declined`: declined (Visa •••• 0002).
+        - `sim_card_slow`: `processing`, approved 10 seconds later (Visa •••• 3184).
+        - `sim_card_slow_declined`: `processing`, declined 10 seconds later (Visa •••• 0341).
+        - `sim_wallet_apple_pay`, `sim_wallet_google_pay`: approved.
+        - `sim_wallet_cancelled`: the customer closed the wallet sheet (`cancelled`, not a decline; Apple Pay).
+
+        A `sim_card_*` token needs `method: card` and a `sim_wallet_*` token `method: wallet`, else `VALIDATION_FAILED` on `token`.
+    CreatePaymentRequest:
+      type: object
+      properties:
+        method:
+          nullable: false
+          example: card
+          description: '`card` (Visa, Mastercard, Meeza) or `wallet` (Apple Pay, Google Pay).'
+          allOf:
+            - $ref: '#/components/schemas/OnlinePaymentMethod'
+        token:
+          nullable: false
+          example: sim_card_visa
+          description: |-
+            The simulated test token, which decides the result (no real money moves):
+
+            - `sim_card_visa`, `sim_card_mastercard`, `sim_card_meeza`: approved (Visa •••• 4242, Mastercard •••• 4444, Meeza •••• 0011).
+            - `sim_card_declined`: declined (Visa •••• 0002).
+            - `sim_card_slow`: `processing`, approved 10 seconds later (Visa •••• 3184).
+            - `sim_card_slow_declined`: `processing`, declined 10 seconds later (Visa •••• 0341).
+            - `sim_wallet_apple_pay`, `sim_wallet_google_pay`: approved.
+            - `sim_wallet_cancelled`: the customer closed the wallet sheet (`cancelled`, not a decline; Apple Pay).
+
+            A `sim_card_*` token needs `method: card` and a `sim_wallet_*` token `method: wallet`, else `VALIDATION_FAILED` on `token`.
+          allOf:
+            - $ref: '#/components/schemas/SimulatedPaymentToken'
+      required:
+        - method
+        - token
+    PaymentResult:
+      type: object
+      properties:
+        payment:
+          nullable: false
+          description: This payment and its result.
+          allOf:
+            - $ref: '#/components/schemas/Payment'
+        booking:
+          nullable: false
+          description: 'The booking after it: `confirmed` with its `ticket` when paid; still `held` after a decline, a cancelled wallet or while processing.'
+          allOf:
+            - $ref: '#/components/schemas/Booking'
+      required:
+        - payment
+        - booking
     ErrorResponse:
       type: object
       properties:

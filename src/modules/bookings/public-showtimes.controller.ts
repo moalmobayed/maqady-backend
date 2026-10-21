@@ -24,6 +24,7 @@ import { PublicShowtimeResponse } from './dto/public-showtime.response';
 import { SeatSnapshotResponse } from './dto/seat-snapshot.response';
 import { HoldToken } from './hold-token.decorator';
 import { HoldsService } from './holds.service';
+import { SettleFirst } from './settle-first.decorator';
 import { ShowtimeSeatMapService } from './showtime-seat-map.service';
 import { holdTokenHeader } from './swagger-docs';
 
@@ -59,6 +60,7 @@ export class PublicShowtimesController {
 
   @Get(':id/seats')
   @Public()
+  @SettleFirst('showtime')
   @Header('Cache-Control', SEAT_MAP_CACHE_CONTROL)
   @ApiOperation({
     summary: 'The taken seats of a showtime now',
@@ -78,10 +80,11 @@ export class PublicShowtimesController {
   @Guest()
   @Strict()
   @RateLimit('holdIp', 'holdCustomer')
+  @SettleFirst('showtime')
   @HttpCode(201)
   @ApiOperation({
     summary: 'Hold seats for 5 minutes ("Continue")',
-    description: `A guest, or a signed-in customer (send the access token). Requires an \`Idempotency-Key\`. Rate-limited per IP address and per customer.\n\n- Holds 1 to ${MAX_SEATS_PER_HOLD} seats for ${HOLD_MINUTES} minutes, or until the showtime starts if sooner. Each seat is priced from its row's zone now; the total is what checkout charges.\n- Picking new seats replaces the browser's previous hold: a customer's live hold (on any showtime), and the guest hold whose code is sent in \`X-Hold-Token\`. Their seats are released at once. A customer has at most one live hold.\n- A guest gets a private \`holdCode\`, shown only in this answer (and its replay). Keep it for the browser session: send it as \`X-Hold-Token\` to read or release the hold, and to claim it after signing in (\`POST /holds/{ref}/claims\`).\n- A seat someone else holds or bought: \`SEAT_TAKEN\` with \`details.seats\`; nothing changes, the previous hold stays. Refresh the map and pick again.\n- \`SHOWTIME_NOT_BOOKABLE\` with \`details.reason\`: \`cancelled\`, \`started\`, \`sales_paused\`, \`movie_unavailable\` or \`hall_unavailable\`. A seat not in this hall: \`VALIDATION_FAILED\` on \`seats.<index>\`. A blocked customer: \`ACCOUNT_BLOCKED\`.\n- Everyone on the seat map gets \`seat.held\` (and \`seat.released\` for a replaced hold) once the hold is saved. Recorded in the booking's history.`,
+    description: `A guest, or a signed-in customer (send the access token). Requires an \`Idempotency-Key\`. Rate-limited per IP address and per customer.\n\n- Holds 1 to ${MAX_SEATS_PER_HOLD} seats for ${HOLD_MINUTES} minutes, or until the showtime starts if sooner. Each seat is priced from its row's zone now; the total is what checkout charges.\n- Picking new seats replaces the browser's previous hold: a customer's live hold (on any showtime), and the guest hold whose code is sent in \`X-Hold-Token\`. Their seats are released at once. A customer has at most one live hold.\n- A guest gets a private \`holdCode\`, shown only in this answer (and its replay). Keep it for the browser session: send it as \`X-Hold-Token\` to read or release the hold, and to claim it after signing in (\`POST /holds/{ref}/claims\`).\n- A seat someone else holds or bought: \`SEAT_TAKEN\` with \`details.seats\`; nothing changes, the previous hold stays. Refresh the map and pick again.\n- \`SHOWTIME_NOT_BOOKABLE\` with \`details.reason\`: \`cancelled\`, \`started\`, \`sales_paused\`, \`movie_unavailable\` or \`hall_unavailable\`. A seat not in this hall: \`VALIDATION_FAILED\` on \`seats.<index>\`. A blocked customer: \`ACCOUNT_BLOCKED\`. A previous hold whose payment is still processing is never replaced: \`PAYMENT_IN_PROGRESS\` (wait for its result).\n- Everyone on the seat map gets \`seat.held\` (and \`seat.released\` for a replaced hold) once the hold is saved. Recorded in the booking's history.`,
   })
   @ApiHeader(
     holdTokenHeader(false, 'Optional: the hold this browser made before, released by this one.'),
@@ -97,6 +100,7 @@ export class PublicShowtimesController {
     'NOT_FOUND',
     'SHOWTIME_NOT_BOOKABLE',
     'SEAT_TAKEN',
+    'PAYMENT_IN_PROGRESS',
     'ACCOUNT_BLOCKED',
   )
   async createHold(

@@ -14,7 +14,11 @@ import {
 } from 'class-validator';
 import { EMAIL_DRIVERS, LOG_LEVELS, STORAGE_DRIVERS } from './enums';
 import type { EmailDriver, LogLevel, StorageDriver } from './types';
-import { ACCESS_TOKEN_SECRET_MIN_BYTES, DATA_ENCRYPTION_KEY_BYTES } from './config.constants';
+import {
+  ACCESS_TOKEN_SECRET_MIN_BYTES,
+  DATA_ENCRYPTION_KEY_BYTES,
+  QR_SIGNING_KEY_MIN_BYTES,
+} from './config.constants';
 import {
   IsApiKey,
   IsBaseUrl,
@@ -79,6 +83,11 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsSecret({ exactBytes: DATA_ENCRYPTION_KEY_BYTES })
   DATA_ENCRYPTION_PREVIOUS_KEY?: string;
+
+  /** Signs ticket QR codes (design §7.9, U11); must differ from every other secret. */
+  @IsDefined({ message: 'is required' })
+  @IsSecret({ minBytes: QR_SIGNING_KEY_MIN_BYTES })
+  QR_SIGNING_KEY!: string;
 
   // Rate limits (design §10.6), `<count>/<window>`. Unset means the design's default.
 

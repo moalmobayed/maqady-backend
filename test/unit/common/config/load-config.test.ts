@@ -9,6 +9,7 @@ import {
 const CUSTOMER_SECRET = Buffer.alloc(32, 0x01).toString('base64');
 const STAFF_SECRET = Buffer.alloc(48, 0x02).toString('base64url');
 const ENCRYPTION_KEY = Buffer.alloc(32, 0x03).toString('base64');
+const QR_KEY = Buffer.alloc(32, 0x06).toString('base64');
 
 const VALID_ENV = {
   DATABASE_URL: 'postgres://maqady:s3cret-pass@db.example.com:5432/maqady',
@@ -17,6 +18,7 @@ const VALID_ENV = {
   JWT_SECRET_CUSTOMER: CUSTOMER_SECRET,
   JWT_SECRET_STAFF: STAFF_SECRET,
   DATA_ENCRYPTION_KEY: ENCRYPTION_KEY,
+  QR_SIGNING_KEY: QR_KEY,
   FRONTEND_BASE_URL: 'https://maqady.example',
   EMAIL_DRIVER: 'simulated',
   STORAGE_DRIVER: 'local',
@@ -67,6 +69,7 @@ describe('loadConfig', () => {
       database: { url: VALID_ENV.DATABASE_URL, schema: 'maqady' },
       auth: { customerTokenSecret: CUSTOMER_SECRET, staffTokenSecret: STAFF_SECRET },
       encryption: { key: ENCRYPTION_KEY },
+      tickets: { qrSigningKey: QR_KEY },
       rateLimits: DEFAULT_RATE_LIMITS,
       seatMap: { connectionsPerIp: 20, subscriptionsPerConnection: 3 },
       frontendBaseUrl: 'https://maqady.example',
@@ -117,6 +120,7 @@ describe('loadConfig', () => {
       'JWT_SECRET_CUSTOMER is required',
       'JWT_SECRET_STAFF is required',
       'DATA_ENCRYPTION_KEY is required',
+      'QR_SIGNING_KEY is required',
       'FRONTEND_BASE_URL is required',
       'EMAIL_DRIVER is required',
       'STORAGE_DRIVER is required',
@@ -137,6 +141,29 @@ describe('loadConfig', () => {
       JWT_SECRET_STAFF: same.toString('base64url'),
     });
     expect(problems).toEqual(['JWT_SECRET_STAFF must differ from JWT_SECRET_CUSTOMER']);
+  });
+
+  it('needs a QR signing key of at least 32 bytes that is no other secret (U11)', () => {
+    expect(
+      problemsFor({ ...VALID_ENV, QR_SIGNING_KEY: Buffer.alloc(31, 7).toString('base64') }),
+    ).toEqual([
+      'QR_SIGNING_KEY must be base64 encoding at least 32 bytes; generate one with: openssl rand -base64 32',
+    ]);
+    const previousKey = Buffer.alloc(32, 0x04).toString('base64');
+    for (const other of [CUSTOMER_SECRET, STAFF_SECRET, ENCRYPTION_KEY, previousKey]) {
+      const sameBytes = Buffer.from(other, other === STAFF_SECRET ? 'base64url' : 'base64');
+      expect(
+        problemsFor({
+          ...VALID_ENV,
+          DATA_ENCRYPTION_PREVIOUS_KEY: previousKey,
+          QR_SIGNING_KEY: sameBytes.toString('base64url'),
+        }),
+      ).toEqual(['QR_SIGNING_KEY must differ from the JWT secrets and the data encryption keys']);
+    }
+    const longer = Buffer.alloc(64, 0x08).toString('base64');
+    expect(loadConfig({ ...VALID_ENV, QR_SIGNING_KEY: longer }).tickets).toEqual({
+      qrSigningKey: longer,
+    });
   });
 
   it('reads the seat map limits from WS_* variables and refuses one out of range', () => {

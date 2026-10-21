@@ -63,6 +63,19 @@ export class ShowtimeReadService {
     return (await this.viewsOf([row]))[0] ?? null;
   }
 
+  /**
+   * Locks these showtimes `FOR SHARE` in id order in the open transaction and returns them in
+   * any status, by id; unknown ids are absent. Settlement (U11) locks every showtime of a batch
+   * of bookings this way before the bookings, as §7.1 orders.
+   */
+  async lockForShareMany(ids: readonly number[]): Promise<ReadonlyMap<number, ShowtimeView>> {
+    if (!this.context.isActive()) {
+      throw new AppError('INTERNAL', 'lockForShareMany() needs an open transaction.');
+    }
+    const views = await this.viewsOf(await this.showtimes.findByIdsForShare(ids));
+    return new Map(views.map((view) => [view.id, view]));
+  }
+
   /** These showtimes in any status, by id; unknown ids are absent. */
   async findByIds(ids: readonly number[]): Promise<ReadonlyMap<number, ShowtimeView>> {
     const views = await this.viewsOf(await this.showtimes.findByIds([...new Set(ids)]));

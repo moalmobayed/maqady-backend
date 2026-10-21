@@ -38,6 +38,17 @@ export class BookingShowtimeService {
     return view ? this.visible(await this.contextOf(view)) : null;
   }
 
+  /**
+   * A booking's showtime locked `FOR SHARE` in the open transaction (design §7.1 step 2), with
+   * its theater and movie read without locks, whatever the theater's status now (checkout, U11).
+   */
+  async lockedBookingContext(showtimeId: number): Promise<ShowtimeContext> {
+    const view = await this.showtimes.lockForShare(showtimeId);
+    if (!view)
+      throw new AppError('INTERNAL', 'A booking references a showtime that does not exist.');
+    return this.contextOf(view);
+  }
+
   /** The context of a booking's showtime, whatever its theater's status now. */
   async bookingContext(showtimeId: number): Promise<ShowtimeContext> {
     const view = await this.showtimes.findById(showtimeId);

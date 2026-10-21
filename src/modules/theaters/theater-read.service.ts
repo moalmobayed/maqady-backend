@@ -35,6 +35,12 @@ export class TheaterReadService {
     return details ?? null;
   }
 
+  /** These theaters in any status, by id; unknown ids are absent (U11 tickets of many bookings). */
+  async findByIds(ids: readonly number[]): Promise<ReadonlyMap<number, TheaterDetails>> {
+    const details = await this.detailsOf(await this.theaters.findByIds([...new Set(ids)]));
+    return new Map(details.map((theater) => [theater.id, theater]));
+  }
+
   /**
    * Locks the theater `FOR SHARE` in the open transaction and returns its status and prices;
    * null when there is none. Theater writes (publish, pause, hours, prices, deletion) wait until

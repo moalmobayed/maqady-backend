@@ -22,9 +22,9 @@ pino · Jest · Docker. Hosted on Render, with Postgres and storage on Supabase.
 
 ```bash
 npm ci
-cp .env.example .env          # local defaults; then fill in the three secrets:
-#   JWT_SECRET_CUSTOMER, JWT_SECRET_STAFF and DATA_ENCRYPTION_KEY, each from
-#   openssl rand -base64 32   (the two JWT secrets must differ)
+cp .env.example .env          # local defaults; then fill in the four secrets:
+#   JWT_SECRET_CUSTOMER, JWT_SECRET_STAFF, DATA_ENCRYPTION_KEY and QR_SIGNING_KEY, each
+#   from openssl rand -base64 32   (all four must differ)
 
 # Postgres, either:
 docker compose up -d          # postgres:16 with maqady_dev and maqady_test
@@ -70,7 +70,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF` | yes | Access-token secrets, one per audience: base64 of at least 32 bytes, and different from each other. Generate with `openssl rand -base64 32` |
 | `DATA_ENCRYPTION_KEY` | yes | Encrypts stored idempotency responses (AES-256-GCM): base64 of exactly 32 bytes |
 | `DATA_ENCRYPTION_PREVIOUS_KEY` | yes, optional | After a key rotation, the old key; it only decrypts |
-| `QR_SIGNING_KEY` | later units | Ticket QR signatures; generate with `openssl rand -base64 32` |
+| `QR_SIGNING_KEY` | yes | Signs ticket QR codes: base64 of at least 32 bytes, different from the JWT secrets and the encryption keys. Rotating it voids every issued QR code. Generate with `openssl rand -base64 32` |
 | `FRONTEND_BASE_URL` | yes | Where email links point, for example `https://maqady.example`; no query, a trailing `/` is dropped |
 | `EMAIL_DRIVER` | yes | `simulated` (every email recorded as sent, nothing leaves; local runs and CI) or `resend` ([ADR 0004](docs/adr/0004-email-through-resend.md)) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | with `resend` | The Resend API key (never logged) and the sender on the verified domain, `tickets@maqady.example` or `Maqady <tickets@maqady.example>` |
@@ -371,6 +371,44 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 ```bash
 npx wscat -c ws://localhost:3000/ws -H 'Origin: http://localhost:5173'
 > {"event":"subscribe","data":{"showtimeId":81}}
+```
+
+## Checkout and tickets
+
+A signed-in customer pays for their hold with `POST /api/v1/bookings/{ref}/payments`
+(`Idempotency-Key` required: a new one per press of Pay), sending a **test token** and no card
+data. The simulated provider decides the result from the token alone; no money moves.
+
+| Token | Method | Result | Recorded |
+|---|---|---|---|
+| `sim_card_visa` | `card` | succeeded | Visa •••• 4242 |
+| `sim_card_mastercard` | `card` | succeeded | Mastercard •••• 4444 |
+| `sim_card_meeza` | `card` | succeeded | Meeza •••• 0011 |
+| `sim_card_declined` | `card` | declined (a `201`; the hold stays payable) | Visa •••• 0002 |
+| `sim_card_slow` | `card` | `processing`, succeeded 10 s later | Visa •••• 3184 |
+| `sim_card_slow_declined` | `card` | `processing`, declined 10 s later | Visa •••• 0341 |
+| `sim_wallet_apple_pay`, `sim_wallet_google_pay` | `wallet` | succeeded | the wallet |
+| `sim_wallet_cancelled` | `wallet` | cancelled (the customer closed the wallet; not a decline) | Apple Pay |
+
+- A success confirms the booking, sells its seats (`seat.booked` on the seat map) and queues the
+  tickets email, plus an SMS when the customer has a phone. Pressing Pay again is `ALREADY_PAID`;
+  the same key replays the first answer.
+- A slow payment is settled from its stored `settles_at` by the next request that reads or writes
+  the booking or its showtime (`@SettleFirst()` routes, `SettlementService`), never by a timer:
+  poll `GET /bookings/{ref}` after `payment.settlesAt`. Until then the seats stay held, the hold
+  cannot be released or replaced (`PAYMENT_IN_PROGRESS`), and the hold lasts at least until
+  `settlesAt + 30 s`.
+- `GET /bookings/{ref}` of a confirmed booking has `ticket.qrCode`, the signed payload to draw as
+  a QR code. The tickets email links to `${FRONTEND_BASE_URL}/ticket?token=<payload>`, a frontend
+  page that draws it; the Message log shows that link as `[one-time link hidden]`.
+- `GET /bookings/{ref}/ticket.pdf` and `/calendar.ics` (owner, with the `Authorization` header)
+  download the PDF ticket and the calendar file.
+
+```bash
+curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/payments \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' -d '{"method":"card","token":"sim_card_visa"}'
+curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Database and migrations

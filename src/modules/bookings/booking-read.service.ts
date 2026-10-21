@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
 import { Clock } from '../../common/time/clock';
-import { toBooking } from './booking-assembly';
-import { BookingShowtimeService } from './booking-showtime.service';
 import { isLiveHold } from './booking-status.sql';
+import { BookingViews } from './booking-views.service';
 import { BookingsRepository } from './bookings.repository';
 import { holdCodeMatches } from './hold-code';
 import type { Booking, BookingRow, HoldAccess } from './types';
@@ -12,13 +11,14 @@ import type { Booking, BookingRow, HoldAccess } from './types';
  * Bookings as their holder reads them (design §10.4, §11 `GET /bookings/{ref}`): the owner in
  * any status, or anyone with the hold code while an unowned hold is live. Anyone else, including
  * a guest whose hold ended, gets `NOT_FOUND`, never `FORBIDDEN`, and the check comes before
- * anything else is read. Exported for checkout and My Bookings (U11, U12).
+ * anything else is read. Exported for checkout and My Bookings (U11, U12). Due payments are
+ * settled before the route runs (`@SettleFirst('booking')`), so the status read here is current.
  */
 @Injectable()
 export class BookingReadService {
   constructor(
     private readonly bookings: BookingsRepository,
-    private readonly showtimes: BookingShowtimeService,
+    private readonly views: BookingViews,
     private readonly clock: Clock,
   ) {}
 
@@ -26,9 +26,7 @@ export class BookingReadService {
     const now = this.clock.now();
     const row = await this.bookings.findByReference(reference);
     if (!row || !mayRead(row, access, now)) throw new AppError('NOT_FOUND');
-    const seats = await this.bookings.seatsOf([row.id]);
-    const context = await this.showtimes.bookingContext(row.showtime_id);
-    return toBooking({ row, seats, showtime: context.header, now });
+    return this.views.of(row, now);
   }
 }
 

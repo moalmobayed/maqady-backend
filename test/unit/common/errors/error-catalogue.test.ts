@@ -39,7 +39,7 @@ const DESIGN_CATALOGUE: Record<string, number> = {
 /**
  * The codes later units added, each with its status (U4a: `docs/gh-5-media/spec.md`; U4b:
  * `docs/gh-5-theaters/spec.md`; U6: `docs/gh-7-catalog/spec.md`; U5: `docs/gh-6-halls/spec.md`; U7:
- * `docs/gh-8-showtimes/spec.md`).
+ * `docs/gh-8-showtimes/spec.md`; U11: `docs/gh-12-checkout/spec.md`).
  */
 const UNIT_CODES: Record<string, number> = {
   IMAGE_TOO_LARGE: 413,
@@ -58,6 +58,7 @@ const UNIT_CODES: Record<string, number> = {
   SHOWTIME_NOT_SCHEDULABLE: 409,
   SHOWTIMES_NOT_CREATED: 409,
   SHOWTIME_NOT_EDITABLE: 409,
+  TICKET_NOT_AVAILABLE: 409,
 };
 
 describe('ERROR_CATALOGUE', () => {

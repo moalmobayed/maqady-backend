@@ -16,10 +16,12 @@ import { HoldRefusalService } from '../seating/hold-refusal.service';
 import { SeatClaimService } from '../seating/seat-claim.service';
 import { SeatEventPublisher } from '../seating/seat-event.publisher';
 import type { ReleasedClaims } from '../seating/types';
+import { PaymentsService } from '../payments/payments.service';
 import { notBookableReason } from './bookability';
 import { toBooking } from './booking-assembly';
 import { drawReference } from './booking-reference';
 import { BookingShowtimeService } from './booking-showtime.service';
+import { BookingViews } from './booking-views.service';
 import { isLiveHold } from './booking-status.sql';
 import { BOOKING_ENTITY, HOLD_MINUTES, REFERENCE_DRAWS } from './bookings.constants';
 import { BookingsRepository } from './bookings.repository';
@@ -57,8 +59,9 @@ import type {
  * released hold's claims end `now` and its `hold_expires_at` becomes `now`, so it reads as
  * Abandoned from then on. Seat events are published after the commit only.
  *
- * Later units extend this service: U11 settles due payments first (§7.1 step 1) and refuses to
- * release a hold whose payment is processing (`PAYMENT_IN_PROGRESS`); U13 adds the staff holder.
+ * Due payments are settled before each route runs (`@SettleFirst()`, §7.1 step 1, U11), and a
+ * hold whose payment is still processing is never released or replaced (`PAYMENT_IN_PROGRESS`,
+ * U11). U13 adds the staff holder.
  */
 @Injectable()
 export class HoldsService {
@@ -73,6 +76,8 @@ export class HoldsService {
     private readonly transactions: TransactionRepository,
     private readonly audit: AuditService,
     private readonly clock: Clock,
+    private readonly views: BookingViews,
+    private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -161,6 +166,8 @@ export class HoldsService {
           row: booking.row,
           seats: booking.seats,
           showtime: context.header,
+          latestSale: null,
+          qrCode: null,
           now,
         }),
         holdCode: code?.code ?? null,
@@ -209,6 +216,7 @@ export class HoldsService {
         (row) =>
           row.id !== target.id && row.customer_id === customer.id && isLiveHold(holdOf(row), now),
       );
+      await this.refuseProcessing(releasing);
       const released = await this.releaseLocked(releasing, now);
 
       const contact = contactOf(customer);
@@ -247,6 +255,7 @@ export class HoldsService {
       if (!locked || !mayActOn(locked, access)) throw new AppError('NOT_FOUND');
       if (locked.status !== 'held') throw new AppError('ALREADY_PAID');
       if (!isLiveHold(holdOf(locked), now)) return;
+      await this.refuseProcessing([locked]);
 
       const released = await this.releaseLocked([locked], now);
       const actor: AuditActor =
@@ -295,6 +304,7 @@ export class HoldsService {
           : row.customer_id === customerId),
     );
     if (rows.length === 0) return { rows: [], claims: [] };
+    await this.refuseProcessing(rows);
     await this.bookings.expireHolds(
       rows.map((row) => row.id),
       now,
@@ -426,9 +436,18 @@ export class HoldsService {
   }
 
   private async assemble(row: BookingRow, now: Date): Promise<Booking> {
-    const seats = await this.bookings.seatsOf([row.id]);
-    const context = await this.showtimes.bookingContext(row.showtime_id);
-    return toBooking({ row, seats, showtime: context.header, now });
+    return this.views.of(row, now);
+  }
+
+  /**
+   * A hold whose payment is still processing is never released, so its seats stay the
+   * customer's until the result is in (design §7.3 step 4; PRD Seats 5). Call it with the
+   * bookings locked: payment rows are only written under their booking's lock.
+   */
+  private async refuseProcessing(rows: readonly BookingRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const processing = await this.payments.processingSaleBookingIds(rows.map((row) => row.id));
+    if (processing.size > 0) throw new AppError('PAYMENT_IN_PROGRESS');
   }
 }
 
