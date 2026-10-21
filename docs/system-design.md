@@ -128,9 +128,9 @@ a repository, a service, a controller or gateway, and the module file.
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
 | `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters. Showtimes and seating plug their rules into its `HallLifecycleRegistry`, so it imports neither (U5) |
 | `catalog` | `genres`, `movies`, `movie_genres`, `people`, `person_roles`, `movie_credits`, `movie_photos`, `movie_videos` | media |
-| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, bookings (cancellation) |
+| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, seating (live claims behind `HALL_IN_USE`, U10), bookings (cancellation) |
 | `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
-| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging |
+| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging; it reads showtimes, halls, theaters, catalog, customers and media through their exported services (U10, `docs/gh-11-holds/spec.md`) |
 | `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`); the ticker and hall-count seams U8b fills | catalog, theaters, media |
@@ -231,9 +231,9 @@ Rules:
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `showtimes` | A movie in a hall at a time | Composite FK (`hall_id`, `theater_id`) → `halls`; FKs to `movies` and `theaters`, all `NO ACTION`; `starts_at`, `ends_at`, `cleaning_ends_at` (`ends_at` + 20 minutes, written by the service and CHECKed); `cinema_date` (written by the service, not CHECKed); `price_front`, `_middle`, `_back` (1–1,000,000) plus `currency`; `seat_capacity` (1–300); `status` (`scheduled`, `cancelled`); `cancel_reason` and `cancelled_at`, set together exactly when cancelled. **EXCLUDE USING gist (`hall_id` WITH =, `tstzrange(starts_at, cleaning_ends_at)` WITH &&) WHERE `status = 'scheduled'`.** Indexes (`hall_id`, `theater_id`, `starts_at`), (`theater_id`, `cinema_date`, `starts_at`), (`movie_id`, `cinema_date`, `starts_at`), (`cinema_date`, `starts_at`) (U7, `docs/gh-8-showtimes/spec.md`) |
-| `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `confirmed_at`; `refunded_at`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`) |
+| `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `confirmed_at`; `refunded_at`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`). CHECKs: the reference pattern, `channel = 'counter'` exactly when `created_by_staff_id` is set, `hold_token_hash` only on an online unowned hold, the timestamps and `qr_version` of each status (U10, `docs/gh-11-holds/spec.md`) |
 | `booking_seats` | Seat and price snapshot | PK (`booking_id`, `seat_label`); `row_label`, `seat_number`, `zone`, `price`, `is_wheelchair` |
-| `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold) |
+| `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold; `<= :now` means free: an expired or released hold) |
 | `payments` | Charges and refunds | `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `refund_of_payment_id` (a refund names the charge it returns); `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
 | `booking_notes` | Internal staff notes | `staff_user_id`, `body` (at most 1,000 characters) |
 
@@ -326,6 +326,20 @@ RETURNING seat_label;
 - **Time.** `:now` comes from the application's `Clock` (§14.6), never from SQL `now()`, so tests
   control time.
 
+**As built (U10).** Every claim write is one statement per showtime, in showtime id order, each
+with its rows sorted by label (code-point order, `COLLATE "C"`), so §7.1 step 6 holds for every
+row a statement locks, including those an `ON CONFLICT` locks when its `WHERE` fails:
+
+- The rows are the new claim's seats (the new booking, `claimed_until`) and the seats of the
+  bookings this transaction releases (their own booking, `claimed_until = :now`, which frees the
+  seat). A label in both keeps the new claim.
+- The `WHERE` also takes over a live claim of a booking being released (`OR seat_claims.booking_id
+  = ANY(:take_over_from)`), so a re-pick that overlaps its old hold keeps the shared seat in the
+  same statement. A sold claim (`claimed_until IS NULL`) is never touched.
+- `SEAT_TAKEN`: the refusal row is written after the request rolled back
+  (`TransactionRepository.afterRollback()`, §14.1), in a transaction of its own, never on a second
+  pooled connection inside the request.
+
 A showtime's availability snapshot is its claims where `claimed_until IS NULL OR
 claimed_until > :now`.
 
@@ -341,7 +355,14 @@ A hold is a booking with `status = 'held'`. Creating one runs, under the lock or
 4. Lock the signed-in customer, or the staff member for a counter hold, `FOR UPDATE`. Then
    release that principal's previous live hold. For a guest, release the hold whose code the
    browser presents.
-   - Releasing sets `hold_expires_at = :now`, deletes the claims and publishes `seat.released`.
+   - Releasing sets `hold_expires_at = :now`, ends the claims (`claimed_until = :now`, in the
+     new hold's own claim statement, §7.2) and publishes `seat.released` after commit. Ending
+     rather than deleting lets a release and a new claim on one showtime share one ordered
+     statement; an ended claim is free exactly like a missing one. Refunds and edits (U14)
+     delete claims.
+   - One live online hold per customer, across showtimes (U10): a customer's new hold releases
+     their live hold on any showtime, and the live unowned hold whose code `X-Hold-Token`
+     presents.
    - A hold whose payment is still processing is never released: the request fails with
      `PAYMENT_IN_PROGRESS`, so PRD Seats rule 5 holds.
 5. Insert the booking with a new reference (§7.9), the seat snapshot priced from the showtime's
@@ -363,6 +384,26 @@ from then on.
 
 **Releasing.** `DELETE /holds/{ref}` (owner or code holder) releases as in step 4. The booking
 then reads as Abandoned, or Failed if it had a declined payment.
+
+**As built (U10, `docs/gh-11-holds/spec.md`).**
+
+- Bookability is one reason, in this order: `cancelled`, `started`, `sales_paused` (theater not
+  `active`), `movie_unavailable` (not Now showing), `hall_unavailable`, answered as
+  `409 SHOWTIME_NOT_BOOKABLE { reason }`. The theater and movie are read without locks, after
+  the showtime's `FOR SHARE`; a hold never locks the theater, so it forms no cycle with U7's
+  theater → showtime writes.
+- `GET /showtimes/{id}` and `/seats` show a showtime of any published theater in any status with
+  `bookable` and the reason; an unknown id or a draft theater is `NOT_FOUND`.
+- A customer becoming a hold's owner (creating or claiming it) copies their name, email and
+  phone into the booking's contact fields.
+- Claim answers: a missing `X-Hold-Token` is `VALIDATION_FAILED`; a wrong code, an unknown
+  reference or someone else's booking `NOT_FOUND`; a matching code on an ended hold
+  `HOLD_EXPIRED`; a hold the caller already owns `201` as it is. `HOLD_ALREADY_CLAIMED` is
+  unused: a hold someone else owns reads as `NOT_FOUND`.
+- Release: an ended hold answers `204` and changes nothing; `confirmed` or `refunded` is
+  `ALREADY_PAID`.
+- Audit: `booking.held`, `booking.claimed`, `booking.released` with `booking_id`; a guest's are
+  recorded with actor `system` and `metadata.holder: 'guest'`.
 
 ### 7.4 Statuses decided by the clock
 
@@ -1041,6 +1082,14 @@ generated contract (§19).
   event bus. A subscriber may miss an event during a reconnect, so every new subscription
   starts with a fresh snapshot.
 - **Liveness.** The server pings every 30 seconds and drops connections that don't answer.
+- **As built (U10).** A refused origin (missing or not in `CORS_ORIGINS`) gets `error FORBIDDEN`
+  and close `1008`; a connection beyond `WS_CONNECTIONS_PER_IP` (20) from one address, `error
+  RATE_LIMITED` and close `1013`; a subscription beyond `WS_SUBSCRIPTIONS_PER_CONNECTION` (3),
+  `error RATE_LIMITED` with the connection kept; a `showtimeId` that is not a positive integer,
+  `error VALIDATION_FAILED`. The client address is the rightmost `X-Forwarded-For` entry, like
+  Express's `trust proxy 1`. Any positive id may be subscribed (an unknown one has no seats), so
+  seating depends on no feature module. A new subscription is registered before its snapshot is
+  read and buffers events until the snapshot is sent, then flushes them in order.
 - **Scaling note.** Fan-out is in-process because there is one instance. A second instance would
   need Postgres `LISTEN/NOTIFY` over a session-mode connection (§20).
 
@@ -1182,7 +1231,10 @@ One global `WriteInterceptor` wraps every non-GET HTTP request. It ignores WebSo
      the same code (U1 review, `docs/gh-2-foundations/review.md`).
 3. Run the handler. Store the response status and the encrypted response body in the key row.
    Commit.
-4. Run the post-commit hooks: seat-map events, and deleting replaced storage files.
+4. Run the post-commit hooks: seat-map events, and deleting replaced storage files. After a
+   rollback, run the post-rollback hooks instead (`TransactionRepository.afterRollback()`, U10):
+   work that must happen because the request failed, such as a refused hold's `hold_refusals`
+   row, in a transaction of its own.
 5. If the handler throws, the transaction rolls back, key included, so a retry re-executes.
    - On `40P01` or `40001`, the interceptor retries the whole transaction once (§7.1).
 
