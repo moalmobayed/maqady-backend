@@ -205,7 +205,8 @@ describe('GET /home', () => {
     const zamalek = body.cinemas.find((card) => card.id === theaters.zamalek)!;
     expect(zamalek.cover!.alt).toBe('Maqady Zamalek');
     expect(zamalek.facilities).toEqual(['wheelchair_access', 'cafe_bar']);
-    expect(zamalek.hallCount).toBe(0);
+    // Its one active hall (the publish requirement); no showtime is scheduled in this suite.
+    expect(zamalek.hallCount).toBe(1);
     expect(body.ticker).toEqual([]);
   });
 

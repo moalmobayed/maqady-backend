@@ -197,3 +197,48 @@ export interface SchedulingFixtureOptions {
 
 /** A showtime as `POST /admin/showtimes` and `GET /admin/showtimes/{id}` answer it. */
 export type ShowtimeBody = { readonly id: number } & Readonly<Record<string, unknown>>;
+
+/**
+ * What `buildShowtimeWorld()` (U8b) set up, by name: theaters (two active, a draft and a paused
+ * one), their halls, movies and showtimes of Friday 16 October 2026 and the days after.
+ */
+export interface ShowtimeWorld {
+  readonly theaters: {
+    readonly zamalek: number;
+    readonly downtown: number;
+    readonly draft: number;
+    readonly paused: number;
+  };
+  readonly halls: { readonly zamalek: number; readonly downtown: number };
+  readonly movies: {
+    readonly lighthouse: number;
+    readonly nile: number;
+    readonly archived: number;
+    readonly comingSoon: number;
+    readonly tomorrowOnly: number;
+    readonly draftTheaterOnly: number;
+    readonly startedOnly: number;
+    readonly cancelledOnly: number;
+    readonly draft: number;
+  };
+  readonly showtimes: Readonly<Record<ShowtimeWorldName, number>>;
+}
+
+/** The showtimes of `ShowtimeWorld`. */
+export type ShowtimeWorldName =
+  | 'zEnded'
+  | 'zStarted'
+  | 'zEvening'
+  | 'zCancelled'
+  | 'zAfterMidnight'
+  | 'zTomorrow'
+  | 'zLastDay'
+  | 'zTooFar'
+  | 'dStarted'
+  | 'dNile'
+  | 'dLighthouse'
+  | 'dArchived'
+  | 'dTomorrow'
+  | 'draftLighthouse'
+  | 'draftOnly'
+  | 'pausedLighthouse';

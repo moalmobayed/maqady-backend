@@ -5,7 +5,7 @@ import type {
 import { expectStatus, idsOf } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
 import { countQueries, draftValidator, uploadTheaterPhoto } from '../../../support/discovery';
-import { addActiveHall } from '../../../support/halls';
+import { HALLS, addActiveHall, createHall, setHallStatus } from '../../../support/halls';
 import { mediaDirectory, removeMediaDirectory } from '../../../support/media';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -30,6 +30,7 @@ describe('The public theater reads', () => {
   let admin: StaffSession;
   const clock = new TestClock(AFTERNOON);
   const theater = { zamalek: 0, heliopolis: 0, evening: 0, hidden: 0, draft: 0, paused: 0 };
+  const hall = { small: 0 };
 
   const get = (path: string) => testApp.http().get(`${API}${path}`);
   const ok = async <T>(path: string): Promise<T> => expectStatus(await get(path), 200).body as T;
@@ -98,6 +99,31 @@ describe('The public theater reads', () => {
       await put(`${theater.evening}/facilities`, { facilities: ['street_parking'] }),
       200,
     );
+    // Zamalek's halls besides its first: an active one with wheelchair spaces, a draft and a
+    // retired one (neither open to customers).
+    hall.small = await createHall(testApp, admin.authorization, theater.zamalek, 'A small hall');
+    expectStatus(
+      await testApp
+        .http()
+        .put(`${HALLS}/${hall.small}/layout`)
+        .set('Authorization', admin.authorization)
+        .send({
+          rowCount: 4,
+          seatsPerRow: 8,
+          rowZones: ['front', 'middle', 'middle', 'back'],
+          seatMarks: [
+            { rowLabel: 'A', seatNumber: 1, kind: 'wheelchair' },
+            { rowLabel: 'A', seatNumber: 2, kind: 'wheelchair' },
+            { rowLabel: 'D', seatNumber: 8, kind: 'no_seat' },
+          ],
+        }),
+      200,
+    );
+    await setHallStatus(testApp, admin.authorization, hall.small, 'active');
+    await createHall(testApp, admin.authorization, theater.zamalek, 'B draft hall');
+    const retired = await createHall(testApp, admin.authorization, theater.zamalek, 'C old hall');
+    await setHallStatus(testApp, admin.authorization, retired, 'active');
+    await setHallStatus(testApp, admin.authorization, retired, 'retired');
     await uploadTheaterPhoto(testApp, admin, theater.zamalek, 'cover');
     await uploadTheaterPhoto(testApp, admin, theater.zamalek, 'gallery', 'The lobby');
     await uploadTheaterPhoto(testApp, admin, theater.zamalek, 'gallery');
@@ -147,7 +173,8 @@ describe('The public theater reads', () => {
         longitude: 31.2197,
         facilities: ['valet_parking', 'cafe_bar'],
         mainPhone: { label: 'Main line', number: '+20227351100' },
-        hallCount: 0,
+        // Its two active halls; the draft and the retired one are not open to customers.
+        hallCount: 2,
         openState: { isOpen: true, closesAt: '2026-10-17T01:00:00+03:00', nextOpensAt: null },
         today: {
           cinemaDate: '2026-10-16',
@@ -222,9 +249,12 @@ describe('The public theater reads', () => {
       );
       const home = await countQueries(testApp, () => get('/home'));
       expect(one).toBe(four);
-      // The theaters, phones, facilities, photos, images; open-state, today's and weekly hours.
-      expect(four).toBe(10);
-      expect(home).toBeLessThanOrEqual(25);
+      // The theaters, phones, facilities, photos, images; open-state, today's and weekly hours;
+      // the active halls, their rows and seat marks (the hall counts).
+      expect(four).toBe(13);
+      // Those, the carousel, genres, both movie rows and the ticker (no showtime scheduled here:
+      // the active theaters and the next showtimes).
+      expect(home).toBeLessThanOrEqual(34);
     });
   });
 
@@ -240,9 +270,19 @@ describe('The public theater reads', () => {
           { label: 'Main line', number: '+20227351100' },
           { label: 'Box office', number: '+20227351101' },
         ],
-        hallCount: 0,
+        hallCount: 2,
         openState: { isOpen: true },
       });
+      // Active halls only, by name: seats count wheelchair spaces, not gaps.
+      expect(body.halls).toEqual([
+        { id: hall.small, name: 'A small hall', seatCount: 31, wheelchairCount: 2 },
+        {
+          id: expect.any(Number),
+          name: expect.stringMatching(/^Hall /),
+          seatCount: 192,
+          wheelchairCount: 0,
+        },
+      ]);
       expect(body.photos.map((photo: { caption: string | null }) => photo.caption)).toEqual([
         'The lobby',
         null,
