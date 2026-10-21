@@ -91,11 +91,9 @@ export async function runSeed(
   const api = new SeedApiClient(baseUrl);
   await api.signIn(SEED_ADMIN_EMAIL, password);
 
-  const now = app.get(Clock).now();
   const context: SeedContext = {
     api,
-    now,
-    today: cinemaDateOf(now),
+    today: cinemaDateOf(app.get(Clock).now()),
     theaterIds: new Map(),
     hallIds: new Map(),
     personIds: new Map(),

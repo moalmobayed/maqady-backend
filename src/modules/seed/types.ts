@@ -130,11 +130,9 @@ export interface SeedStep {
   run(context: SeedContext): Promise<SeedStepResult>;
 }
 
-/** What the steps share: the signed-in admin API, the Clock's now and the ids found so far. */
+/** What the steps share: the signed-in admin API, today's date and the ids found so far. */
 export interface SeedContext {
   readonly api: SeedApi;
-  readonly now: Date;
-  /** Today's cinema date at `now`. */
   readonly today: CalendarDate;
   readonly theaterIds: Map<string, number>;
   /** The seed hall (`SEED_HALL_NAME`) of each published theater, by theater name. */
