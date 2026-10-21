@@ -35,3 +35,27 @@ export const NOT_BOOKABLE_REASONS = [
 
 /** Why a hold was released, in the `booking.released` audit event. */
 export const RELEASE_REASONS = ['released', 'replaced'] as const;
+
+/**
+ * A booking's payment status as the UI shows it (design §7.4; PRD "Statuses"): decided with the
+ * booking status by `paymentStatusOf()` in `booking-status.sql.ts`.
+ */
+export const PAYMENT_STATUS_DISPLAYS = [
+  'unpaid',
+  'processing',
+  'declined',
+  'paid',
+  'refunded',
+] as const;
+
+/** What a route settles before it runs (`@SettleFirst()`): the booking `{ref}`, or showtime `{id}`. */
+export const SETTLE_FIRST_KINDS = ['booking', 'showtime'] as const;
+
+/** The booking statuses that have a ticket: a QR code, a PDF and a calendar file. */
+export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
+
+/**
+ * Why settlement refunded a succeeded payment at once (design §7.5): its seats were no longer
+ * all the booking's, or its showtime was cancelled meanwhile.
+ */
+export const AUTOMATIC_REFUND_REASONS = ['claims_lost', 'showtime_cancelled'] as const;

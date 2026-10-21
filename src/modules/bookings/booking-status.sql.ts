@@ -2,6 +2,8 @@ import type {
   BookingDisplayStatus,
   BookingStatusInput,
   HoldTiming,
+  PaymentStatusDisplay,
+  PaymentStatusInput,
   SqlPredicate,
   StatusAliases,
 } from './types';
@@ -33,6 +35,30 @@ export function bookingStatusOf(input: BookingStatusInput, now: Date): BookingDi
       return input.showtimeEndsAt.getTime() > at ? 'confirmed' : 'completed';
     case 'refunded':
       return 'refunded';
+  }
+}
+
+/**
+ * The booking-level payment status the UI shows (design §7.4; PRD "Statuses"), derived from
+ * stored facts like the booking status:
+ *
+ * | Payment status | When                                                                  |
+ * |----------------|-----------------------------------------------------------------------|
+ * | refunded       | the booking is `refunded`                                             |
+ * | paid           | the booking is `confirmed` (Confirmed or Completed)                   |
+ * | processing     | `held`, and its latest sale charge is still processing                |
+ * | declined       | `held`, and a payment was declined (a Failed booking once it ended)   |
+ * | unpaid         | `held` otherwise (an Abandoned booking once it ended)                 |
+ */
+export function paymentStatusOf(input: PaymentStatusInput): PaymentStatusDisplay {
+  switch (input.status) {
+    case 'refunded':
+      return 'refunded';
+    case 'confirmed':
+      return 'paid';
+    case 'held':
+      if (input.latestSaleStatus === 'processing') return 'processing';
+      return input.hasDeclinedPayment ? 'declined' : 'unpaid';
   }
 }
 

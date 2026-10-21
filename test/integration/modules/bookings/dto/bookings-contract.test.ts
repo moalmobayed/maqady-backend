@@ -58,8 +58,11 @@ describe('Seats and holds in the OpenAPI document and the router', () => {
   });
 
   it('serves the 6 routes with exactly the access the design gives them, and the gateway', () => {
-    const routes = listHttpRoutes(testApp).filter((route) =>
-      /^\/api\/v1\/(showtimes|holds|bookings)\//.test(route.path),
+    // U11's checkout and ticket routes under /bookings are covered by checkout-contract.test.ts.
+    const routes = listHttpRoutes(testApp).filter(
+      (route) =>
+        /^\/api\/v1\/(showtimes|holds|bookings)\//.test(route.path) &&
+        !/\/(payments|ticket\.pdf|calendar\.ics)$/.test(route.path),
     );
     expect(routes.map((route) => [route.method, route.path, route.access]).sort()).toEqual(
       ROUTES.map(([method, path, access]) => [
@@ -111,8 +114,15 @@ describe('Seats and holds in the OpenAPI document and the router', () => {
       expect.arrayContaining(['SHOWTIME_NOT_BOOKABLE', 'SEAT_TAKEN']),
     );
     expect(examples('/showtimes/{id}/holds', 'POST', '403')).toEqual(['ACCOUNT_BLOCKED']);
-    expect(examples('/holds/{ref}/claims', 'POST', '409')).toEqual(['HOLD_EXPIRED']);
-    expect(examples('/holds/{ref}', 'DELETE', '409')).toEqual(['ALREADY_PAID']);
+    // U11: a hold whose payment is processing is never released or replaced.
+    expect(examples('/holds/{ref}/claims', 'POST', '409')).toEqual([
+      'HOLD_EXPIRED',
+      'PAYMENT_IN_PROGRESS',
+    ]);
+    expect(examples('/holds/{ref}', 'DELETE', '409')).toEqual([
+      'ALREADY_PAID',
+      'PAYMENT_IN_PROGRESS',
+    ]);
     expect(operation('/showtimes/{id}', 'GET').security).toEqual([]);
     expect(operation('/holds/{ref}/claims', 'POST').security).toEqual([{ customer: [] }]);
   });

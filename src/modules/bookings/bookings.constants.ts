@@ -23,3 +23,32 @@ export const SEAT_MAP_CACHE_CONTROL = 'no-store';
 
 /** Audit entity type of booking events. */
 export const BOOKING_ENTITY = 'booking';
+
+/**
+ * A processing payment keeps its hold and seats this long past the provider's `settlesAt`
+ * (design §7.5 "Processing"), so the seats stay the customer's until the result is in.
+ */
+export const PROCESSING_GRACE_SECONDS = 30;
+
+/** Ticket QR payloads (design §7.9): `MQ1.<reference>.<qr_version>.<signature>`. */
+export const QR_PREFIX = 'MQ1';
+/** The HMAC-SHA256 is truncated to this many bytes: 22 base64url characters. */
+export const QR_SIGNATURE_BYTES = 16;
+export const QR_PAYLOAD_PATTERN =
+  /^MQ1\.(MQ-[2-9A-HJKMNP-Z]{6})\.([1-9][0-9]{0,4})\.([A-Za-z0-9_-]{22})$/;
+
+/** Frontend pages the tickets messages link to (design §7.9, §13.1). */
+export const TICKET_LINK_PATH = '/ticket';
+export const MY_BOOKINGS_PATH = '/my-bookings';
+
+/** Metadata key `@SettleFirst()` writes. */
+export const SETTLE_FIRST_METADATA = 'maqady:settle-first';
+
+/** Audit entity type of payment events. */
+export const PAYMENT_ENTITY = 'payment';
+
+/** Ticket downloads are personal: no shared cache keeps them, and no browser cache either. */
+export const TICKET_CACHE_CONTROL = 'private, no-store';
+
+/** The calendar event's organizer-free UID domain: `UID:<reference>@maqady`. */
+export const CALENDAR_UID_DOMAIN = 'maqady';

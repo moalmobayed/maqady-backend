@@ -19,6 +19,7 @@ import { BookingRefParams } from './dto/booking-ref.params';
 import { HoldResponse } from './dto/hold.response';
 import { HoldToken } from './hold-token.decorator';
 import { HoldsService } from './holds.service';
+import { SettleFirst } from './settle-first.decorator';
 import { holdTokenHeader } from './swagger-docs';
 
 /** Claiming a guest hold at sign-in, and releasing a hold (design §7.3, §11). */
@@ -33,11 +34,12 @@ export class HoldsController {
   @Post(':ref/claims')
   @Customer()
   @Strict()
+  @SettleFirst('booking')
   @HttpCode(201)
   @ApiOperation({
     summary: 'Claim a guest hold after signing in',
     description:
-      "A signed-in customer, with the guest hold's code in `X-Hold-Token` (required). Requires an `Idempotency-Key`. Call it right after signing in or creating an account in the booking flow (PRD Seats 3).\n\n- The hold becomes the customer's, with their name, email and phone as its contact, and the code stops working. The countdown is not restarted: `holdExpiresAt` stays.\n- The customer's other live hold, if any, is released (one live hold per customer), and its seats are announced free on the seat map.\n- A hold the customer already owns answers `201` as it is (a second tab).\n- An unknown reference, someone else's booking, or a code that does not match: `NOT_FOUND`. The code matches but the hold ran out: `HOLD_EXPIRED` (pick seats again). No `X-Hold-Token`: `VALIDATION_FAILED`.\n- Recorded in the booking's history.",
+      "A signed-in customer, with the guest hold's code in `X-Hold-Token` (required). Requires an `Idempotency-Key`. Call it right after signing in or creating an account in the booking flow (PRD Seats 3).\n\n- The hold becomes the customer's, with their name, email and phone as its contact, and the code stops working. The countdown is not restarted: `holdExpiresAt` stays.\n- The customer's other live hold, if any, is released (one live hold per customer), and its seats are announced free on the seat map; while that hold's payment is still processing it is kept and the claim is refused (`PAYMENT_IN_PROGRESS`).\n- A hold the customer already owns answers `201` as it is (a second tab).\n- An unknown reference, someone else's booking, or a code that does not match: `NOT_FOUND`. The code matches but the hold ran out: `HOLD_EXPIRED` (pick seats again). No `X-Hold-Token`: `VALIDATION_FAILED`.\n- Recorded in the booking's history.",
   })
   @ApiHeader(holdTokenHeader(true, 'Required: it proves this browser made the hold.'))
   @ApiCreatedResponse({
@@ -45,7 +47,7 @@ export class HoldsController {
     description: "The hold, now the customer's (`holdCode` is null)",
     headers: REQUEST_ID_RESPONSE_HEADER,
   })
-  @ApiErrorResponses('VALIDATION_FAILED', 'NOT_FOUND', 'HOLD_EXPIRED')
+  @ApiErrorResponses('VALIDATION_FAILED', 'NOT_FOUND', 'HOLD_EXPIRED', 'PAYMENT_IN_PROGRESS')
   async claimHold(
     @CurrentPrincipal() principal: CustomerPrincipal,
     @Param() params: BookingRefParams,
@@ -64,15 +66,16 @@ export class HoldsController {
 
   @Delete(':ref')
   @Guest()
+  @SettleFirst('booking')
   @HttpCode(204)
   @ApiOperation({
     summary: 'Release a hold',
     description:
-      "The owner (send the access token), or a guest with the hold code in `X-Hold-Token`. An `Idempotency-Key` is optional. The seats are free at once (announced on the seat map) and the booking reads as `abandoned` from then on. A hold that already ended answers `204` and changes nothing. A paid booking is never released here: `ALREADY_PAID`. Anyone else, and any unknown reference: `NOT_FOUND`. Recorded in the booking's history.",
+      "The owner (send the access token), or a guest with the hold code in `X-Hold-Token`. An `Idempotency-Key` is optional. The seats are free at once (announced on the seat map) and the booking reads as `abandoned` from then on. A hold that already ended answers `204` and changes nothing. A paid booking is never released here: `ALREADY_PAID`; nor is a hold whose payment is still processing: `PAYMENT_IN_PROGRESS`. Anyone else, and any unknown reference: `NOT_FOUND`. Recorded in the booking's history.",
   })
   @ApiHeader(holdTokenHeader(false, 'Required for a guest hold.'))
   @ApiNoContentResponse({ description: 'Released', headers: REQUEST_ID_RESPONSE_HEADER })
-  @ApiErrorResponses('VALIDATION_FAILED', 'NOT_FOUND', 'ALREADY_PAID')
+  @ApiErrorResponses('VALIDATION_FAILED', 'NOT_FOUND', 'ALREADY_PAID', 'PAYMENT_IN_PROGRESS')
   async releaseHold(
     @CurrentPrincipal() principal: Principal | undefined,
     @Param() params: BookingRefParams,

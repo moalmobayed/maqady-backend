@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { AppError } from '../../common/errors/app-error';
 import { MoneyResponse } from '../../common/money/dto/money-response.dto';
 import type { Money } from '../../common/money/types';
 import { formatCairoIso } from '../../common/time/time';
 import { toHallLayoutResponse } from '../halls/hall-response.mapper';
 import { MediaService } from '../media/media.service';
+import type { Payment } from '../payments/types';
 import type { SeatSnapshot } from '../seating/types';
 import { toShowtimePricesResponse } from '../showtimes/showtime-response.mapper';
 import { HOLD_MINUTES, MAX_SEATS_PER_HOLD } from './bookings.constants';
@@ -15,11 +17,15 @@ import {
 } from './dto/booking-showtime.response';
 import { BookingResponse } from './dto/booking.response';
 import { HoldResponse } from './dto/hold.response';
+import { PaymentResultResponse } from './dto/payment-result.response';
+import { PaymentCardResponse, PaymentResponse } from './dto/payment.response';
+import { TicketResponse } from './dto/ticket.response';
 import { PublicShowtimeResponse } from './dto/public-showtime.response';
 import { SeatSnapshotResponse, TakenSeatResponse } from './dto/seat-snapshot.response';
 import type {
   Booking,
   BookingShowtime,
+  CheckoutResult,
   CreatedHold,
   SeatMapAvailability,
   ShowtimeSeatMap,
@@ -42,6 +48,13 @@ export class BookingResponseMapper {
     return Object.assign(new HoldResponse(), {
       ...this.bookingFields(hold.booking),
       holdCode: hold.holdCode,
+    });
+  }
+
+  paymentResult(result: CheckoutResult): PaymentResultResponse {
+    return Object.assign(new PaymentResultResponse(), {
+      payment: toPaymentResponse(result.payment),
+      booking: this.booking(result.booking),
     });
   }
 
@@ -93,6 +106,16 @@ export class BookingResponseMapper {
       holdExpiresAt: formatCairoIso(booking.holdExpiresAt),
       serverTime: formatCairoIso(booking.serverTime),
       createdAt: formatCairoIso(booking.createdAt),
+      confirmedAt: booking.confirmedAt === null ? null : formatCairoIso(booking.confirmedAt),
+      paymentStatus: booking.paymentStatus,
+      payment: booking.payment === null ? null : toPaymentResponse(booking.payment),
+      ticket:
+        booking.ticket === null
+          ? null
+          : Object.assign(new TicketResponse(), {
+              qrCode: booking.ticket.qrCode,
+              admits: booking.ticket.admits,
+            }),
     };
   }
 
@@ -114,6 +137,32 @@ export class BookingResponseMapper {
       hall: Object.assign(new NamedRefResponse(), showtime.hall),
     };
   }
+}
+
+/** A sale charge as the customer sees it; no internal id or provider reference leaves the API. */
+export function toPaymentResponse(payment: Payment): PaymentResponse {
+  if (payment.kind !== 'charge' || payment.status === 'pending') {
+    throw new AppError('INTERNAL', 'Only a charge is shown as a payment.');
+  }
+  return Object.assign(new PaymentResponse(), {
+    status: payment.status,
+    method: payment.method,
+    amount: toMoney(payment.amount),
+    card:
+      payment.card === null
+        ? null
+        : Object.assign(new PaymentCardResponse(), {
+            brand: payment.card.brand,
+            last4: payment.card.last4,
+          }),
+    walletType: payment.walletType,
+    createdAt: formatCairoIso(payment.createdAt),
+    completedAt: payment.completedAt === null ? null : formatCairoIso(payment.completedAt),
+    settlesAt:
+      payment.status === 'processing' && payment.settlesAt !== null
+        ? formatCairoIso(payment.settlesAt)
+        : null,
+  });
 }
 
 function toMoney(value: Money): MoneyResponse {

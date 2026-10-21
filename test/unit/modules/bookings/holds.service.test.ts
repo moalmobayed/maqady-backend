@@ -4,7 +4,9 @@ import { sha256Hex } from '../../../../src/common/crypto/hashing';
 import { AppError } from '../../../../src/common/errors/app-error';
 import { resolveException } from '../../../../src/common/errors/error-mapping';
 import { money } from '../../../../src/common/money/money';
+import { toBooking } from '../../../../src/modules/bookings/booking-assembly';
 import type { BookingShowtimeService } from '../../../../src/modules/bookings/booking-showtime.service';
+import type { BookingViews } from '../../../../src/modules/bookings/booking-views.service';
 import type { BookingsRepository } from '../../../../src/modules/bookings/bookings.repository';
 import { newHoldCode } from '../../../../src/modules/bookings/hold-code';
 import { HoldsService } from '../../../../src/modules/bookings/holds.service';
@@ -17,6 +19,7 @@ import type { CustomerService } from '../../../../src/modules/customers/customer
 import type { Customer } from '../../../../src/modules/customers/types';
 import type { HallReadService } from '../../../../src/modules/halls/hall-read.service';
 import type { HallLayout, HallSummary } from '../../../../src/modules/halls/types';
+import type { PaymentsService } from '../../../../src/modules/payments/payments.service';
 import type { HoldRefusalService } from '../../../../src/modules/seating/hold-refusal.service';
 import type { SeatClaimService } from '../../../../src/modules/seating/seat-claim.service';
 import type { SeatEventPublisher } from '../../../../src/modules/seating/seat-event.publisher';
@@ -112,6 +115,7 @@ function bookingRow(overrides: Partial<BookingRow>): BookingRow {
     contact_phone: null,
     confirmed_at: null,
     refunded_at: null,
+    qr_version: null,
     created_at: NOW,
     updated_at: NOW,
     ...overrides,
@@ -134,6 +138,8 @@ describe('HoldsService', () => {
   let refusals: { recordAfterRollback: jest.Mock };
   let events: { publishAfterCommit: jest.Mock };
   let audit: { record: jest.Mock };
+  let payments: { processingSaleBookingIds: jest.Mock };
+  let views: { of: jest.Mock };
   let clock: TestClock;
   let service: HoldsService;
 
@@ -153,6 +159,12 @@ describe('HoldsService', () => {
       seatsOf: logged('seats of', []),
       expireHolds: logged('expire', undefined),
       assignOwner: logged('assign', undefined),
+      findByIds: logged('find by ids', []),
+      confirm: logged('confirm', []),
+      markDeclined: logged('mark declined', undefined),
+      extendHold: logged('extend', undefined),
+      markRefunded: logged('mark refunded', undefined),
+      ticketHoldersOf: logged('ticket holders', []),
     };
     showtimes = {
       lockedContext: logged('lock showtime', CONTEXT),
@@ -169,6 +181,21 @@ describe('HoldsService', () => {
     refusals = { recordAfterRollback: logged('record refusal', undefined) };
     events = { publishAfterCommit: logged('publish', undefined) };
     audit = { record: logged('audit', 1) };
+    payments = { processingSaleBookingIds: jest.fn().mockResolvedValue(new Set()) };
+    views = {
+      of: jest.fn((row: BookingRow, now: Date) =>
+        Promise.resolve(
+          toBooking({
+            row,
+            seats: [],
+            showtime: CONTEXT.header,
+            latestSale: null,
+            qrCode: null,
+            now,
+          }),
+        ),
+      ),
+    };
     const transactions = { run: jest.fn((fn: () => Promise<unknown>) => fn()) };
     service = new HoldsService(
       bookings as unknown as BookingsRepository,
@@ -181,6 +208,8 @@ describe('HoldsService', () => {
       transactions as unknown as TransactionRepository,
       audit as unknown as AuditService,
       clock,
+      views as unknown as BookingViews,
+      payments as unknown as PaymentsService,
     );
   });
 
@@ -547,6 +576,53 @@ describe('HoldsService', () => {
         new AppError('NOT_FOUND'),
       );
       await expect(service.release({}, 'MQ-7K3P9Q')).rejects.toEqual(new AppError('NOT_FOUND'));
+    });
+  });
+
+  describe('a hold whose payment is processing (U11)', () => {
+    const processing = bookingRow({ id: 90, customer_id: 12 });
+
+    beforeEach(() => {
+      payments.processingSaleBookingIds.mockResolvedValue(new Set([90]));
+      bookings.lockForUpdate.mockResolvedValue([processing]);
+    });
+
+    it('is never released: PAYMENT_IN_PROGRESS, checked under the booking lock, nothing written', async () => {
+      bookings.findByReference.mockResolvedValue(processing);
+      await expect(service.release({ customerId: 12 }, processing.reference)).rejects.toEqual(
+        new AppError('PAYMENT_IN_PROGRESS'),
+      );
+      expect(payments.processingSaleBookingIds).toHaveBeenCalledWith([90]);
+      expect(bookings.lockForUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+        payments.processingSaleBookingIds.mock.invocationCallOrder[0]!,
+      );
+      expect(bookings.expireHolds).not.toHaveBeenCalled();
+      expect(seatClaims.write).not.toHaveBeenCalled();
+    });
+
+    it('is never replaced by a new hold of its customer', async () => {
+      bookings.liveOnlineHoldIdsOfCustomer.mockResolvedValue([90]);
+      await expect(
+        service.create({
+          showtimeId: 81,
+          labels: ['A2'],
+          holder: { kind: 'customer', customerId: 12 },
+        }),
+      ).rejects.toEqual(new AppError('PAYMENT_IN_PROGRESS'));
+      expect(bookings.expireHolds).not.toHaveBeenCalled();
+      expect(bookings.insertUnlessReferenceTaken).not.toHaveBeenCalled();
+    });
+
+    it('is never released by claiming a guest hold', async () => {
+      const { code, hash } = newHoldCode();
+      const guestHold = bookingRow({ id: 70, hold_token_hash: hash });
+      bookings.findByReference.mockResolvedValue(guestHold);
+      bookings.liveOnlineHoldIdsOfCustomer.mockResolvedValue([90]);
+      bookings.lockForUpdate.mockResolvedValue([guestHold, processing]);
+      await expect(
+        service.claim({ kind: 'customer', id: 12, sessionId: 3 }, 'MQ-7K3P9Q', code),
+      ).rejects.toEqual(new AppError('PAYMENT_IN_PROGRESS'));
+      expect(bookings.assignOwner).not.toHaveBeenCalled();
     });
   });
 });

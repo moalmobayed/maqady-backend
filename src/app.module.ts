@@ -17,6 +17,7 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
+import { SettleFirstInterceptor } from './modules/bookings/settle-first.interceptor';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
@@ -26,6 +27,7 @@ import { MediaModule } from './modules/media/media.module';
 import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { SeatingModule } from './modules/seating/seating.module';
 import { ShowtimesModule } from './modules/showtimes/showtimes.module';
 import { StaffModule } from './modules/staff/staff.module';
@@ -41,8 +43,10 @@ import { TheatersModule } from './modules/theaters/theaters.module';
  * - the guards, in the order of design §10.3: `JwtAuthGuard` (who is calling), `RateLimitGuard`
  *   (so per-customer limits know the customer), then `AccessGuard` (may they call this route);
  * - the interceptors, outermost first: `OutboxDrainInterceptor`, which starts sending queued
- *   messages once a write has committed (§13.1), then the `WriteInterceptor`, which runs every
- *   write in one transaction with idempotency (§14.1).
+ *   messages once a write has committed (§13.1); `SettleFirstInterceptor`, which settles due
+ *   payments in their own transaction before a `@SettleFirst()` route's own (§7.1 step 1, U11);
+ *   then the `WriteInterceptor`, which runs every write in one transaction with idempotency
+ *   (§14.1).
  *
  * Feature modules are imported in the order of the delivery plan (design §21).
  */
@@ -76,6 +80,7 @@ export class AppModule {
         DiscoveryModule,
         ShowtimesModule,
         SeatingModule,
+        PaymentsModule,
         BookingsModule,
       ],
       providers: [
@@ -85,6 +90,7 @@ export class AppModule {
         { provide: APP_GUARD, useExisting: RateLimitGuard },
         { provide: APP_GUARD, useExisting: AccessGuard },
         { provide: APP_INTERCEPTOR, useExisting: OutboxDrainInterceptor },
+        { provide: APP_INTERCEPTOR, useExisting: SettleFirstInterceptor },
         { provide: APP_INTERCEPTOR, useExisting: WriteInterceptor },
       ],
     };
