@@ -19,4 +19,12 @@ export class AuditRepository {
     if (!inserted) throw new AppError('INTERNAL', 'The audit event insert returned no id.');
     return inserted.id;
   }
+
+  /** Several events in one multi-row insert (a settlement batch, U11). */
+  async insertMany(rows: readonly AuditEventRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .executor()('audit_events')
+      .insert([...rows]);
+  }
 }

@@ -10,7 +10,7 @@ import {
   MAX_ENTITY_TYPE_LENGTH,
 } from './audit.constants';
 import { AuditRepository } from './audit.repository';
-import type { AuditEventInput, AuditMetadataValue } from './types';
+import type { AuditEventInput, AuditEventRow, AuditMetadataValue } from './types';
 
 /**
  * The activity log's write side (design §13.5). Call `record()` inside the transaction of every
@@ -29,20 +29,35 @@ export class AuditService {
 
   async record(event: AuditEventInput): Promise<number> {
     validateEvent(event);
-    const { actor } = event;
-    return this.repository.insert({
-      occurred_at: this.clock.now(),
-      actor_kind: actor.kind,
-      actor_staff_user_id: actor.kind === 'staff' ? actor.id : null,
-      actor_customer_id: actor.kind === 'customer' ? actor.id : null,
-      action: event.action,
-      entity_type: event.entity.type,
-      entity_id: event.entity.id,
-      booking_id: event.bookingId ?? null,
-      changed_fields: [...new Set(event.changedFields ?? [])].sort(),
-      metadata: event.metadata ?? {},
-    });
+    return this.repository.insert(rowOf(event, this.clock.now()));
   }
+
+  /**
+   * Records several events in one statement, with the same checks as `record()`: every event is
+   * checked before anything is written, so a bad one records none. Nothing happens for an empty
+   * list. Batches (a settlement of many bookings, U11) cost one insert, never one per event.
+   */
+  async recordMany(events: readonly AuditEventInput[]): Promise<void> {
+    events.forEach(validateEvent);
+    const now = this.clock.now();
+    await this.repository.insertMany(events.map((event) => rowOf(event, now)));
+  }
+}
+
+function rowOf(event: AuditEventInput, occurredAt: Date): AuditEventRow {
+  const { actor } = event;
+  return {
+    occurred_at: occurredAt,
+    actor_kind: actor.kind,
+    actor_staff_user_id: actor.kind === 'staff' ? actor.id : null,
+    actor_customer_id: actor.kind === 'customer' ? actor.id : null,
+    action: event.action,
+    entity_type: event.entity.type,
+    entity_id: event.entity.id,
+    booking_id: event.bookingId ?? null,
+    changed_fields: [...new Set(event.changedFields ?? [])].sort(),
+    metadata: event.metadata ?? {},
+  };
 }
 
 function validateEvent(event: AuditEventInput): void {

@@ -89,7 +89,8 @@ export const ERROR_CATALOGUE = {
   HOLD_EXPIRED: {
     status: 409,
     message: 'Your seat hold has expired.',
-    description: 'The hold ran out before this action. Choose the seats again.',
+    description:
+      'The hold ran out (or was released, or replaced by a newer hold) before this action, so its seats are no longer yours: "Your seats were released. Pick seats again." Nothing was charged. `details` is null.',
   },
   HOLD_ALREADY_CLAIMED: {
     status: 409,
@@ -99,12 +100,14 @@ export const ERROR_CATALOGUE = {
   ALREADY_PAID: {
     status: 409,
     message: 'This booking is already paid.',
-    description: 'A successful payment exists. Show the tickets instead of paying again.',
+    description:
+      'A successful payment exists (the booking is confirmed or refunded), so it is never charged or released again. Show the booking and its tickets instead. `details` is null.',
   },
   PAYMENT_IN_PROGRESS: {
     status: 409,
     message: 'A payment for this booking is already in progress.',
-    description: 'Wait for the processing payment to finish, then read the booking again.',
+    description:
+      'A payment of this booking is still processing, so its seats stay held for it: it can be neither paid again nor released (nor replaced by a new hold) until the result is in. Show "Confirming your payment" and read the booking again in a few seconds. `details` is null.',
   },
   SHOWTIME_NOT_BOOKABLE: {
     status: 409,
@@ -158,6 +161,12 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This booking can no longer be changed.',
     description: 'The booking is refunded, checked in, or its showtime has started.',
+  },
+  TICKET_NOT_AVAILABLE: {
+    status: 409,
+    message: 'This booking has no ticket.',
+    description:
+      'Only a confirmed booking, or a completed one (its showtime has ended), has a ticket to download or add to a calendar. `details.status` is the booking status now: `held`, `failed`, `abandoned` or `refunded`.',
   },
   LAST_ADMIN: {
     status: 409,

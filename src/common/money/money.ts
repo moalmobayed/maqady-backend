@@ -1,5 +1,6 @@
 import { AppError } from '../errors/app-error';
 import { CURRENCIES, DEFAULT_CURRENCY } from './enums';
+import { MINOR_UNITS_PER_MAJOR } from './money.constants';
 import type { Currency, Money } from './types';
 
 /**
@@ -43,6 +44,21 @@ export function multiplyMoney(value: Money, quantity: number): Money {
 /** The sum of values in one currency; zero for an empty list. */
 export function sumMoney(values: readonly Money[], currency: Currency = DEFAULT_CURRENCY): Money {
   return values.reduce((total, value) => addMoney(total, value), zeroMoney(currency));
+}
+
+/**
+ * Money as messages and tickets show it to people (design-inventory "Currency format"): the
+ * currency, then whole units with `en-US` grouping, and piastres only when there are some:
+ * `EGP 380`, `EGP 1,234`, `EGP 190.50`. Never parsed back; the API writes `{ amount, currency }`.
+ */
+export function formatMoneyDisplay(value: Money): string {
+  assertAmount(value.amount);
+  const hasMinorUnits = value.amount % MINOR_UNITS_PER_MAJOR !== 0;
+  const units = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: hasMinorUnits ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(value.amount / MINOR_UNITS_PER_MAJOR);
+  return `${value.currency} ${units}`;
 }
 
 export function isSameMoney(first: Money, second: Money): boolean {

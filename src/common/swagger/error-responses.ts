@@ -67,6 +67,8 @@ const EXAMPLE_DETAILS: Partial<Record<ErrorCode, ErrorDetails>> = {
     ],
   },
   SHOWTIME_NOT_EDITABLE: { reason: 'started' },
+  TICKET_NOT_AVAILABLE: { status: 'held' },
+  SHOWTIME_NOT_BOOKABLE: { reason: 'sales_paused' },
   OUTSIDE_OPENING_HOURS: {
     window: { opensAt: '2026-10-16T12:00:00+03:00', closesAt: '2026-10-17T01:00:00+03:00' },
   },

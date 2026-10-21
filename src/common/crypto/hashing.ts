@@ -6,9 +6,17 @@ export function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
-/** HMAC-SHA256 of UTF-8 text under a key, as base64url (QR signatures, opaque references). */
+/** HMAC-SHA256 of UTF-8 text under a key, as base64url (opaque references). */
 export function hmacSha256(key: Buffer | string, data: string): string {
   return createHmac('sha256', key).update(data, 'utf8').digest('base64url');
+}
+
+/**
+ * HMAC-SHA256 of UTF-8 text under a key, as the raw 32-byte digest, for callers that truncate it
+ * (a ticket QR signature keeps the first 16 bytes, design §7.9).
+ */
+export function hmacSha256Bytes(key: Buffer, data: string): Buffer {
+  return createHmac('sha256', key).update(data, 'utf8').digest();
 }
 
 /** A random token of 32 bytes as base64url (43 characters): refresh tokens and email links. */
