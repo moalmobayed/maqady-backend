@@ -255,3 +255,22 @@ export interface SeedShowtimeBatch {
 
 /** Why the seed refuses to run here; empty when it may. */
 export type SeedRefusals = readonly string[];
+
+/** Where `npm run seed:remote` signs in and seeds. */
+export interface RemoteSeedTarget {
+  /** The deployed API's base URL, ending in `/api/v1`, with no trailing slash. */
+  readonly baseUrl: string;
+  readonly email: string;
+  readonly password: string;
+}
+
+/** What `npm run seed:remote` would do: a target only when nothing refused it. */
+export interface RemoteSeedPlan {
+  readonly refusals: SeedRefusals;
+  readonly target: RemoteSeedTarget | null;
+}
+
+/** The one field of `GET /home` the remote seed reads: the server's cinema date. */
+export interface SeedHomeDate {
+  readonly cinemaDate: CalendarDate;
+}

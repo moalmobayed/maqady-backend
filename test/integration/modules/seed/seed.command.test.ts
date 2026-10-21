@@ -1,8 +1,11 @@
 import type { AddressInfo } from 'node:net';
 import type { HomeResponse } from '../../../../src/modules/discovery/dto/home.response';
 import type { TheaterShowtimesResponse } from '../../../../src/modules/discovery/dto/theater-showtimes.response';
-import { runSeed } from '../../../../src/modules/seed/seed.command';
-import { SEED_ADMIN_EMAIL } from '../../../../src/modules/seed/seed.constants';
+import { runRemoteSeed, runSeed } from '../../../../src/modules/seed/seed.command';
+import {
+  DEFAULT_SEED_ADMIN_PASSWORD,
+  SEED_ADMIN_EMAIL,
+} from '../../../../src/modules/seed/seed.constants';
 import { expectStatus } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
 import { draftValidator } from '../../../support/discovery';
@@ -118,6 +121,44 @@ describe('npm run seed', () => {
       `Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`,
     ]);
     expect(await counts()).toEqual(afterFirst);
+  });
+
+  it('seeds through a running server over HTTP with seed:remote, finding everything already there', async () => {
+    const before = await counts();
+    const lines: string[] = [];
+    await runRemoteSeed(
+      {
+        SEED_API_URL: `${baseUrl}/`,
+        SEED_ADMIN_EMAIL: SEED_ADMIN_EMAIL,
+        SEED_ADMIN_PASSWORD: DEFAULT_SEED_ADMIN_PASSWORD,
+      },
+      (line) => lines.push(line),
+    );
+    // The server's cinema date (from GET /home, on the test Clock) picks the same 7 days.
+    expect(lines).toEqual([
+      'theaters: 0 created, 6 already there',
+      'halls: 0 created, 5 already there',
+      'publish-theaters: 0 created, 5 already there',
+      'people: 0 created, 18 already there',
+      'movies: 0 created, 12 already there',
+      'featured: 0 created, 5 already there',
+      'showtimes: 0 created, 144 already there',
+      'Done.',
+    ]);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('refuses a wrong admin password with the sign-in error code only', async () => {
+    await expect(
+      runRemoteSeed(
+        {
+          SEED_API_URL: baseUrl,
+          SEED_ADMIN_EMAIL: SEED_ADMIN_EMAIL,
+          SEED_ADMIN_PASSWORD: 'Wrong-passw0rd',
+        },
+        () => {},
+      ),
+    ).rejects.toThrow('Seed: POST /admin/auth/sessions answered 401 INVALID_CREDENTIALS');
   });
 
   it('gives the home page what the contract examples show', async () => {

@@ -5,6 +5,12 @@ export const SEED_ADMIN_NAME = 'Seed Admin';
 /** Overrides the seed admin's password; it must meet the password policy. */
 export const SEED_ADMIN_PASSWORD_VARIABLE = 'SEED_ADMIN_PASSWORD';
 
+/** `npm run seed:remote`: the deployed API's base URL, ending in `/api/v1`. */
+export const SEED_API_URL_VARIABLE = 'SEED_API_URL';
+
+/** `npm run seed:remote`: an admin that already exists on that deployment. */
+export const SEED_REMOTE_ADMIN_EMAIL_VARIABLE = 'SEED_ADMIN_EMAIL';
+
 /** The development-only default, documented in the README; the seed refuses production. */
 export const DEFAULT_SEED_ADMIN_PASSWORD = 'Maqady-seed-2026';
 
