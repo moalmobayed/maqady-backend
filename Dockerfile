@@ -20,6 +20,8 @@ WORKDIR /app
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# Supabase's public root CA, so the database connection verifies the server (README "Deploying").
+COPY certs ./certs
 
 USER node
 EXPOSE 3000

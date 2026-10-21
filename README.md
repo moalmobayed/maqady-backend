@@ -432,25 +432,51 @@ curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Au
 
 ## Deploying (Render and Supabase)
 
-- Render builds the `Dockerfile`. The container runs `node dist/main.js`, which migrates under
-  an advisory lock, then listens on `PORT`. Set the health check path to `/api/v1/health`.
-- Set the environment variables above in Render; secrets live only there.
-- **First admin.** Once, from a Render shell (or any machine that reaches the database), with
-  `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` and `BOOTSTRAP_ADMIN_PASSWORD` set for that
-  command only: `npm run admin:create`. It prints `Created admin #<id>` or that an active admin
-  already exists. Sign in at `/admin/login`; the admin can change the password later through
-  "Forgot password".
-- `DATABASE_URL` is Supabase's **session pooler** URL (port 5432): the direct connection is IPv6
-  only. Supabase requires TLS. With `sslmode=require`, node-pg also verifies the certificate, so
-  give it Supabase's CA certificate (`sslrootcert`), or the connection is refused.
+Staging is described by `render.yaml`, a Render Blueprint: Render → New → Blueprint → this
+repository. Render builds the `Dockerfile`, generates the four secrets (`JWT_SECRET_CUSTOMER`,
+`JWT_SECRET_STAFF`, `DATA_ENCRYPTION_KEY`, `QR_SIGNING_KEY`) itself, and asks for the values
+marked `sync: false`:
+
+- `DATABASE_URL`: Supabase → Connect → **Session pooler** URI (port 5432; the direct connection
+  is IPv6 only), with the database password in place of `[YOUR-PASSWORD]` and this suffix, so
+  node-pg verifies Supabase's certificate against the CA in `certs/`:
+  `?sslmode=verify-full&sslrootcert=/app/certs/supabase-prod-ca-2021.crt`.
+  If the first deploy logs a certificate error, use `?sslmode=no-verify` instead: still
+  encrypted, but the server is not verified. Record that as a follow-up.
+- `SUPABASE_URL` (`https://<ref>.supabase.co`) and `SUPABASE_SERVICE_ROLE_KEY` (Project
+  Settings → API Keys → Legacy API keys → `service_role`; it never leaves the server).
+- `BOOTSTRAP_ADMIN_PASSWORD`: the first admin's password (policy: 8+ characters with a digit).
+
+Notes:
+
+- The container migrates, creates the first admin from `BOOTSTRAP_ADMIN_*` when no active admin
+  exists (`admin:create`, idempotent, so it is harmless on every boot), then listens on `PORT`.
+  The health check path is `/api/v1/health`.
+- **Image storage.** Create the bucket (`STORAGE_BUCKET`, default `media`) once, as a **public**
+  bucket, in Supabase → Storage → New bucket; the API returns its public URLs and the browser
+  loads images from them. Never use `local` on Render: its disk is wiped on every deploy.
 - Keep the `maqady` schema out of the Supabase Data API's exposed schemas.
-- **Image storage.** Set `STORAGE_DRIVER=supabase`, `SUPABASE_URL` and
-  `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API keys; keep it secret). Create the bucket
-  (`STORAGE_BUCKET`, default `media`) once, as a **public** bucket, in Storage → New bucket; the
-  API returns its public URLs and the browser loads images from them. Never use `local` on
-  Render: its disk is wiped on every deploy.
+- Staging sends no email (`EMAIL_DRIVER=simulated`) until a domain is verified in Resend
+  (ADR 0004). Add the frontend's origins to `CORS_ORIGINS` in Render when they change.
 - The service trusts one proxy hop for the client address; confirm on the first deploy that
   Render's `X-Forwarded-For` gives the real client.
+- The free instance sleeps after 15 minutes idle; the first request then takes up to a minute.
+
+### Seeding a deployed environment
+
+`npm run seed:remote` fills a deployed environment with the development seed through its own
+admin API, so the server stores the images and no database URL or storage key is needed
+locally. It reads only these variables, never `.env`, and refuses plain http except on this
+machine:
+
+```bash
+SEED_API_URL=https://<service>.onrender.com/api/v1 \
+SEED_ADMIN_EMAIL=staging-admin@maqady.local \
+SEED_ADMIN_PASSWORD='<BOOTSTRAP_ADMIN_PASSWORD>' \
+npm run seed:remote
+```
+
+It is idempotent, so it can run again. Never run it against production.
 
 ## Layout
 
