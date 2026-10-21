@@ -446,7 +446,7 @@ handles its `listen()`) and pins the function to Frankfurt (`fra1`), next to the
 - Vercel ships only the files it traces from the entrypoint, which is why migrations run from the
   static list in `src/common/database/migration-list.ts`: add each new migration there too (a
   unit test fails when the list and `src/migrations/` differ).
-- On Vercel (`VERCEL=1`), `src/main.ts` does not listen: its default export is the request handler, which boots the app on the first request of each instance, because Vercel's launcher waits only a second for `listen()`. That first request migrates (a no-op when up to date) and checks the first admin, so it takes a few seconds.
+- On Vercel (`VERCEL=1`), `src/main.ts` starts a plain HTTP server at once, which Vercel's launcher captures (it waits only a second for `listen()`), and boots the app on the first request of each instance. That first request migrates (a no-op when up to date) and checks the first admin, so it takes a few seconds. A boot that fails, or runs past 20 seconds, answers 503 and logs `Boot failed` or the step it is on; every step logs a `Boot: …` line.
 
 ## Deploying (Render and Supabase)
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -119,14 +120,13 @@ function answerUnavailable(res: ServerResponse): void {
 }
 
 /**
- * Vercel (README "Deploying to Vercel") calls this default export once per request instead of
- * using a listening server: its launcher waits only a second for `listen()`, and booting takes
- * longer (migrations, the first admin). The app boots once, on the first request; concurrent
- * first requests share that boot. A request never hangs on it: a failed boot answers 503 and is
- * retried by the next request, and a boot still running after `VERCEL_BOOT_WAIT_MS` answers 503
- * while it carries on. The process never exits, since Vercel would leave the request open.
+ * Serves one request on Vercel (README "Deploying to Vercel"). The app boots once, on the first
+ * request; concurrent first requests share that boot. A request never hangs on it: a failed boot
+ * answers 503 and is retried by the next request, and a boot still running after
+ * `VERCEL_BOOT_WAIT_MS` answers 503 while it carries on. The process never exits, since Vercel
+ * would leave the request open.
  */
-export default function handleVercelRequest(req: IncomingMessage, res: ServerResponse): void {
+function handleVercelRequest(req: IncomingMessage, res: ServerResponse): void {
   vercelListener ??= bootForVercel();
   const waited = setTimeout(() => {
     console.error(
@@ -151,16 +151,11 @@ export default function handleVercelRequest(req: IncomingMessage, res: ServerRes
   );
 }
 
-/**
- * Vercel's launcher wraps a plain function with its own request helpers (a parsed `req.body`, its
- * own `res.send`), which would clash with Express's, unless the function has a `listen` method,
- * as an Express app does. This handler hands each request to Express, so it opts out the same
- * way. Vercel never calls it.
- */
-handleVercelRequest.listen = (): never => {
-  throw new Error('handleVercelRequest only serves requests; Vercel runs the server');
-};
-
-if (process.env.VERCEL !== '1') {
+if (process.env.VERCEL === '1') {
+  // Vercel's launcher captures the server this module starts listening while it is imported,
+  // and forwards each request to it. It waits only a second for that `listen()`, and booting
+  // takes longer, so the server listens at once and the app boots on the first request.
+  createServer(handleVercelRequest).listen(Number(process.env.PORT ?? 3000));
+} else {
   bootstrap().catch(exitOnBootFailure);
 }
