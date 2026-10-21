@@ -8,6 +8,7 @@ import { PaymentsRepository } from './payments.repository';
 import type {
   ChargeOutcome,
   DueCharge,
+  DueCursor,
   FinishedChargeRow,
   NewPaymentRow,
   OnlineChargeInput,
@@ -166,17 +167,21 @@ export class PaymentsService {
     return new Set(await this.payments.processingSaleBookingIds(bookingIds));
   }
 
-  /** Up to `limit` processing charges whose result is due now, oldest first. */
-  async due(limit: number): Promise<readonly DueCharge[]> {
-    const rows = await this.payments.due(this.clock.now(), limit);
+  /**
+   * Up to `limit` processing charges whose result is due now, oldest first; after `after` when
+   * given, for the next page.
+   */
+  async due(limit: number, after?: DueCursor): Promise<readonly DueCharge[]> {
+    const rows = await this.payments.due(this.clock.now(), limit, after);
     return rows.flatMap((row) =>
-      row.provider_reference === null
+      row.provider_reference === null || row.settles_at === null
         ? []
         : [
             {
               paymentId: row.id,
               bookingId: row.booking_id,
               providerReference: row.provider_reference,
+              settlesAt: row.settles_at,
             },
           ],
     );

@@ -5,6 +5,7 @@ import { AppError } from '../../common/errors/app-error';
 import type {
   BookingCountRow,
   ChargeResultColumns,
+  DueCursor,
   FinishedChargeRow,
   NewPaymentRow,
   PaymentKind,
@@ -92,12 +93,21 @@ export class PaymentsRepository {
     return rows.map((row) => row.booking_id);
   }
 
-  /** Charges still processing whose result is due at `now`, oldest `settles_at` first. */
-  async due(now: Date, limit: number): Promise<PaymentRow[]> {
-    return this.payments()
+  /**
+   * Charges still processing whose result is due at `now`, oldest `settles_at` first, after
+   * `after` when given (keyset pagination on `(settles_at, id)`).
+   */
+  async due(now: Date, limit: number, after?: DueCursor): Promise<PaymentRow[]> {
+    const query = this.payments()
       .select<PaymentRow[]>(PAYMENT_COLUMNS)
       .where({ status: 'processing' })
-      .andWhere('settles_at', '<=', now)
+      .andWhere('settles_at', '<=', now);
+    if (after) {
+      query
+        .andWhere('settles_at', '>=', after.settlesAt)
+        .andWhereRaw('(settles_at, id) > (?, ?)', [after.settlesAt, after.paymentId]);
+    }
+    return query
       .orderBy([
         { column: 'settles_at', order: 'asc' },
         { column: 'id', order: 'asc' },

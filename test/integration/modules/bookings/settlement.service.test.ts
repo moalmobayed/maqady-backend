@@ -255,6 +255,47 @@ describe('Settlement (integration)', () => {
     ]);
   });
 
+  it("settles a booking's due payment even behind a full batch of other due payments nobody read", async () => {
+    // 101 processing charges of other bookings, due before the target's and outside its scope
+    // (abandoned slow payments whose booking and showtime nobody touched since).
+    const stale = await slowHold(['A8']);
+    const [template] = await testApp
+      .knex('bookings')
+      .select<Record<string, unknown>[]>('*')
+      .where({ id: stale.bookingId });
+    const [charge] = await testApp
+      .knex('payments')
+      .select<Record<string, unknown>[]>('*')
+      .where({ booking_id: stale.bookingId });
+    const alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+    const references = Array.from(
+      { length: 100 },
+      (_, index) =>
+        `MQ-ZZZZ${alphabet[Math.floor(index / alphabet.length)]}${alphabet[index % alphabet.length]}`,
+    );
+    const clones = await testApp
+      .knex('bookings')
+      .insert(references.map((reference) => ({ ...template, id: undefined, reference })))
+      .returning<{ id: number; reference: string }[]>(['id', 'reference']);
+    await testApp.knex('payments').insert(
+      clones.map((clone) => ({
+        ...charge,
+        id: undefined,
+        booking_id: clone.id,
+        provider_idempotency_key: `${clone.reference}-c1`,
+      })),
+    );
+
+    clock.advance({ seconds: 1 });
+    const target = await slowHold(['C8']);
+    clock.advance({ seconds: 10 });
+
+    const settled = await getBooking(target.reference, target.customer.authorization);
+    expect(settled.body).toMatchObject({ status: 'confirmed', paymentStatus: 'paid' });
+    // The other bookings stay outside this read's scope.
+    expect((await stored(stale.bookingId))!.status).toBe('held');
+  });
+
   it('settles once when 10 reads race after the result is due', async () => {
     const { customer, reference, bookingId } = await slowHold(['C5']);
     clock.advance({ seconds: 11 });

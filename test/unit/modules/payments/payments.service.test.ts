@@ -203,14 +203,27 @@ describe('PaymentsService', () => {
     expect(repository.insert).not.toHaveBeenCalled();
   });
 
-  it('lists due charges that have a provider reference', async () => {
+  it('lists due charges that have a provider reference, with their settlement time', async () => {
+    const settlesAt = new Date(NOW.getTime() - 1);
     repository.due.mockResolvedValue([
-      paymentRow({ id: 1, provider_reference: 'sim.a' }),
-      paymentRow({ id: 2, provider_reference: null }),
+      paymentRow({
+        id: 1,
+        provider_reference: 'sim.a',
+        status: 'processing',
+        settles_at: settlesAt,
+      }),
+      paymentRow({ id: 2, provider_reference: null, status: 'processing', settles_at: settlesAt }),
     ]);
     expect(await service.due(100)).toEqual([
-      { paymentId: 1, bookingId: 100, providerReference: 'sim.a' },
+      { paymentId: 1, bookingId: 100, providerReference: 'sim.a', settlesAt },
     ]);
-    expect(repository.due).toHaveBeenCalledWith(NOW, 100);
+    expect(repository.due).toHaveBeenCalledWith(NOW, 100, undefined);
+  });
+
+  it('passes the cursor of the previous page on to the repository', async () => {
+    repository.due.mockResolvedValue([]);
+    const after = { settlesAt: NOW, paymentId: 7 };
+    await service.due(100, after);
+    expect(repository.due).toHaveBeenCalledWith(NOW, 100, after);
   });
 });

@@ -172,7 +172,7 @@ describe('SettlementService', () => {
       declined: 0,
       refunded: 0,
     });
-    expect(payments.due).toHaveBeenCalledWith(100);
+    expect(payments.due).toHaveBeenCalledWith(100, undefined);
     expect(bookings.findByIds).not.toHaveBeenCalled();
     expect(transactions.run).not.toHaveBeenCalled();
   });
@@ -184,6 +184,40 @@ describe('SettlementService', () => {
       refunded: 0,
     });
     expect(transactions.run).not.toHaveBeenCalled();
+  });
+
+  it('reads the next page when a full page of due charges is outside the scope', async () => {
+    const page = Array.from({ length: 100 }, (_, index) => ({
+      paymentId: 100 + index,
+      bookingId: 500 + index,
+      providerReference: `sim.${index}`,
+      settlesAt: new Date(NOW.getTime() - 1000 + index),
+    }));
+    payments.due
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce([
+        { paymentId: 11, bookingId: 1, providerReference: 'sim.a', settlesAt: NOW },
+      ]);
+    bookings.findByIds
+      .mockResolvedValueOnce(page.map((charge) => row(charge.bookingId, { customer_id: 1 })))
+      .mockResolvedValueOnce([rows[0]]);
+    bookings.lockForUpdate.mockResolvedValueOnce([rows[0]]);
+    payments.finishProcessing.mockResolvedValueOnce([finished(11, 1, 'succeeded')]);
+
+    const outcome = await service.settleDue({ bookingReference: 'MQ-AAAAA1' });
+
+    expect(payments.due).toHaveBeenNthCalledWith(2, 100, {
+      settlesAt: page[99]!.settlesAt,
+      paymentId: 199,
+    });
+    expect(bookings.lockForUpdate).toHaveBeenCalledWith([1]);
+    expect(outcome).toEqual({ confirmed: 1, declined: 0, refunded: 0 });
+  });
+
+  it('reads one page only without a scope, and stops at a page that is not full', async () => {
+    await service.settleAllDue();
+    await service.settleDue({ bookingReference: 'MQ-ZZZZZZ' });
+    expect(payments.due).toHaveBeenCalledTimes(2);
   });
 
   it('refuses to run inside a transaction, or without a scope (INTERNAL)', async () => {

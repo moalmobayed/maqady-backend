@@ -8,7 +8,7 @@ import { Clock } from '../../common/time/clock';
 import { PaymentProvider } from '../payments/payment-provider';
 import { SETTLEMENT_BATCH_LIMIT } from '../payments/payments.constants';
 import { PaymentsService } from '../payments/payments.service';
-import type { ChargeOutcome, DueCharge, Payment } from '../payments/types';
+import type { ChargeOutcome, DueCharge, DueCursor, Payment } from '../payments/types';
 import { SeatClaimService } from '../seating/seat-claim.service';
 import { SeatEventPublisher } from '../seating/seat-event.publisher';
 import type { LockedClaimRow } from '../seating/types';
@@ -66,7 +66,8 @@ export class SettlementService {
   /**
    * Settles the due charges of the booking with this reference, of bookings on this showtime and
    * of this customer's bookings. When nothing is due (almost always) it costs one indexed query
-   * and opens no transaction.
+   * and opens no transaction. Due charges of other bookings never hide the scope's: when a whole
+   * page of them is out of scope, the next page is read.
    */
   async settleDue(scope: SettlementScope): Promise<SettlementResult> {
     if (
@@ -88,18 +89,38 @@ export class SettlementService {
     if (this.context.isActive()) {
       throw new AppError('INTERNAL', 'Settlement runs in its own transaction, before any other.');
     }
-    const due = await this.payments.due(SETTLEMENT_BATCH_LIMIT);
-    if (due.length === 0) return NOTHING;
-    const candidates = await this.bookings.findByIds(due.map((charge) => charge.bookingId));
-    const inScope = new Set(
-      candidates.filter((row) => scope === undefined || matches(row, scope)).map((row) => row.id),
-    );
-    const charges = due.filter((charge) => inScope.has(charge.bookingId));
+    const charges: DueCharge[] = [];
+    const showtimeIds = new Set<number>();
+    let after: DueCursor | undefined;
+    for (;;) {
+      const page = await this.payments.due(SETTLEMENT_BATCH_LIMIT, after);
+      if (page.length === 0) break;
+      const candidates = await this.bookings.findByIds(page.map((charge) => charge.bookingId));
+      const inScope = new Map(
+        candidates
+          .filter((row) => scope === undefined || matches(row, scope))
+          .map((row) => [row.id, row]),
+      );
+      for (const charge of page) {
+        const row = inScope.get(charge.bookingId);
+        if (!row || charges.length >= SETTLEMENT_BATCH_LIMIT) continue;
+        charges.push(charge);
+        showtimeIds.add(row.showtime_id);
+      }
+      // A scope's charges may sit behind a full page of other due charges nobody has read
+      // (abandoned slow payments): page on until the scope's are found or none are left.
+      if (
+        scope === undefined ||
+        page.length < SETTLEMENT_BATCH_LIMIT ||
+        charges.length >= SETTLEMENT_BATCH_LIMIT
+      ) {
+        break;
+      }
+      const last = page[page.length - 1]!;
+      after = { settlesAt: last.settlesAt, paymentId: last.paymentId };
+    }
     if (charges.length === 0) return NOTHING;
-    const showtimeIds = [
-      ...new Set(candidates.filter((row) => inScope.has(row.id)).map((row) => row.showtime_id)),
-    ];
-    return this.transactions.run(() => this.settleLocked(charges, showtimeIds));
+    return this.transactions.run(() => this.settleLocked(charges, [...showtimeIds]));
   }
 
   private async settleLocked(

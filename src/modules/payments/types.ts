@@ -199,6 +199,13 @@ export interface DueCharge {
   readonly paymentId: number;
   readonly bookingId: number;
   readonly providerReference: string;
+  readonly settlesAt: Date;
+}
+
+/** Where a page of due charges ends: the next page starts after this `(settles_at, id)`. */
+export interface DueCursor {
+  readonly settlesAt: Date;
+  readonly paymentId: number;
 }
 
 /** A due charge and the final result the provider gave for it. */
