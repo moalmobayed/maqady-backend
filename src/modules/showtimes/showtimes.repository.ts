@@ -83,6 +83,18 @@ export class ShowtimesRepository {
       .first();
   }
 
+  /**
+   * The showtime, locked `FOR SHARE` until the transaction ends: a hold reads it as bookable
+   * (design §7.1 step 2). Moves, price changes and cancels (`FOR UPDATE`) wait for it.
+   */
+  async findByIdForShare(id: number): Promise<ShowtimeRow | undefined> {
+    return this.showtimes()
+      .select<ShowtimeRow[]>(SHOWTIME_COLUMNS)
+      .where({ id })
+      .forShare()
+      .first();
+  }
+
   /** These showtimes, by start then id; unknown ids are absent. */
   async findByIds(ids: readonly number[]): Promise<ShowtimeRow[]> {
     if (ids.length === 0) return [];
