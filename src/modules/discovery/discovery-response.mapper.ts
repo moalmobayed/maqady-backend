@@ -1,19 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { MoneyResponse } from '../../common/money/dto/money-response.dto';
+import type { Money } from '../../common/money/types';
 import type { Page } from '../../common/pagination/types';
 import { formatCairoIso } from '../../common/time/time';
 import { toGenreRefResponse } from '../catalog/dto/genre-ref.response';
 import { MovieCreditResponse } from '../catalog/dto/movie-credit.response';
 import { toVideoResponse } from '../catalog/dto/video.response';
-import type {
-  FeaturedMovie,
-  MovieCredit,
-  MovieDetails,
-  MovieSummary,
-  PublicPerson,
-} from '../catalog/types';
+import type { FeaturedMovie, MovieCredit, MovieSummary, PublicPerson } from '../catalog/types';
 import type { ImageResponse } from '../media/dto/image.response';
 import { MediaService } from '../media/media.service';
 import type { StoredImage } from '../media/types';
+import type { HallSummary } from '../halls/types';
+import { ShowtimeHallRefResponse } from '../showtimes/dto/admin-showtime.response';
+import { toShowtimePricesResponse } from '../showtimes/showtime-response.mapper';
+import type { ShowtimeView } from '../showtimes/types';
 import {
   toDayHoursResponse,
   toOpenStateResponse,
@@ -25,20 +25,38 @@ import { FeaturedMovieDetailsResponse, FeaturedMovieResponse } from './dto/featu
 import { GenreWithCountPage, GenreWithCountResponse } from './dto/genre-with-count.response';
 import { HomeResponse } from './dto/home.response';
 import { MovieCardListResponse, MovieCardResponse } from './dto/movie-card.response';
-import { MovieDetailsResponse, MoviePhotoResponse } from './dto/movie-details.response';
+import {
+  MovieDetailsResponse,
+  MoviePhotoResponse,
+  MovieShowtimeSummaryResponse,
+  NextShowResponse,
+} from './dto/movie-details.response';
 import {
   MovieCardPageResponse,
   MovieTabCountsResponse,
   SimilarMoviesResponse,
 } from './dto/movie-lists.response';
-import { PublicPersonPageResponse, PublicPersonResponse } from './dto/public-person.response';
 import {
+  MovieShowtimeDayResponse,
+  MovieShowtimeTheaterCountResponse,
+  MovieShowtimeTheaterResponse,
+  MovieShowtimesResponse,
+} from './dto/movie-showtimes.response';
+import { PublicPersonPageResponse, PublicPersonResponse } from './dto/public-person.response';
+import { PublicShowtimeResponse, ShowtimeTheaterRefResponse } from './dto/public-showtime.response';
+import {
+  PublicHallResponse,
   PublicTheaterListItemResponse,
   PublicTheaterPageResponse,
   PublicTheaterResponse,
   TheaterGalleryPhotoResponse,
 } from './dto/public-theater.response';
 import { TheaterCardResponse } from './dto/theater-card.response';
+import {
+  TheaterShowtimeDayResponse,
+  TheaterShowtimeMovieResponse,
+  TheaterShowtimesResponse,
+} from './dto/theater-showtimes.response';
 import { TickerItemResponse } from './dto/ticker-item.response';
 import type {
   GenreWithCount,
@@ -46,8 +64,14 @@ import type {
   HomeView,
   MovieCardListView,
   MovieListView,
+  MovieShowtimeSummary,
+  MovieShowtimesView,
+  PublicMovieView,
+  PublicShowtimeView,
   PublicTheaterView,
+  ShowtimeTheaterRef,
   TheaterCardView,
+  TheaterShowtimesView,
 } from './types';
 
 /**
@@ -159,7 +183,8 @@ export class DiscoveryResponseMapper {
     });
   }
 
-  movieDetails(movie: MovieDetails): MovieDetailsResponse {
+  movieDetails(view: PublicMovieView): MovieDetailsResponse {
+    const { movie } = view;
     return Object.assign(new MovieDetailsResponse(), {
       id: movie.id,
       title: movie.title,
@@ -187,6 +212,95 @@ export class DiscoveryResponseMapper {
         }),
       ),
       credits: movie.credits.map((credit) => this.credit(credit)),
+      showtimeSummary: this.showtimeSummary(view.showtimeSummary),
+    });
+  }
+
+  /** The movie page's side panel. */
+  showtimeSummary(summary: MovieShowtimeSummary): MovieShowtimeSummaryResponse {
+    const next = summary.nextShowToday;
+    return Object.assign(new MovieShowtimeSummaryResponse(), {
+      nextShowToday: next
+        ? Object.assign(new NextShowResponse(), {
+            id: next.showtime.id,
+            startsAt: formatCairoIso(next.showtime.startsAt),
+            cinemaDate: next.showtime.cinemaDate,
+            theater: this.showtimeTheater(next.theater),
+            hall: this.hallRef(next.showtime),
+            fromPrice: toMoney(next.showtime.fromPrice),
+          })
+        : null,
+      cinemaCount: summary.cinemaCount,
+      fromPrice: summary.fromPrice ? toMoney(summary.fromPrice) : null,
+    });
+  }
+
+  /** A time chip (PRD C3, C5). */
+  publicShowtime(showtime: PublicShowtimeView): PublicShowtimeResponse {
+    return Object.assign(new PublicShowtimeResponse(), {
+      id: showtime.id,
+      startsAt: formatCairoIso(showtime.startsAt),
+      endsAt: formatCairoIso(showtime.endsAt),
+      cinemaDate: showtime.cinemaDate,
+      hall: this.hallRef(showtime),
+      prices: toShowtimePricesResponse(showtime.prices),
+      fromPrice: toMoney(showtime.fromPrice),
+      hasStarted: showtime.hasStarted,
+    });
+  }
+
+  /** `GET /movies/{id}/showtimes`. */
+  movieShowtimes(view: MovieShowtimesView): MovieShowtimesResponse {
+    return Object.assign(new MovieShowtimesResponse(), {
+      movieId: view.movieId,
+      cinemaDate: view.cinemaDate,
+      theaters: view.theaters.map((theater) =>
+        Object.assign(new MovieShowtimeTheaterCountResponse(), {
+          ...this.showtimeTheater(theater),
+          showtimeCount: theater.showtimeCount,
+        }),
+      ),
+      days: view.days.map((day) =>
+        Object.assign(new MovieShowtimeDayResponse(), {
+          cinemaDate: day.cinemaDate,
+          showtimeCount: day.showtimeCount,
+          theaters: day.theaters.map((group) =>
+            Object.assign(new MovieShowtimeTheaterResponse(), {
+              theater: this.showtimeTheater(group.theater),
+              showtimes: group.showtimes.map((showtime) => this.publicShowtime(showtime)),
+            }),
+          ),
+        }),
+      ),
+    });
+  }
+
+  /** `GET /theaters/{id}/showtimes`. */
+  theaterShowtimes(view: TheaterShowtimesView): TheaterShowtimesResponse {
+    return Object.assign(new TheaterShowtimesResponse(), {
+      theaterId: view.theaterId,
+      cinemaDate: view.cinemaDate,
+      days: view.days.map((day) =>
+        Object.assign(new TheaterShowtimeDayResponse(), {
+          cinemaDate: day.cinemaDate,
+          movies: day.movies.map((group) =>
+            Object.assign(new TheaterShowtimeMovieResponse(), {
+              movie: this.movieCard(group.movie),
+              showtimes: group.showtimes.map((showtime) => this.publicShowtime(showtime)),
+            }),
+          ),
+        }),
+      ),
+    });
+  }
+
+  /** An active hall of the theater page. */
+  publicHall(hall: HallSummary): PublicHallResponse {
+    return Object.assign(new PublicHallResponse(), {
+      id: hall.id,
+      name: hall.name,
+      seatCount: hall.seatCount,
+      wheelchairCount: hall.wheelchairCount,
     });
   }
 
@@ -252,6 +366,7 @@ export class DiscoveryResponseMapper {
       weeklyHours: view.weeklyHours.map(toDayHoursResponse),
       specialDates: view.specialDates.map(toSpecialDateResponse),
       hallCount: view.hallCount,
+      halls: view.halls.map((hall) => this.publicHall(hall)),
     });
   }
 
@@ -287,4 +402,24 @@ export class DiscoveryResponseMapper {
   private image(image: StoredImage | null, alt: string): ImageResponse | null {
     return this.media.toImageResponse(image ?? undefined, alt);
   }
+
+  private showtimeTheater(theater: ShowtimeTheaterRef): ShowtimeTheaterRefResponse {
+    return Object.assign(new ShowtimeTheaterRefResponse(), {
+      id: theater.id,
+      name: theater.name,
+      district: theater.district,
+      city: theater.city,
+    });
+  }
+
+  private hallRef(showtime: ShowtimeView): ShowtimeHallRefResponse {
+    return Object.assign(new ShowtimeHallRefResponse(), {
+      id: showtime.hallId,
+      name: showtime.hallName,
+    });
+  }
+}
+
+function toMoney(value: Money): MoneyResponse {
+  return Object.assign(new MoneyResponse(), { amount: value.amount, currency: value.currency });
 }

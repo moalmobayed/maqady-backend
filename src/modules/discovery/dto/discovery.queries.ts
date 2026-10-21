@@ -14,7 +14,10 @@ import { PageQuery } from '../../../common/pagination/dto/page-query.dto';
 import { MAX_SEARCH_LENGTH, MIN_SEARCH_LENGTH } from '../../catalog/catalog.constants';
 import { PUBLIC_MOVIE_STATUSES, ROLE_GROUPS } from '../../catalog/enums';
 import type { PublicMovieStatus, RoleGroup } from '../../catalog/types';
+import { IsCinemaDate } from '../../showtimes/dto/showtime.validators';
 import { GENRE_SLUG_PATTERN, MAX_GENRES_FILTER, MAX_PEOPLE_FILTER } from '../discovery.constants';
+import { SHOW_DATES } from '../enums';
+import type { ShowDate } from '../types';
 import { CommaSeparated, CommaSeparatedIds, QueryBoolean, TrimQuery } from './discovery.transforms';
 
 /** `GET /genres?status=&cursor=&limit=`. */
@@ -83,6 +86,17 @@ export class MovieListQuery extends PageQuery {
   @ArrayMaxSize(MAX_PEOPLE_FILTER)
   @IsInt({ each: true, message: 'each person must be a person id' })
   people?: number[];
+
+  @ApiPropertyOptional({
+    enum: SHOW_DATES,
+    enumName: 'ShowDate',
+    example: 'today',
+    description:
+      'Now showing tab only (with `status=coming_soon` it is `VALIDATION_FAILED`): movies with a showtime still to start today (the current cinema day), tomorrow, or this weekend (Friday and Saturday; on a Saturday, today). Leave it out for Any. `tabCounts.comingSoon` ignores it.',
+  })
+  @IsOptional()
+  @IsIn(SHOW_DATES)
+  showDate?: ShowDate;
 }
 
 /** `GET /people?q=&roleGroup=&cursor=&limit=`. */
@@ -133,4 +147,18 @@ export class PublicTheaterListQuery extends PageQuery {
   @IsOptional()
   @IsBoolean()
   parking?: boolean;
+}
+
+/** `GET /theaters/{id}/showtimes?date=` (PRD C5). */
+export class TheaterShowtimesQuery {
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    example: '2026-10-16',
+    description:
+      'One cinema date, `YYYY-MM-DD` (06:00 to 06:00, so a 00:30 show is under the day before). Without it, the 7 cinema days from today. A date outside those 7 days answers that day with no movies.',
+  })
+  @IsOptional()
+  @IsCinemaDate()
+  date?: string;
 }

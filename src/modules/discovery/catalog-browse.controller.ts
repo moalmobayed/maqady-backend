@@ -47,7 +47,7 @@ export class CatalogBrowseController {
   @Get('movies')
   @ApiOperation({
     summary: 'The Movies page: one tab, filtered',
-    description: `${PUBLIC_READ_NOTE}\n\nOne page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): \`genres\` (slugs) and \`people\` (person ids) match any of their values, \`q\` a title or a credited person's name. \`total\` counts the tab with the filters ("Showing n of total"); \`tabCounts\` counts both tabs with the same filters, for the tab labels. Load more with \`cursor\` = \`nextCursor\`; pages never repeat or skip a movie. The "show date" filter comes with showtimes.`,
+    description: `${PUBLIC_READ_NOTE}\n\nOne page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): \`genres\` (slugs) and \`people\` (person ids) match any of their values, \`q\` a title or a credited person's name. \`total\` counts the tab with the filters ("Showing n of total"); \`tabCounts\` counts both tabs with the same filters, for the tab labels. Load more with \`cursor\` = \`nextCursor\`; pages never repeat or skip a movie. \`showDate\` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, \`tabCounts.nowShowing\` is the filtered total and \`tabCounts.comingSoon\` ignores it, and with \`status=coming_soon\` it is \`400 VALIDATION_FAILED\`.`,
   })
   @ApiOkResponse({
     type: MovieCardPageResponse,
@@ -71,7 +71,7 @@ export class CatalogBrowseController {
   @Get('movies/:id')
   @ApiOperation({
     summary: "A movie's page",
-    description: `${PUBLIC_READ_NOTE}\n\nThe header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is \`404 NOT_FOUND\`. Showtimes, the next show today and "from" prices come with showtimes.`,
+    description: `${PUBLIC_READ_NOTE}\n\nThe header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is \`404 NOT_FOUND\`. \`showtimeSummary\` is the side panel, from showtimes of theaters open for sales still to start in the next 7 cinema days: the next one today, how many theaters show it and the lowest "from" price (empty for Coming soon). The showtimes themselves are \`GET /movies/{id}/showtimes\`.`,
   })
   @ApiOkResponse({
     type: MovieDetailsResponse,

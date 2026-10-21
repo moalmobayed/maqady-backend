@@ -25,3 +25,10 @@ export const GENRE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** The description shared by the discovery operations: who may call them and what is shown. */
 export const PUBLIC_READ_NOTE =
   'Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).';
+
+/** The movie and theater pages list showtimes of today's cinema date and the 6 after (PRD C3, C5). */
+export const SHOWTIME_DAYS = 7;
+
+/** "This weekend" is Friday and Saturday (PRD "Time" 3), as ISO weekdays of cinema dates. */
+export const WEEKEND_FIRST_WEEKDAY = 5;
+export const WEEKEND_LAST_WEEKDAY = 6;

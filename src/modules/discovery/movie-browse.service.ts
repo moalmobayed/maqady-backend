@@ -3,14 +3,14 @@ import { AppError } from '../../common/errors/app-error';
 import type { Page, PageRequest } from '../../common/pagination/types';
 import { CatalogReadService } from '../catalog/catalog-read.service';
 import type {
-  MovieDetails,
   MovieSummary,
   PublicMovieStatus,
   PublicPerson,
   PublicPersonFilter,
 } from '../catalog/types';
 import { compareByNameThenId, pageInMemory } from './in-memory-page';
-import type { GenreWithCount, MovieListFilterInput, MovieListView } from './types';
+import { ShowtimeBrowseService } from './showtime-browse.service';
+import type { GenreWithCount, MovieListFilterInput, MovieListView, PublicMovieView } from './types';
 
 /**
  * The catalog as customers browse it (PRD C1–C3), read through U6's `CatalogReadService` only.
@@ -19,7 +19,10 @@ import type { GenreWithCount, MovieListFilterInput, MovieListView } from './type
  */
 @Injectable()
 export class MovieBrowseService {
-  constructor(private readonly catalog: CatalogReadService) {}
+  constructor(
+    private readonly catalog: CatalogReadService,
+    private readonly showtimes: ShowtimeBrowseService,
+  ) {}
 
   /**
    * Every genre with how many public movies of `status` it has (both tabs when absent),
@@ -46,24 +49,43 @@ export class MovieBrowseService {
   /**
    * `GET /movies`: one page of a tab with the filters, and both tabs' totals with the same
    * filters. Genre slugs become ids first; an unknown slug is `VALIDATION_FAILED` on `genres`.
+   * `showDate` keeps the Now showing movies with a showtime still to start on its cinema dates;
+   * it belongs to that tab only (`VALIDATION_FAILED` on `showDate` with Coming soon), so the
+   * Coming soon count ignores it.
    */
   async listMovies(input: MovieListFilterInput, page: PageRequest): Promise<MovieListView> {
+    if (input.showDate !== undefined && input.status !== 'now_showing') {
+      throw new AppError('VALIDATION_FAILED', undefined, {
+        fields: [{ field: 'showDate', messages: ['showDate applies to the now_showing tab only'] }],
+      });
+    }
     const genreIds = await this.genreIdsOf(input.genreSlugs ?? []);
     const shared = {
       ...(input.q === undefined ? {} : { q: input.q }),
       genreIds,
       personIds: input.personIds ?? [],
     };
-    const result = await this.catalog.listPublicMovies({ ...shared, status: input.status }, page);
-    const tabCounts = await this.catalog.countPublicMovies(shared);
+    const movieIds =
+      input.showDate === undefined
+        ? undefined
+        : await this.showtimes.movieIdsShowing(input.showDate);
+    const result = await this.catalog.listPublicMovies(
+      { ...shared, status: input.status, ...(movieIds === undefined ? {} : { movieIds }) },
+      page,
+    );
+    const counts = await this.catalog.countPublicMovies(shared);
+    const tabCounts = movieIds === undefined ? counts : { ...counts, now_showing: result.total };
     return { ...result, tabCounts };
   }
 
-  /** `GET /movies/{id}`: a public movie's page; `NOT_FOUND` otherwise. */
-  async findMovie(id: number): Promise<MovieDetails> {
+  /**
+   * `GET /movies/{id}`: a public movie's page and its side panel (next show today, cinemas,
+   * "from" price); `NOT_FOUND` otherwise.
+   */
+  async findMovie(id: number): Promise<PublicMovieView> {
     const movie = await this.catalog.findPublicMovie(id);
     if (!movie) throw new AppError('NOT_FOUND');
-    return movie;
+    return { movie, showtimeSummary: await this.showtimes.summaryOf(movie) };
   }
 
   /** `GET /movies/{id}/similar`: "More like this" of a public movie; `NOT_FOUND` otherwise. */
