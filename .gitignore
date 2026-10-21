@@ -1,0 +1,17 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Images stored by the local storage driver (STORAGE_DRIVER=local)
+.media/
+
+# Local environment: never commit secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS noise
+*.log
+.DS_Store

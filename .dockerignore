@@ -1,0 +1,16 @@
+# The image is built from package files, the TypeScript configs and src/ only.
+node_modules
+dist
+coverage
+.git
+.github
+.claude
+.env
+.env.*
+.media
+contracts
+docker
+docs
+scripts
+test
+*.md

@@ -1,0 +1,13 @@
+# Generated or vendored
+node_modules/
+dist/
+coverage/
+package-lock.json
+contracts/
+
+# Prose is wrapped by hand; Prettier formats code and config only
+*.md
+docs/
+
+# Kit-managed settings
+.claude/
