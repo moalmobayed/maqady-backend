@@ -16614,11 +16614,11 @@ paths:
       description: |-
         Public; anyone may call it, no token needed. Returns, in one call:
         - `featured`: up to 5 movies for the hero carousel, ordered by `position`, each with its hero video and backdrop.
-        - `ticker`: Now showing movies that still have a bookable showtime today (current cinema day), with that next showtime, soonest first. Movies with nothing left today are left out. Empty until showtimes are scheduled.
+        - `ticker`: Now showing movies that still have a bookable showtime today (current cinema day), with that next showtime, soonest first. Movies with nothing left today are left out. Only scheduled showtimes of theaters open for sales count; a showtime that has started is not bookable, so it never appears.
         - `genres`: every genre, alphabetical, with how many Now showing and Coming soon movies it has. Hide genres with `movieCount: 0` if you like.
         - `nowShowing`: up to 12 Now showing movies, newest release first, plus the `total` for "View all".
         - `comingSoon`: up to 12 Coming soon movies, soonest release first, plus the `total`.
-        - `cinemas`: every theater open for sales, alphabetical, with its open state at `serverTime` (judged by the cinema day, 06:00 to 06:00). `mainPhone` is null when the theater hides its contacts.
+        - `cinemas`: every theater open for sales, alphabetical, with its open state at `serverTime` (judged by the cinema day, 06:00 to 06:00). `mainPhone` is null when the theater hides its contacts; `hallCount` counts its active halls.
 
         Drafts, archived movies and theaters that are drafts or have sales paused never appear. Responses may be cached for 60 seconds (`Cache-Control: public, max-age=60`).
       operationId: getHome
@@ -16855,7 +16855,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        One page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): `genres` (slugs) and `people` (person ids) match any of their values, `q` a title or a credited person's name. `total` counts the tab with the filters ("Showing n of total"); `tabCounts` counts both tabs with the same filters, for the tab labels. Load more with `cursor` = `nextCursor`; pages never repeat or skip a movie. The "show date" filter comes with showtimes.
+        One page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): `genres` (slugs) and `people` (person ids) match any of their values, `q` a title or a credited person's name. `total` counts the tab with the filters ("Showing n of total"); `tabCounts` counts both tabs with the same filters, for the tab labels. Load more with `cursor` = `nextCursor`; pages never repeat or skip a movie. `showDate` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, `tabCounts.nowShowing` is the filtered total and `tabCounts.comingSoon` ignores it, and with `status=coming_soon` it is `400 VALIDATION_FAILED`.
       operationId: listPublicMovies
       parameters:
         - name: cursor
@@ -16907,6 +16907,12 @@ paths:
           schema:
             example: 4,9
             type: string
+        - name: showDate
+          required: false
+          in: query
+          description: 'Now showing tab only (with `status=coming_soon` it is `VALIDATION_FAILED`): movies with a showtime still to start today (the current cinema day), tomorrow, or this weekend (Friday and Saturday; on a Saturday, today). Leave it out for Any. `tabCounts.comingSoon` ignores it.'
+          schema:
+            $ref: '#/components/schemas/ShowDate'
       responses:
         '200':
           description: One page of movie cards and the tab counts
@@ -17021,7 +17027,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        The header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is `404 NOT_FOUND`. Showtimes, the next show today and "from" prices come with showtimes.
+        The header, the media viewer (videos and photos in display order), the synopsis, the details table and the cast and crew. A draft, an archived or an unknown movie is `404 NOT_FOUND`. `showtimeSummary` is the side panel, from showtimes of theaters open for sales still to start in the next 7 cinema days: the next one today, how many theaters show it and the lowest "from" price (empty for Coming soon). The showtimes themselves are `GET /movies/{id}/showtimes`.
       operationId: getPublicMovie
       parameters:
         - name: id
@@ -17465,7 +17471,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location and its facilities. `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100).
+        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location, its facilities and `hallCount` (its active halls). `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100).
       operationId: listPublicTheaters
       parameters:
         - name: cursor
@@ -17616,7 +17622,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones and email appear only when the theater shows its contacts (`phones` is empty and `email` null otherwise). A draft, a paused or an unknown theater is `404 NOT_FOUND`. Halls and showtimes come with them.
+        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones and email appear only when the theater shows its contacts (`phones` is empty and `email` null otherwise). A draft, a paused or an unknown theater is `404 NOT_FOUND`. `halls` lists its active halls by name (seats and wheelchair spaces), and `hallCount` is their number. Its showtimes are `GET /theaters/{id}/showtimes`.
       operationId: getPublicTheater
       parameters:
         - name: id
@@ -17755,6 +17761,311 @@ paths:
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
       summary: A theater's page
+      tags:
+        - Discovery
+      security: []
+  /movies/{id}/showtimes:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        Only scheduled showtimes of theaters open for sales and of Now showing movies; cancelled ones never appear. Days are cinema days (06:00 to 06:00): a showtime starting at 00:30 is listed under the day before, with its real `startsAt`. A showtime that has ended is left out; one that has started is listed with `hasStarted: true` and can no longer be booked. Each chip has the zone `prices` and the `fromPrice`, the cheapest zone the hall has seats in.
+
+        Always 7 `days`, today's cinema date first, each with its theaters alphabetical and their showtimes by start time; `theaters` is the theater picker with each theater's count over the 7 days. A Coming soon movie has no showtimes (7 empty days). A draft, an archived or an unknown movie is `404 NOT_FOUND`.
+      operationId: listMovieShowtimes
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Movie id.
+          schema:
+            minimum: 1
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: The movie's 7 cinema days
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieShowtimes'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A movie's showtimes over 7 cinema days
+      tags:
+        - Discovery
+      security: []
+  /theaters/{id}/showtimes:
+    get:
+      description: |-
+        Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
+
+        Only scheduled showtimes of theaters open for sales and of Now showing movies; cancelled ones never appear. Days are cinema days (06:00 to 06:00): a showtime starting at 00:30 is listed under the day before, with its real `startsAt`. A showtime that has ended is left out; one that has started is listed with `hasStarted: true` and can no longer be booked. Each chip has the zone `prices` and the `fromPrice`, the cheapest zone the hall has seats in.
+
+        The 7 cinema days from today's, or only `date`; each day lists its movies (as cards) by their first showtime, each with its time chips. A `date` outside those 7 days answers that day with no movies; a malformed one is `400 VALIDATION_FAILED`. A draft, a paused or an unknown theater is `404 NOT_FOUND`.
+      operationId: listTheaterShowtimes
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Theater id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: date
+          required: false
+          in: query
+          description: One cinema date, `YYYY-MM-DD` (06:00 to 06:00, so a 00:30 show is under the day before). Without it, the 7 cinema days from today. A date outside those 7 days answers that day with no movies.
+          schema:
+            format: date
+            example: '2026-10-16'
+            type: string
+      responses:
+        '200':
+          description: The theater's cinema days
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TheaterShowtimes'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A theater's showtimes over 7 cinema days, or one
       tags:
         - Discovery
       security: []
@@ -22899,7 +23210,7 @@ components:
           type: integer
           minimum: 0
           example: 6
-          description: How many halls the theater has.
+          description: How many halls the theater has open to customers (active halls).
         facilities:
           type: array
           example:
@@ -22993,6 +23304,12 @@ components:
         - items
         - nextCursor
         - total
+    ShowDate:
+      type: string
+      enum:
+        - today
+        - tomorrow
+        - weekend
     MovieTabCounts:
       type: object
       properties:
@@ -23062,6 +23379,105 @@ components:
         - kind
         - caption
         - image
+    ShowtimeTheaterRef:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          example: Maqady Zamalek
+          description: Name.
+        district:
+          type: string
+          example: Zamalek
+          description: District or area.
+        city:
+          type: string
+          example: Cairo
+          description: City.
+      required:
+        - id
+        - name
+        - district
+        - city
+    ShowtimeHallRefResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Hall id.
+        name:
+          type: string
+          nullable: false
+          example: Hall 3
+          description: Hall name.
+      required:
+        - id
+        - name
+    NextShow:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 501
+          description: Showtime id.
+        startsAt:
+          type: string
+          format: date-time
+          example: '2026-10-16T19:30:00+03:00'
+          description: Start, Cairo time with offset.
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: Today's cinema date (06:00 to 06:00).
+        theater:
+          description: Where it plays.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeTheaterRef'
+        hall:
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        fromPrice:
+          description: Its cheapest zone price.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - id
+        - startsAt
+        - cinemaDate
+        - theater
+        - hall
+        - fromPrice
+    MovieShowtimeSummary:
+      type: object
+      properties:
+        nextShowToday:
+          nullable: true
+          description: Its next showtime of today's cinema date that hasn't started, at any theater; null when none is left today.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NextShow'
+        cinemaCount:
+          type: integer
+          minimum: 0
+          example: 3
+          description: How many theaters have a showtime of it still to start in the next 7 cinema days.
+        fromPrice:
+          nullable: true
+          description: '"From EGP x": the lowest `fromPrice` among those showtimes; null when there are none (always for Coming soon).'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - nextShowToday
+        - cinemaCount
+        - fromPrice
     MovieDetails:
       type: object
       properties:
@@ -23161,6 +23577,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MovieCreditResponse'
+        showtimeSummary:
+          description: 'The side panel: next show today, how many cinemas show it and the "from" price. The showtimes themselves are `GET /movies/{id}/showtimes`.'
+          allOf:
+            - $ref: '#/components/schemas/MovieShowtimeSummary'
       required:
         - id
         - title
@@ -23181,6 +23601,7 @@ components:
         - videos
         - photos
         - credits
+        - showtimeSummary
     SimilarMovies:
       type: object
       properties:
@@ -23286,7 +23707,7 @@ components:
           type: integer
           minimum: 0
           example: 6
-          description: How many halls the theater has.
+          description: How many halls the theater has open to customers (active halls).
         facilities:
           type: array
           example:
@@ -23370,6 +23791,32 @@ components:
         - id
         - caption
         - image
+    PublicHall:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Hall id.
+        name:
+          type: string
+          example: Hall 3
+          description: Name.
+        seatCount:
+          type: integer
+          minimum: 1
+          example: 186
+          description: Seats in its layout, wheelchair spaces included, gaps not.
+        wheelchairCount:
+          type: integer
+          minimum: 0
+          example: 4
+          description: Wheelchair spaces among them.
+      required:
+        - id
+        - name
+        - seatCount
+        - wheelchairCount
     PublicTheater:
       type: object
       properties:
@@ -23462,7 +23909,12 @@ components:
           type: integer
           minimum: 0
           example: 6
-          description: How many halls the theater has.
+          description: How many halls the theater has open to customers (`halls.length`).
+        halls:
+          description: Its active halls, by name.
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicHall'
       required:
         - id
         - name
@@ -23483,6 +23935,223 @@ components:
         - weeklyHours
         - specialDates
         - hallCount
+        - halls
+    MovieShowtimeTheaterCount:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          example: Maqady Zamalek
+          description: Name.
+        district:
+          type: string
+          example: Zamalek
+          description: District or area.
+        city:
+          type: string
+          example: Cairo
+          description: City.
+        showtimeCount:
+          type: integer
+          minimum: 1
+          example: 9
+          description: Its showtimes of the movie over the 7 days.
+      required:
+        - id
+        - name
+        - district
+        - city
+        - showtimeCount
+    ShowtimePrices:
+      type: object
+      properties:
+        front:
+          description: Front rows (nearest the screen).
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        middle:
+          description: Middle rows.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        back:
+          description: Back rows.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - front
+        - middle
+        - back
+    PublicShowtime:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 501
+          description: Showtime id, for the seat map (`/showtimes/{id}`).
+        startsAt:
+          type: string
+          format: date-time
+          example: '2026-10-17T00:30:00+03:00'
+          description: 'Start, Cairo time with offset. Its calendar day can be the day after `cinemaDate`: name it on the chip ("00:30 Sat" under Friday).'
+        endsAt:
+          type: string
+          format: date-time
+          example: '2026-10-17T02:22:00+03:00'
+          description: End (start plus the runtime), Cairo time with offset.
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: 'The cinema day (06:00 to 06:00) it belongs to: a 00:30 show is the day before.'
+        hall:
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        prices:
+          description: The price of a seat in each zone ("Prices vary by seat zone").
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePrices'
+        fromPrice:
+          description: The cheapest zone price among the zones the hall has seats in ("From EGP x").
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        hasStarted:
+          type: boolean
+          example: false
+          description: 'True once it has started: show the Started state; it can no longer be booked. A showtime that has ended is not listed.'
+      required:
+        - id
+        - startsAt
+        - endsAt
+        - cinemaDate
+        - hall
+        - prices
+        - fromPrice
+        - hasStarted
+    MovieShowtimeTheater:
+      type: object
+      properties:
+        theater:
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeTheaterRef'
+        showtimes:
+          description: Its showtimes that day, by start time.
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicShowtime'
+      required:
+        - theater
+        - showtimes
+    MovieShowtimeDay:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: The cinema date (06:00 to 06:00).
+        showtimeCount:
+          type: integer
+          minimum: 0
+          example: 6
+          description: How many showtimes the day lists, every theater together.
+        theaters:
+          description: The theaters showing it that day, alphabetical. Empty on a day without showtimes.
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieShowtimeTheater'
+      required:
+        - cinemaDate
+        - showtimeCount
+        - theaters
+    MovieShowtimes:
+      type: object
+      properties:
+        movieId:
+          type: integer
+          example: 1
+          description: Movie id.
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: Today's cinema date (the first day).
+        theaters:
+          description: 'The theater picker: every theater with a listed showtime in the 7 days, alphabetical, with its count.'
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieShowtimeTheaterCount'
+        days:
+          minItems: 7
+          maxItems: 7
+          description: Exactly 7 cinema days, today first, days without showtimes included.
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieShowtimeDay'
+      required:
+        - movieId
+        - cinemaDate
+        - theaters
+        - days
+    TheaterShowtimeMovie:
+      type: object
+      properties:
+        movie:
+          description: The movie, as its card shows it.
+          allOf:
+            - $ref: '#/components/schemas/MovieCard'
+        showtimes:
+          description: Its showtimes that day, by start time.
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicShowtime'
+      required:
+        - movie
+        - showtimes
+    TheaterShowtimeDay:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: The cinema date (06:00 to 06:00).
+        movies:
+          description: The movies showing that day, by their first showtime. Empty on a day without showtimes.
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterShowtimeMovie'
+      required:
+        - cinemaDate
+        - movies
+    TheaterShowtimes:
+      type: object
+      properties:
+        theaterId:
+          type: integer
+          example: 1
+          description: Theater id.
+        cinemaDate:
+          type: string
+          format: date
+          example: '2026-10-16'
+          description: Today's cinema date.
+        days:
+          minItems: 1
+          maxItems: 7
+          description: The 7 cinema days from today, or only the `date` asked for; days without showtimes included.
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterShowtimeDay'
+      required:
+        - theaterId
+        - cinemaDate
+        - days
     ShowtimeStatus:
       type: string
       enum:
@@ -23591,21 +24260,6 @@ components:
         - status
         - runtimeMinutes
         - ageRating
-    ShowtimeHallRefResponse:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 3
-          description: Hall id.
-        name:
-          type: string
-          nullable: false
-          example: Hall 3
-          description: Hall name.
-      required:
-        - id
-        - name
     ShowtimeCancelReason:
       type: string
       enum:
@@ -23614,25 +24268,6 @@ components:
         - low_sales
         - private_event
       description: Why it was cancelled; null while scheduled.
-    ShowtimePrices:
-      type: object
-      properties:
-        front:
-          description: Front rows (nearest the screen).
-          allOf:
-            - $ref: '#/components/schemas/MoneyResponse'
-        middle:
-          description: Middle rows.
-          allOf:
-            - $ref: '#/components/schemas/MoneyResponse'
-        back:
-          description: Back rows.
-          allOf:
-            - $ref: '#/components/schemas/MoneyResponse'
-      required:
-        - front
-        - middle
-        - back
     AdminShowtimeResponse:
       type: object
       properties:
