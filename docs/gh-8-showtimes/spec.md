@@ -1,7 +1,7 @@
 ---
 title: U7 — Showtimes - scheduling, overlap checks, dry run, batch create, move, prices
 owner: Mohamed Tarek
-status: Approved — building
+status: Built — awaiting review
 last_verified: 2026-10-20
 tags: [showtimes, scheduling, cleaning-gap, exclusion-constraint, opening-hours, summer-time, cinema-day, prices, admin]
 ---
@@ -75,8 +75,9 @@ service; bookings (U10–U14) plug into two seams this unit defines.
 | A start at or before `Clock.now()` is per date `in_past`, and on a move `VALIDATION_FAILED` on `startTime` | Nothing can be sold for it. |
 | Per-date results, first failing check wins: `time_does_not_exist` → `in_past` → `outside_opening_hours` (also a closed or hour-less date) → `conflict` → `available` (dry run) / `created` | One status per date chip (PRD A5: Available, Conflict, Outside opening hours). |
 | Batch: 1–31 unique dates inside a 31-day span. `skipUnavailable: true` creates the dates that fit; `false` creates all or nothing. Nothing created (either mode) → `409 SHOWTIMES_NOT_CREATED` `details.results`; else `201` with every date's result | Design §8 "skip the dates that don't fit"; an error commits nothing, so the key rolls back and a retry runs again (U1). |
-| Every insert and the move's update run in `TransactionRepository.savepoint()`; a `23P01` on `ex_showtimes_hall_cleaning_gap` is caught, the savepoint rolls back, and one follow-up query names the overlapping showtimes | Design §8; Postgres aborts the transaction on an error, a savepoint does not. Other errors re-throw. |
-| Dry run `POST /admin/showtime-checks` is `@NoIdempotencyStorage()`: it writes no row at all, key or not | "Dry run writes nothing", literally. |
+| Every insert and the move's update run in `TransactionRepository.savepoint()`; a `23P01` on `ex_showtimes_hall_cleaning_gap` is caught, the savepoint rolls back, and one follow-up query names the overlapping showtimes. A date the in-memory forecast calls `conflict` is still attempted: the constraint decides | Design §8; Postgres aborts the transaction on an error, a savepoint does not. Other errors re-throw. |
+| Creates and moves in one hall queue on a transaction-scoped advisory lock (`pg_advisory_xact_lock(hashtext('showtimes.hall-schedule:<hallId>'))`), taken after the hall's `FOR SHARE` | Two concurrent inserts that conflict can each wait for the other inside the exclusion check and one dies as a deadlock (`40P01`); queued, the second sees the first's committed row and gets a clean `23P01`. Holds (`FOR SHARE` on the hall) are not affected. Design §7.1 updated. |
+| Dry run `POST /admin/showtime-checks` is `@NoIdempotencyStorage()`: it writes no row at all, key or not. It checks the movie and hall but not prices (`no_prices` is a create-time reason) | "Dry run writes nothing", literally; prices never decide whether a date fits. |
 | Suggestions: for each date that is not `available`, up to 3 free starts on the wall-clock 5-minute grid (`06:00`…`05:55`, nonexistent ones skipped) that fit the window and the cleaning gap, nearest to the requested time first, earlier first on a tie | Design §8 "suggests free start times on a 5-minute grid". |
 | Admin start times may be any minute, not only the 5-minute grid | PRD is silent; the grid is only for suggestions. |
 | Lock order everywhere: theater `FOR SHARE` (`TheaterReadService.lockForShare`) → movie `FOR SHARE` (`CatalogReadService.lockMovieForShare`) → showtime `FOR UPDATE` → hall `FOR SHARE` (`HallReadService.lockForShare`) | §7.1 (showtime before hall) plus U4b and U5 (theater first; U5's layout save locks future showtimes before the hall). Serialises scheduling against archiving, hall retire and hours edits. |
@@ -94,7 +95,7 @@ service; bookings (U10–U14) plug into two seams this unit defines.
 | The three booking seams are abstract classes (DI tokens) in `showtimes`; `ShowtimesModule` binds the defaults, and U10/U14 rebind them to bookings' and seating's implementations | Design §5: showtimes calls bookings, bookings never calls showtimes' repository. |
 | `HALL_IN_USE` is decided here: the `hall_in_use` participant lists the hall's scheduled showtimes with `ends_at > now` and keeps those `ShowtimeSeatClaimService.showtimeIdsWithLiveClaims()` names | The task scope ("HALL_IN_USE for showtimes that have not ended"); U10 only supplies the claims, so the rule has one owner. Design §9 said U10 registers the participant: updated. |
 | `HallReadService.findByIds()` (3 queries) is added to U5's module | `ShowtimeReadService` needs hall names and zone seat counts of many showtimes' halls in a fixed number of queries; U5 had no batch summary read. |
-| Open questions from the draft: none. Decided here beyond it: the `hall_in_use` participant and the third seam (above), conflicts found in memory before the insert as well as by the constraint, and the dry run simulating the batch (a date that fits takes its slot for the later dates) | The batch and its dry run must agree; the in-memory check saves a savepoint round trip, the constraint stays the authority. |
+| The dates of one request never conflict with one another | The same wall-clock start on two cinema dates is at least 23 hours apart and a runtime is at most 600 minutes (`chk_movies_runtime_minutes`), so neither the dry run nor the batch simulates earlier dates of the request. |
 | Timeline `GET /admin/showtimes` is a cursor page (`starts_at, id`, kind `instant`, sort key `toISOString()`) wrapped with the day's window and halls; cancelled showtimes included unless filtered | `CLAUDE.md` "cursor on every list"; the PRD timeline shows cancelled slots. |
 | No-op `PATCH` answers `200`, no audit row, no message | Same as U2a, U4b, U5. |
 
@@ -104,32 +105,35 @@ service; bookings (U10–U14) plug into two seams this unit defines.
 `CatalogModule` (`MessagingModule` is global). Providers: `ShowtimesRepository`,
 `ShowtimeSchedulingService`, `ShowtimesService`, `ShowtimeReadService`, `ShowtimeLifecycleHooks`,
 `{ provide: ShowtimeCancellationService, useClass: NoBookingsShowtimeCancellation }`,
-`{ provide: ShowtimeTicketHolderService, useClass: NoTicketHolders }`. Exports
-`ShowtimeReadService`, `ShowtimeCancellationService`, `ShowtimeTicketHolderService`. `AppModule`
-imports `ShowtimesModule`.
+`{ provide: ShowtimeTicketHolderService, useClass: NoTicketHolders }`,
+`{ provide: ShowtimeSeatClaimService, useClass: NoSeatClaims }`. Exports `ShowtimeReadService`
+and the three seams. `AppModule` imports `ShowtimesModule`.
 
 | File | Holds |
 |---|---|
 | `enums.ts` | `SHOWTIME_STATUSES = ['scheduled','cancelled']`, `CANCEL_REASONS = ['technical_issue','print_not_delivered','low_sales','private_event']`, `CHECK_RESULTS = ['available','conflict','outside_opening_hours','time_does_not_exist','in_past']`, `NOT_SCHEDULABLE_REASONS`, `NOT_EDITABLE_REASONS = ['started','ended','cancelled']` |
 | `types.ts` | `ShowtimeStatus`, `CancelReason`, `CheckResult`, `ShowtimeRow`, `NewShowtimeRow`, `ShowtimeSpan`, `ShowtimeView`, `ShowtimeConflict`, `DateCheck`, `SuggestedStart`, `ScheduleRequest`, `BatchItemResult`, `ShowtimeChanges`, `TimelineFilter`, `ScheduledShowtimeFilter`, `NextShowtimeFilter`, `ShowtimeTicketHolder`, `ShowtimeCancellationInput`, `ShowtimeCancellationOutcome` |
-| `showtimes.constants.ts` | `CLEANING_GAP_MINUTES = 20`, `SUGGESTION_STEP_MINUTES = 5`, `MAX_SUGGESTIONS = 3`, `MAX_BATCH_DATES = 31`, `MAX_DATE_SPAN_DAYS = 31`, `SHOWTIME_GAP_CONSTRAINT = 'ex_showtimes_hall_cleaning_gap'`, `MAX_PRICE_AMOUNT = 1_000_000` |
-| `showtime-time.ts` | pure: `startInstantFor(cinemaDate, startTime)`, `showtimeSpan(startsAt, runtimeMinutes)`, `fitsWindow(span, window)`, `overlaps(span, others)`, `suggestStarts(cinemaDate, requested, runtimeMinutes, window, busy, now)`, `fromPrice(prices, zoneSeatCounts)` |
-| `showtimes.repository.ts` | `insert`, `findById`, `findByIds`, `findByIdForUpdate`, `update`, `overlapping(hallId, from, to)` (gist), `listTimeline(filter, page)`, `countTimeline(filter)`, `listScheduled(filter)`, `nextScheduledPerMovie(filter)` (`DISTINCT ON (movie_id)`), `movieIdsScheduled(filter)`, `lockFutureInHall(hallId, now)` (`FOR UPDATE`, id order), `refreshCapacity(hallId, seatCount, now)`, `hallIdsWithShowtimes(ids)`, `hallIdsWithUnendedShowtimes(ids, now)`, `listUnendedInHall(hallId, now)`, `existsForTheater(id)`, `existsForMovie(id)` |
+| `showtimes.constants.ts` | `CLEANING_GAP_MINUTES = 20`, `SUGGESTION_STEP_MINUTES = 5`, `MAX_SUGGESTIONS = 3`, `MAX_BATCH_DATES = 31`, `MAX_DATE_SPAN_DAYS = 31`, `MAX_READ_RANGE_DAYS = 31`, `SHOWTIME_GAP_CONSTRAINT = 'ex_showtimes_hall_cleaning_gap'`, `HALL_SCHEDULE_LOCK_PREFIX`, `SHOWTIME_LIFECYCLE_KEYS`, the cinema-day minutes and the `HH:mm` pattern (prices use U1's `MAX_PRICE_AMOUNT`) |
+| `showtime-time.ts` | pure: `cinemaMinuteOf`, `startTimeOf`, `startInstantFor(cinemaDate, startTime)`, `startInstantOrNull`, `showtimeSpan(startsAt, runtimeMinutes)`, `fitsWindow(span, window)`, `overlaps(span, busy)`, `suggestStarts({ cinemaDate, requestedTime, runtimeMinutes, window, busy, now })`, `fromPrice(prices, zoneSeatCounts)` |
+| `showtime-rows.ts` | row-to-model conversions: `pricesOf`, `toShowtimeView`, `toAdminShowtime`, `toBusySlot` |
+| `showtimes.repository.ts` | `lockHallSchedule(hallId)`, `insert`, `findById`, `findByIds`, `findByIdForUpdate`, `update`, `overlapping(hallId, from, to, excludeId?)` (gist), `hallIdsOnDate`, `listTimeline(filter, page)`, `countTimeline(filter)`, `listScheduled(filter)`, `nextScheduledPerMovie(filter)` (`DISTINCT ON (movie_id)`), `movieIdsScheduled(filter)`, `lockFutureInHall(hallId, now)` (`FOR UPDATE`, id order), `refreshCapacity(hallId, seatCount, now)`, `hallIdsWithShowtimes(ids)`, `hallIdsWithUnendedShowtimes(ids, now)`, `listUnendedInHall(hallId, now)`, `existsForTheater(id)`, `existsForMovie(id)` |
 | `showtime-scheduling.service.ts` | `ShowtimeSchedulingService`: resolve movie/hall/theater, schedulability, per-date checks, suggestions (dry run, create and move share it) |
 | `showtimes.service.ts` | `ShowtimesService`: `check`, `createBatch`, `update` (move, prices, cancel), `get`, `timeline` |
 | `showtime-read.service.ts` | the exported reads |
 | `showtime-lifecycle.hooks.ts` | `ShowtimeLifecycleHooks.onModuleInit()`: registers the five blockers and participant; registers the two templates |
 | `showtime-cancellation.service.ts` | `abstract class ShowtimeCancellationService`, `class NoBookingsShowtimeCancellation` |
 | `showtime-ticket-holder.service.ts` | `abstract class ShowtimeTicketHolderService`, `class NoTicketHolders` |
+| `showtime-seat-claim.service.ts` | `abstract class ShowtimeSeatClaimService`, `class NoSeatClaims` |
 | `templates/showtime-moved.template.ts`, `templates/showtime-moved-sms.template.ts` | `showtimeMovedTemplate` (email), `showtimeMovedSmsTemplate` (sms) |
-| `showtime-response.mapper.ts` | `toAdminShowtimeResponse`, `toShowtimePricesResponse`, `toDateCheckResponse` |
+| `showtime-response.mapper.ts` | `toShowtimePricesResponse`, `toAdminShowtimeResponse`, `toAdminShowtimeDetailResponse`, `toDateCheckResponse`, `toShowtimeCheckResponse`, `toShowtimeBatchResponse`, `toShowtimeTimelineResponse` |
 | `admin-showtimes.controller.ts` | `@Controller('admin/showtimes')`: timeline, create, get, patch |
 | `admin-showtime-checks.controller.ts` | `@Controller('admin/showtime-checks')`: dry run |
-| `dto/` | requests: `showtime-id.params.ts`, `timeline.query.ts`, `showtime-prices.request.ts`, `check-showtimes.request.ts`, `create-showtimes.request.ts`, `update-showtime.request.ts`; responses: `showtime-prices.response.ts`, `admin-showtime.response.ts` (`AdminShowtimeResponse`, `ShowtimeMovieRefResponse`, `ShowtimeHallRefResponse`), `admin-showtime-detail.response.ts`, `showtime-timeline.response.ts` (`ShowtimeTimelineResponse`, `TimelineHallResponse`, `OpeningWindowResponse`), `showtime-conflict.response.ts`, `suggested-start.response.ts`, `showtime-check.response.ts` (`ShowtimeCheckResponse`, `DateCheckResponse`), `showtime-batch.response.ts` (`ShowtimeBatchResponse`, `BatchItemResponse`) |
+| `dto/` | `showtime.validators.ts` (`IsCinemaDate`, `IsStartTime`, `WithinDateSpan`); requests: `showtime-id.params.ts`, `timeline.query.ts`, `showtime-prices.request.ts` (extends U4b's `ReplacePricesRequest`), `check-showtimes.request.ts`, `create-showtimes.request.ts`, `update-showtime.request.ts`; responses: `showtime-prices.response.ts`, `admin-showtime.response.ts` (`AdminShowtimeResponse`, `ShowtimeMovieRefResponse`, `ShowtimeHallRefResponse`), `admin-showtime-detail.response.ts` (`AdminShowtimeDetailResponse`, `ShowtimeTheaterRefResponse`), `opening-window.response.ts`, `showtime-timeline.response.ts` (`ShowtimeTimelineResponse`, `TimelineHallResponse`), `showtime-conflict.response.ts`, `suggested-start.response.ts`, `showtime-check.response.ts` (`ShowtimeCheckResponse`, `DateCheckResponse`), `showtime-batch.response.ts` (`ShowtimeBatchResponse`, `BatchItemResponse`) |
 | `showtimes.module.ts` | the module |
 
-Also: `src/modules/messaging/messaging.service.ts` gains `queueMany()`;
-`src/common/time/time.ts` gains `formatCairoDisplay()`.
+Also: `src/modules/messaging/messaging.service.ts` gains `queueMany()` (and
+`MessagesRepository` `nextIds()` and `insertMany()`); `src/common/time/time.ts` gains
+`formatCairoDisplay()` and `cairoWallClockOf()`; `HallReadService` gains `findByIds()`.
 
 ## Migration (prefix `0080`)
 
@@ -197,7 +201,8 @@ agree for an insert to succeed.
 1. `HallReadService.findById(hallId)` → null `404 NOT_FOUND` (`details.entity: 'hall'`); its
    `theaterId`. In writes: `TheaterReadService.lockForShare(theaterId)` →
    `CatalogReadService.lockMovieForShare(movieId)` (null → `404`, `entity: 'movie'`) →
-   `HallReadService.lockForShare(hallId)`. The dry run reads without locks
+   `HallReadService.lockForShare(hallId)` → the hall's scheduling advisory lock (after the
+   schedulability check). The dry run reads without locks
    (`TheaterReadService.findById`, `CatalogReadService.findMoviesByIds`).
 2. Schedulability → `409 SHOWTIME_NOT_SCHEDULABLE { reasons }`.
 3. `TheaterHoursService.hoursFor([theaterId], minDate, maxDate)` (one call) and one
@@ -223,8 +228,8 @@ else `201`. The in-memory conflict check of step 3 is not trusted for writes: th
    `started`. Cancel with `ends_at <= now` → `ended`.
 3. **Move**: new start from `cinemaDate ?? current cinema_date` and `startTime`; same as the
    current start and no price change → no-op. `TIME_DOES_NOT_EXIST` (422) /
-   `VALIDATION_FAILED` (in the past) / `SHOWTIME_NOT_SCHEDULABLE` / `OUTSIDE_OPENING_HOURS` (422,
-   `details.window` or `null`) → `savepoint(update starts_at, ends_at, cleaning_ends_at,
+   `SHOWTIME_NOT_SCHEDULABLE` / `VALIDATION_FAILED` (in the past) / `OUTSIDE_OPENING_HOURS` (422,
+   `details.window` or `null`) → hall scheduling lock → `savepoint(update starts_at, ends_at, cleaning_ends_at,
    cinema_date)`; a gap violation → `409 SHOWTIME_CONFLICT { conflicts }`. Then
    `ShowtimeTicketHolderService.listTicketHolders(id)` → one `queueMany()` (email per holder with
    an email, SMS per holder with a phone, `related: { customerId, bookingId }`) → audit
@@ -319,12 +324,15 @@ All under `/api/v1`, `@Admin()`, `@ApiTags('Admin: showtimes')`, summary, descri
 | Code | HTTP | Details |
 |---|---|---|
 | `SHOWTIME_NOT_SCHEDULABLE` | 409 | `{ reasons: ('movie_not_now_showing' \| 'hall_not_active' \| 'no_prices')[] }` |
-| `SHOWTIMES_NOT_CREATED` | 409 | `{ results: { cinemaDate, result, conflicts: { showtimeId, startsAt }[] }[] }` |
+| `SHOWTIMES_NOT_CREATED` | 409 | `{ results: { cinemaDate, result, conflicts: ShowtimeConflict[] }[] }`; `result` is `available` for a date that would have fitted |
 | `SHOWTIME_NOT_EDITABLE` | 409 | `{ reason: 'started' \| 'ended' \| 'cancelled' }` |
 
 Existing codes gain their shapes: `SHOWTIME_CONFLICT` `{ conflicts: ShowtimeConflict[] }`,
 `OUTSIDE_OPENING_HOURS` `{ window: { opensAt, closesAt } | null }`, `TIME_DOES_NOT_EXIST`
-`{ date, time }` (U1). An unhandled `23P01` elsewhere stays `409 CONFLICT`.
+`{ date, time, cinemaDate }` (the calendar date and time, and the cinema date entered). A
+`ShowtimeConflict` is `{ showtimeId, movieTitle, startsAt, endsAt, cleaningEndsAt }`, Cairo ISO.
+An unhandled `23P01` elsewhere stays `409 CONFLICT`. A missing key is U1's `400
+IDEMPOTENCY_KEY_REQUIRED`.
 
 ## Services
 
@@ -347,8 +355,9 @@ class ShowtimeReadService {
 // NextShowtimeFilter = { cinemaDate: CalendarDate; after: Date; movieIds?: readonly number[];
 //   theaterIds?: readonly number[] }
 // ShowtimeView = { id; movieId; theaterId; hallId; hallName: string; startsAt: Date; endsAt: Date;
-//   cinemaDate: CalendarDate; status: ShowtimeStatus; cancelReason: CancelReason | null;
-//   prices: ZonePrices; fromPrice: Money; seatCapacity: number; createdAt: Date; updatedAt: Date }
+//   cleaningEndsAt: Date; cinemaDate: CalendarDate; status: ShowtimeStatus;
+//   cancelReason: CancelReason | null; cancelledAt: Date | null; prices: ZonePrices;
+//   fromPrice: Money; seatCapacity: number; createdAt: Date; updatedAt: Date }
 
 abstract class ShowtimeCancellationService {      // U14 rebinds; default NoBookingsShowtimeCancellation
   abstract cancelBookings(input: ShowtimeCancellationInput): Promise<ShowtimeCancellationOutcome>;
@@ -371,6 +380,10 @@ abstract class ShowtimeSeatClaimService {         // U10 rebinds; default NoSeat
 
 Also exported by path: `ShowtimePricesResponse`, `toShowtimePricesResponse()`, `fromPrice()`,
 `SHOWTIME_STATUSES`, `CANCEL_REASONS`.
+
+Exported test support: `test/support/showtimes.ts` (`createSchedulingFixture()`,
+`scheduleShowtime()`, `cancelShowtime()`, `SHOWTIMES`, `SHOWTIME_CHECKS`) and
+`test/support/showtimes/` (`ScriptedTicketHolders`, `RecordingCancellation`).
 
 **Added to shared modules**: `MessagingService.queueMany(inputs: readonly QueueMessageInput[]):
 Promise<readonly QueuedMessage[]>` (same checks as `queue()`; ids from one `nextval` series,
@@ -404,70 +417,99 @@ one multi-row `INSERT`, one drain hook); `formatCairoDisplay(instant: Date): str
 
 **Unit** (`test/unit/modules/showtimes/`, `test/unit/common/time/`):
 
-- `showtime-time.test.ts` (pure): `startInstantFor('2026-10-16','00:30')` = 2026-10-17 00:30+03:00
-  and `cinemaDateOf` of it = 2026-10-16; `('2026-10-16','05:59')` next day, `('2026-10-16','06:00')`
-  same day; `('2026-04-23','00:30')` → `TIME_DOES_NOT_EXIST`; `('2026-10-29','23:30')` → first
-  occurrence (+03:00); `showtimeSpan` across the April gap keeps the real runtime;
-  `fitsWindow` at both edges (end exactly at close fits, one minute over doesn't); `overlaps` at
-  19, 20 and 21 minutes; `suggestStarts` grid, ordering, gaps skipped, ≤ 3, none for a closed
-  date; `fromPrice` ignores a zone with no seats.
-- `showtimes.service.test.ts` (repository, seams and other modules' services mocked): check
-  order of per-date results; `skipUnavailable` both ways; `SHOWTIMES_NOT_CREATED` when nothing
-  fits; move no-op writes nothing; `SHOWTIME_NOT_EDITABLE` reasons by the `Clock`; cancel calls
-  the seam once, under the lock, before the status update; a non-gap `23P01`/`23505` re-throws.
-- `showtime-lifecycle.hooks.test.ts`: five registrations with the right keys, two templates.
-- Templates: render with `storageLinks`, subject and SMS text contain the display times.
-- DTO validation: dates 0 and 32, duplicate dates, span 32 days, `startTime` `24:00`/`7:30`,
-  `cinemaDate` without `startTime`, cancel without a reason or with prices, empty `PATCH`.
-- `common/time/time.test.ts`: `formatCairoDisplay` in summer and winter time.
-- Unit "datastore down → 503" for `ShowtimesService.createBatch`.
+- `showtime-time.test.ts` (pure): the cinema-minute convention (`06:00`–`23:59` same day,
+  `00:00`–`05:59` next day); `startInstantFor('2026-10-16','00:30')` = 2026-10-17 00:30+03:00
+  with `cinemaDateOf` 2026-10-16; `('2026-04-23','00:30')` → `TIME_DOES_NOT_EXIST` with `{ date,
+  time, cinemaDate }`; `('2026-10-29','23:30')` → first occurrence (+03:00); `showtimeSpan`
+  across the April gap keeps 120 real minutes; `fitsWindow` at both edges and one minute over;
+  `overlaps` at 19, 20 and 21 minutes and a cleaning one minute into the next show;
+  `suggestStarts` grid, nearest first, earlier on a tie, skipped and past starts left out,
+  none for a closed or full date; `fromPrice` ignores a zone with no seats.
+- `showtimes.service.test.ts` (repository, other modules' services and the seams mocked; the
+  real `ShowtimeSchedulingService`): per-date results in date order from one hours read and one
+  conflict query, no lock and no write in the dry run; `SHOWTIME_NOT_SCHEDULABLE` reasons
+  together; the create's lock order (theater, movie, hall, schedule lock) and one savepoint per
+  date; a gap violation becomes `conflict` and the batch carries on; `SHOWTIMES_NOT_CREATED`
+  both ways; a non-gap `23P01` and a `23505` re-throw; `no_prices`; a datastore outage passes
+  through and maps to `503`; a no-op move writes nothing; `SHOWTIME_NOT_EDITABLE` reasons by the
+  `Clock`; cancel calls the seam once, under the showtime lock, before the status update; the
+  move's lock order and one `queueMany()` call (email and SMS per holder, `related` ids); a
+  move's gap violation is `SHOWTIME_CONFLICT` naming the blocker, without notifying.
+- `showtime-lifecycle.hooks.test.ts`: the five registrations with their keys, answered for many
+  halls in one repository call; `hall_in_use` keeps only claimed unended showtimes; the two
+  templates; a second registration fails the start.
+- `templates/showtime-templates.test.ts`: subject, text, HTML (escaped title, booking link) and
+  the SMS text with the display times.
+- `dto/showtime-requests.test.ts`: dates 0 and 32, duplicates, a 32-day span, impossible dates,
+  `startTime` `24:00`/`7:30`/seconds, prices (zero, missing zones), every accepted and refused
+  `PATCH` shape (empty, date without time, cancel without a reason, with a move or prices,
+  unknown fields), the timeline query and id params.
+- `test/unit/common/time/time.test.ts`: `formatCairoDisplay` in summer and winter time and after
+  midnight; `cairoWallClockOf`, both occurrences of the fall-back hour.
 
 **Integration** (`test/integration/modules/showtimes/`, real app and Postgres, `TestClock`;
-theaters, halls and movies created through U4b/U5/U6 routes; seams overridden only by
-`test/support/showtimes/scripted-ticket-holders.ts` and `recording-cancellation.ts`, our own
-implementations of our own interfaces):
+theaters, halls and movies created through the U4b/U5/U6 routes; seams overridden only by our own
+implementations of our own interfaces, `test/support/showtimes/`):
 
-- **Exclusion constraint** (direct SQL through `TransactionContext`): in one hall, a start 19 minutes
-  after the previous showtime's `ends_at` → `23P01`; 20 minutes, i.e. `starts_at = cleaning_ends_at` → ok;
-  another hall → ok; a cancelled showtime doesn't block. **Concurrency**: 10 parallel
-  `POST /admin/showtimes` (different keys, overlapping by 10 minutes, `skipUnavailable: false`)
-  → exactly one `201`, nine `409 SHOWTIMES_NOT_CREATED` whose conflict names the winner; one row.
-- **Opening hours**: start before opening, end after closing, a closed weekday, a special date
-  that closes early → `outside_opening_hours`; ending exactly at closing → created.
-- **Cinema day**: Fri 16 Oct + `00:30` → `cinemaDate 2026-10-16`, `startsAt
-  2026-10-17T00:30:00+03:00`, in the 16 Oct timeline; 24 Apr 2026 + `06:30` → `2026-04-24`.
-- **Summer time**: 23 Apr 2026 + `00:30` → per-date `time_does_not_exist` in dry run and batch,
-  `422 TIME_DOES_NOT_EXIST` on a move; 29 Oct 2026 + `23:30` → `+03:00` (first occurrence).
-- **Batch**: 5 dates with one conflicting and one outside hours, `skipUnavailable: true` → `201`,
-  3 created, per-item results in date order, 3 audit rows; same with `false` → `409`, zero rows;
-  the transaction stayed usable after the caught `23P01` (later dates created); replay with the
-  same key → `Idempotent-Replayed`; no key → `IDEMPOTENCY_KEY_REQUIRED`; prices default to the
-  theater's and override when given; `seatCapacity` = hall seats.
-- **Dry run writes nothing**: row counts of `showtimes`, `idempotency_keys`, `audit_events`,
-  `messages` unchanged, with and without a key; suggestions are free, on the grid, inside hours.
-- **Schedulability**: coming soon / archived movie, draft / retired hall, theater without prices
-  and no prices given → `409 SHOWTIME_NOT_SCHEDULABLE` with the reasons; unknown ids → `404`.
-- **Move**: re-checks hours and gap (moving next to itself is fine); `SHOWTIME_CONFLICT` names the
-  blocker; after start (`TestClock`) → `SHOWTIME_NOT_EDITABLE started`; recomputes `endsAt`,
-  `cinemaDate`; with two scripted holders (one with phone) → 2 emails + 1 SMS rows queued in one
-  insert, rolled back with a failing move; prices change only the row's prices.
-- **Cancel**: until end allowed, after → `ended`; second cancel → `cancelled`; the recording seam
-  is called once with the reason; the freed slot can be rescheduled.
-- **Hall, theater, movie rules**: a hall with any showtime → `DELETE` `409 HALL_NOT_DELETABLE
-  ['has_showtimes']` and `deletable: false`; retire with a not-ended scheduled showtime → `409
-  HALL_NOT_RETIRABLE ['has_future_showtimes']`, after it ends (`TestClock`) or is cancelled →
-  `200 retired`; a layout save refreshes `seat_capacity` of future showtimes only; draft theater
-  with a showtime → `THEATER_NOT_DELETABLE ['has_showtimes']`; movie with a showtime →
-  `MOVIE_NOT_DELETABLE ['has_showtimes']`.
-- **Locks**: a hall retire waiting on a create's `FOR SHARE` sees the new showtime and is refused
-  (recorded order of events); archiving a movie concurrently with a create serialises.
-- **Reads**: `listScheduled`, `nextScheduledPerMovie`, `findByIds` issue the same number of
-  queries for 1 and 20 showtimes; `fromPrice` follows the layout's zones; the timeline pages
-  (25 showtimes → 20 + 5) with `window` and `halls`.
-- **Access**: every route from `listHttpRoutes()` under `/api/v1/admin/showtime*` (asserted to be
-  the 5 above) → `403 FORBIDDEN` with a box-office token, `401` with none.
-- **Contract**: `npm run contract` regenerates `contracts/openapi.yaml` with the 5 operations,
-  `ShowtimePrices` and the three codes.
+- `admin-showtimes.controller.test.ts`:
+  - **Exclusion constraint** (direct SQL): a start 19 minutes after the previous `ends_at` →
+    `23P01` on `ex_showtimes_hall_cleaning_gap`; 20 minutes (`starts_at = cleaning_ends_at`) →
+    ok; another hall → ok; a cancelled showtime's slot can be reused, a minute more overlaps.
+    **Concurrency**: two raw transactions insert overlapping rows, the second waits and gets
+    `23P01` once the first commits; 10 parallel `POST /admin/showtimes` (different keys, 10
+    minutes apart, `skipUnavailable: false`) → exactly one `201`, nine `409
+    SHOWTIMES_NOT_CREATED` naming the winner; one row.
+  - **Opening hours**: before opening, one minute past closing, a closed weekday, a special date
+    closing early → `outside_opening_hours` with the window (null when closed); ending exactly
+    at closing → created.
+  - **Cinema day and summer time**: 16 Oct + `00:30` → `cinemaDate 2026-10-16`, `startsAt
+    2026-10-17T00:30:00+03:00`, on the 16 Oct timeline and not the 17th; 24 Apr 2026 +
+    `06:30` → `2026-04-24`; 23 Apr 2026 + `00:30` → `time_does_not_exist` in the dry run and the
+    batch, `422 TIME_DOES_NOT_EXIST` on a move; 29 Oct + `23:30` → `+03:00`, ending at
+    `00:30+02:00` (120 real minutes).
+  - **Batch**: 5 dates with one conflicting and one closed, `skipUnavailable: true` → `201`, 3
+    created, per-item results in date order, the date after the caught `23P01` created, 3 audit
+    rows; `false` → `409` with `available` for the others, no rows, no audit, no stored key;
+    replay → `Idempotent-Replayed`; no key → `400 IDEMPOTENCY_KEY_REQUIRED`; default and given
+    prices; `seatCapacity` 192; invalid batches refused before anything is touched.
+  - **Dry run**: `showtimes`, `idempotency_keys`, `audit_events`, `messages` counts unchanged
+    with and without a key; suggestions on the grid, nearest first, each re-checked as
+    available; `in_past`; `no_prices` only on create.
+  - **Schedulability**: coming soon and archived movies, draft and retired halls (reasons
+    together) in the dry run and the create; unknown hall or movie → `404` with the entity.
+  - **Move**: new time and date recomputing the end and cinema date, moving next to its own
+    slot, the movie's current runtime (a runtime edit alone changes nothing),
+    `SHOWTIME_CONFLICT` naming the blocker, `OUTSIDE_OPENING_HOURS` with the window, a past
+    target, archived movie, `started`; two scripted holders → 2 emails + 1 SMS in one insert;
+    an unmessageable holder rolls the whole move back; prices alone (`priceFront` audited); a
+    no-op records nothing; move + prices in one `showtime.moved`; malformed bodies, unknown id,
+    missing key.
+  - **Cancel**: through the recording seam once (it sees the showtime still scheduled), audited
+    with its counts, final, the slot reusable; a running showtime can be cancelled, an ended one
+    not.
+  - **Reads**: the manage panel with its theater; the timeline pages 25 showtimes (20 + 5) with
+    the window, the active hall and a retired hall that had a showtime that date (not a draft
+    hall without one), the `status` and `hallId` filters; the from price follows the layout.
+  - **Access**: the routes from `listHttpRoutes()` under `/api/v1/admin/showtime*` are exactly
+    the 5 above, all `@Admin()`: `403 FORBIDDEN` with a box-office token, `401` with none.
+- `showtime-lifecycle.hooks.test.ts`: retire refused while a showtime runs, allowed once it ended
+  or was cancelled, delete always `HALL_NOT_DELETABLE ['has_showtimes']`; a layout save refreshes
+  only upcoming scheduled showtimes' capacity; `HALL_IN_USE` for an unended showtime with a live
+  claim (scripted `ShowtimeSeatClaimService`), only unended ones asked about; the hall list's
+  `deletable`; `MOVIE_NOT_DELETABLE` and `THEATER_NOT_DELETABLE` `['has_showtimes']`; a hall
+  retire and a movie archive each wait on a create's locks (observed lock waiters), then the
+  retire is refused and the archive succeeds.
+- `showtime-read.service.test.ts`: `findById(s)` in any status; `listScheduled` by movie, by
+  theater and `startsAfter`, the 31-date limit; `nextScheduledPerMovie` with and without theater
+  filter; `movieIdsScheduled`; `listUnendedInHall`; the same query count for 1 and 20 showtimes;
+  the from price after a layout without front rows.
+- `dto/showtime-contract.test.ts`: the 5 operations with tag, prose, the `Idempotency-Key`
+  header (required on create and patch, absent on the dry run) and their error codes;
+  `ShowtimePrices` and the showtime enums; every response property described.
+- Also changed: `test/integration/modules/messaging/messaging.service.test.ts` (`queueMany`: order,
+  one insert, all-or-nothing checks, empty list), `halls/hall-read.service.test.ts`
+  (`findByIds` in three queries), and the hall and theater controller suites, which now schedule
+  real showtimes instead of the removed probe stand-ins.
 
 ## Acceptance
 
@@ -484,3 +526,17 @@ implementations of our own interfaces):
   follow-ups recorded for U10 (`ShowtimeTicketHolderService`, `HALL_IN_USE` participant over
   `listUnendedInHall`), U14 (`ShowtimeCancellationService`, cancellation preview, manage-panel
   sales figures) and U8 (`ShowtimeReadService`); `docs/gh-8-showtimes/spec.md` is this draft.
+
+## Follow-ups
+
+- **U10** (holds, #11): rebind `ShowtimeTicketHolderService` (confirmed bookings' contacts, one
+  query) and `ShowtimeSeatClaimService` (live claims judged by `claimed_until`, one query) from
+  the module that owns bookings and seat claims; read showtimes through `ShowtimeReadService`
+  and lock them `FOR SHARE` themselves before the hall (§7.1).
+- **U14** (admin bookings, #15): rebind `ShowtimeCancellationService` (refund confirmed bookings,
+  release holds, the cancellation email and SMS, batched); add `GET
+  /admin/showtimes/{id}/cancellation-preview` and the manage panel's sales figures.
+- **U8b** (discovery showtimes, #9): fill `HomeTickerSource` from `nextScheduledPerMovie()` and
+  the show-date filter from `movieIdsScheduled()`, the public showtime lists from
+  `listScheduled()` (passing active theaters), reusing `ShowtimePricesResponse`; showtimes in the
+  seed with `scheduleShowtime()`.

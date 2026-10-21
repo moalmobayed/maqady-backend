@@ -230,7 +230,7 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `showtimes` | A movie in a hall at a time | Composite FK (`hall_id`, `theater_id`) → `halls`; `starts_at`, `ends_at`, `cleaning_ends_at` (`ends_at` + 20 minutes, written by the service); `cinema_date`; `price_front`, `_middle`, `_back` plus `currency`; `seat_capacity`; `status` (`scheduled`, `cancelled`); `cancel_reason`. **EXCLUDE USING gist (`hall_id` WITH =, `tstzrange(starts_at, cleaning_ends_at)` WITH &&) WHERE `status = 'scheduled'`.** |
+| `showtimes` | A movie in a hall at a time | Composite FK (`hall_id`, `theater_id`) → `halls`; FKs to `movies` and `theaters`, all `NO ACTION`; `starts_at`, `ends_at`, `cleaning_ends_at` (`ends_at` + 20 minutes, written by the service and CHECKed); `cinema_date` (written by the service, not CHECKed); `price_front`, `_middle`, `_back` (1–1,000,000) plus `currency`; `seat_capacity` (1–300); `status` (`scheduled`, `cancelled`); `cancel_reason` and `cancelled_at`, set together exactly when cancelled. **EXCLUDE USING gist (`hall_id` WITH =, `tstzrange(starts_at, cleaning_ends_at)` WITH &&) WHERE `status = 'scheduled'`.** Indexes (`hall_id`, `theater_id`, `starts_at`), (`theater_id`, `cinema_date`, `starts_at`), (`movie_id`, `cinema_date`, `starts_at`), (`cinema_date`, `starts_at`) (U7, `docs/gh-8-showtimes/spec.md`) |
 | `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `confirmed_at`; `refunded_at`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`) |
 | `booking_seats` | Seat and price snapshot | PK (`booking_id`, `seat_label`); `row_label`, `seat_number`, `zone`, `price`, `is_wheelchair` |
 | `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold) |
@@ -278,9 +278,13 @@ wait for each other but never deadlock in a cycle:
 1. **Settle due payments first**, in their own short transaction (§7.5).
 2. **Showtime row.** `FOR SHARE` to read it as bookable (holds, payments, edits). `FOR UPDATE`
    to change it (move, cancel, price change). With two showtimes (an edit), lock both in id
-   order.
+   order. Admin showtime writes first lock the theater `FOR SHARE`, then (to schedule or move)
+   the movie `FOR SHARE`, so publishing, hours changes and archiving never interleave with them
+   (U7).
 3. **Hall row.** `FOR SHARE` when validating seats against the layout. `FOR UPDATE` to save a
-   layout.
+   layout. A showtime create or move then takes the hall's scheduling advisory lock
+   (`pg_advisory_xact_lock`), so concurrent scheduling writes in one hall queue instead of
+   deadlocking inside the exclusion check (U7).
 4. **Principal row** (customer or staff member) `FOR UPDATE`, when enforcing "one live hold".
 5. **Booking rows** `FOR UPDATE`, in id order.
 6. **Seat claims**, in (`showtime_id`, `seat_label`) order, whether locked with `FOR UPDATE` or
@@ -589,20 +593,34 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **Opening hours.** The hours for a cinema date are the special date's, if one exists, else
   the weekday's. They become instants by adding the stored minutes to the date's wall clock
   through the helpers.
-- **Showtime checks.**
+- **Entering a showtime.** The admin sends a cinema date and a wall-clock `startTime` (`HH:mm`).
+  `06:00`–`23:59` is on that calendar date and `00:00`–`05:59` on the next one, so 16 Oct +
+  `00:30` starts on 17 Oct at 00:30 and belongs to the 16 Oct cinema date. `ends_at` is the
+  start plus the runtime in real minutes, and `cleaning_ends_at` 20 minutes later.
+- **Showtime checks.** Per date, the first that fails wins: the start exists that night
+  (`time_does_not_exist`), is after now (`in_past`), the showtime starts and ends inside that
+  date's window, its cleaning may run past closing (`outside_opening_hours`, also for a closed
+  date), and the 20-minute gap holds (`conflict`).
   - The hours check, a service rule: the showtime starts and ends inside that window.
   - The 20-minute cleaning gap, the exclusion constraint. A violation becomes
     `SHOWTIME_CONFLICT`, and a follow-up query names the overlapping showtime.
-  - Only `now_showing` movies and `active` halls can be scheduled.
+  - Only `now_showing` movies and `active` halls can be scheduled, and only with prices (the
+    request's, or the theater's defaults): `SHOWTIME_NOT_SCHEDULABLE` with `details.reasons`.
+    The theater may be in any status.
 - **Dry run and batch create.**
   - `POST /admin/showtime-checks` runs every check for each requested date without writing, and
     suggests free start times on a 5-minute grid.
   - `POST /admin/showtimes` creates the dates that pass. Each date's insert runs in its own
     savepoint, so "skip the dates that don't fit" can continue past a constraint violation
-    without aborting the transaction.
+    without aborting the transaction. Without `skipUnavailable`, one date that doesn't fit
+    creates none; creating none is `SHOWTIMES_NOT_CREATED` with every date's result, so the
+    transaction and its idempotency key roll back.
 - **Moving.** Allowed only before the showtime starts. The move locks the showtime `FOR UPDATE`,
-  re-runs every check, recomputes `ends_at`, `cleaning_ends_at` and `cinema_date`, and messages
-  every ticket holder.
+  re-runs every check with the movie's current runtime, recomputes `ends_at`,
+  `cleaning_ends_at` and `cinema_date`, and messages every ticket holder (email, and SMS with a
+  phone) through `ShowtimeTicketHolderService` and one `MessagingService.queueMany()`. Prices
+  change only before the start, cancelling until the end; a cancelled showtime is final
+  (`SHOWTIME_NOT_EDITABLE`). A runtime or hours change never touches existing showtimes.
 - **Capacity.** `showtimes.seat_capacity` is the hall's seat count when the showtime is
   created. A layout save refreshes it for that hall's future showtimes, so past occupancy
   never changes.
@@ -645,8 +663,11 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
     - It is then refused with `HALL_IN_USE`, listing the blocking showtimes, if any showtime in
       the hall that hasn't ended has a live claim. A retired hall's layout is `CONFLICT`.
     - The showtime and claim rules plug into U5's `HallLifecycleRegistry`: layout participants
-      (U7's capacity refresh, U10's live-claim check), deletion blockers (U7 `has_showtimes`)
-      and retirement blockers (U7 `has_future_showtimes`) (`docs/gh-6-halls/spec.md`).
+      (U7's `showtime_capacity` refresh and `hall_in_use` check), deletion blockers (U7
+      `has_showtimes`) and retirement blockers (U7 `has_future_showtimes`)
+      (`docs/gh-6-halls/spec.md`). U7 owns the `HALL_IN_USE` rule: its participant lists the
+      hall's scheduled showtimes that haven't ended, and U10 answers which have a live claim by
+      rebinding `ShowtimeSeatClaimService` (`docs/gh-8-showtimes/spec.md`).
   - Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`, deduplicated.
   - A hall that ever had a showtime can only be retired (`PATCH` with `status: retired`), which
     requires no future scheduled showtimes (`HALL_NOT_RETIRABLE`); deleting it is
@@ -1267,6 +1288,9 @@ Codes added by later units (`src/common/errors/error-catalogue.ts` holds the ful
 | `THEATER_NOT_DELETABLE` | 409 | U4b: deleting a theater that is not a draft or has a blocker; `details.reasons` lists them |
 | `HALL_NOT_DELETABLE` | 409 | U5: deleting a hall a blocker keeps (one that ever had a showtime); `details.reasons` lists them |
 | `HALL_NOT_RETIRABLE` | 409 | U5: retiring a hall a blocker keeps (one with upcoming showtimes); `details.reasons` lists them |
+| `SHOWTIME_NOT_SCHEDULABLE` | 409 | U7: a movie that is not Now showing, a hall that is not active, or no prices; `details.reasons` lists them |
+| `SHOWTIMES_NOT_CREATED` | 409 | U7: a batch create that created nothing; `details.results` gives every date's result |
+| `SHOWTIME_NOT_EDITABLE` | 409 | U7: moving or re-pricing a started showtime, cancelling an ended one, changing a cancelled one; `details.reason` |
 
 ### 14.4 Logging and observability
 

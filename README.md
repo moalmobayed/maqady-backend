@@ -202,12 +202,16 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `createDraftMovie()`, `createPerson()` and `genreId('drama')` (genres are seeded by migration
   and survive the per-suite reset).
 - `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
-  the admin routes; `test/support/theaters-probe.module.ts` stands in for the deletion blocker
-  that showtimes register (`TheaterLifecycleRegistry`).
+  the admin routes.
 - `test/support/halls.ts` adds halls through the admin routes: `createHall()`,
   `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
-  `test/support/halls-probe.module.ts` stands in for the hall rules showtimes and holds register
-  (`HallLifecycleRegistry`).
+  `test/support/halls-probe.module.ts` adds a scripted layout participant beside the real ones,
+  standing in for the live-claim check holds will register (`HallLifecycleRegistry`).
+- `test/support/showtimes.ts` schedules through the admin routes: `createSchedulingFixture()`
+  (a theater open 12:00–01:00 with prices, an active hall, a Now showing movie) and
+  `scheduleShowtime(testApp, admin, fixture, '2026-10-16', '19:30')`, plus `cancelShowtime()`.
+  `test/support/showtimes/` holds our own implementations of the booking seams
+  (`ScriptedTicketHolders`, `RecordingCancellation`) for `createTestApp({ overrides })`.
 - `test/support/discovery.ts` reads the home-page draft as data: `schemaStructure()` compares a
   generated schema with the draft's, and `draftValidator('HomeResponse')` validates a real
   response against it (ajv).
@@ -280,6 +284,15 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   blockers, and layout participants (`beforeLock`, `blockingShowtimes` for `HALL_IN_USE`,
   `afterSave`). Seat maps reuse `HallLayoutResponse` (`HallLayout`, with
   `toHallLayoutResponse()`).
+- **Showtimes** (`modules/showtimes`, `docs/gh-8-showtimes/spec.md`). Import `ShowtimesModule`
+  and read showtimes through `ShowtimeReadService` (`findById(s)` in any status; `listScheduled`
+  by movie or theater over up to 31 cinema dates; `nextScheduledPerMovie` for the ticker;
+  `movieIdsScheduled`; `listUnendedInHall`), each a fixed number of queries; never query
+  `showtimes`. Bookings plug in by rebinding three seams the module binds to no-bookings
+  defaults: `ShowtimeCancellationService` (refunds on cancel), `ShowtimeTicketHolderService`
+  (whom a move notifies) and `ShowtimeSeatClaimService` (live claims behind `HALL_IN_USE`).
+  Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
+  `toShowtimePricesResponse()`).
 - **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`): the public reads
   (`GET /home`, `/genres`, `/movies`, `/movies/{id}`, `/movies/{id}/similar`, `/people`,
   `/theaters`, `/theaters/{id}`) through the catalog and theater read services. The home ticker
@@ -341,7 +354,8 @@ src/
                                          rate-limit, audit
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
                                          (credentials), staff, media, theaters, catalog,
-                                         customers, discovery, seed (the development seed)
+                                         customers, halls, discovery, showtimes, seed (the
+                                         development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)
