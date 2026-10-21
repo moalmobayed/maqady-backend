@@ -14,7 +14,10 @@ import { ShowtimeLifecycleHooks } from './showtime-lifecycle.hooks';
 import { ShowtimeReadService } from './showtime-read.service';
 import { ShowtimeSchedulingService } from './showtime-scheduling.service';
 import { ShowtimeSeatClaimService } from './showtime-seat-claim.service';
-import { NoTicketHolders, ShowtimeTicketHolderService } from './showtime-ticket-holder.service';
+import {
+  RegisteredTicketHolders,
+  ShowtimeTicketHolderService,
+} from './showtime-ticket-holder.service';
 import { ShowtimesRepository } from './showtimes.repository';
 import { ShowtimesService } from './showtimes.service';
 
@@ -23,9 +26,10 @@ import { ShowtimesService } from './showtimes.service';
  * rules of halls, theaters and movies, and for later units
  *
  * - `ShowtimeReadService`: showtimes by id, by movie, by theater and date (U8, U10, U14);
- * - the booking seams `ShowtimeCancellationService` (U14) and `ShowtimeTicketHolderService`
- *   (U11), bound here to their no-bookings defaults, and `ShowtimeSeatClaimService`, bound to
- *   seating's live claims (U10). Later units replace the bindings here, in this module's
+ * - the booking seams `ShowtimeCancellationService` (U14), bound here to its no-bookings
+ *   default, `ShowtimeTicketHolderService`, bound to `RegisteredTicketHolders` where bookings
+ *   registers its source (U11), and `ShowtimeSeatClaimService`, bound to seating's live claims
+ *   (U10). Later units replace the bindings here, in this module's
  *   `providers` (`useExisting` the implementation their own module exports, that module imported
  *   here): this module's own provider wins over an imported one, so a binding made only in their
  *   module has no effect.
@@ -40,7 +44,9 @@ import { ShowtimesService } from './showtimes.service';
     ShowtimesService,
     ShowtimeLifecycleHooks,
     { provide: ShowtimeCancellationService, useClass: NoBookingsShowtimeCancellation },
-    { provide: ShowtimeTicketHolderService, useClass: NoTicketHolders },
+    // U11: the confirmed bookings' contacts, from the source bookings registers at boot.
+    RegisteredTicketHolders,
+    { provide: ShowtimeTicketHolderService, useExisting: RegisteredTicketHolders },
     // U10: live seat claims from seating, judged by their stored expiry (HALL_IN_USE).
     { provide: ShowtimeSeatClaimService, useExisting: SeatAvailabilityService },
   ],
@@ -48,6 +54,7 @@ import { ShowtimesService } from './showtimes.service';
     ShowtimeReadService,
     ShowtimeCancellationService,
     ShowtimeTicketHolderService,
+    RegisteredTicketHolders,
     ShowtimeSeatClaimService,
   ],
 })

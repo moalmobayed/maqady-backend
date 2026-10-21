@@ -95,6 +95,16 @@ export class ShowtimesRepository {
       .first();
   }
 
+  /** Locks these showtimes `FOR SHARE` in id order (design §7.1 step 2) and returns them. */
+  async findByIdsForShare(ids: readonly number[]): Promise<ShowtimeRow[]> {
+    if (ids.length === 0) return [];
+    return this.showtimes()
+      .select<ShowtimeRow[]>(SHOWTIME_COLUMNS)
+      .whereIn('id', [...new Set(ids)])
+      .orderBy('id')
+      .forShare();
+  }
+
   /** These showtimes, by start then id; unknown ids are absent. */
   async findByIds(ids: readonly number[]): Promise<ShowtimeRow[]> {
     if (ids.length === 0) return [];

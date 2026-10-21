@@ -1,6 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../../common/database/transaction-context';
-import type { ClaimStatement, SeatClaimRow, TakenCountRow, WrittenClaimRow } from './types';
+import type {
+  BookingClaims,
+  ChangedClaimRow,
+  ClaimKeyArrays,
+  ClaimStatement,
+  LockedClaimRow,
+  SeatClaimRow,
+  ShowtimeSeats,
+  TakenCountRow,
+  WrittenClaimRow,
+} from './types';
 
 /** A claim is live (the seat is taken) while it is sold or its end is still ahead (§7.2). */
 const LIVE = '(claimed_until IS NULL OR claimed_until > ?)';
@@ -49,6 +59,73 @@ export class SeatClaimsRepository {
     return result.rows;
   }
 
+  /**
+   * Locks these seats' claim rows `FOR UPDATE` in claim order, by showtime id then label (design
+   * §7.1 step 6), and returns them as they are once locked; a seat with no row is absent. The
+   * sort sits below the lock in the plan, so rows are locked in that order.
+   */
+  async lockFor(seats: readonly ShowtimeSeats[]): Promise<LockedClaimRow[]> {
+    const keys = flatten(seats);
+    if (keys.showtimeIds.length === 0) return [];
+    const result = await this.db.executor().raw<{ rows: LockedClaimRow[] }>(
+      `SELECT sc.showtime_id, sc.seat_label, sc.booking_id, sc.claimed_until
+       FROM seat_claims AS sc
+       JOIN unnest(?::bigint[], ?::text[]) AS k(showtime_id, seat_label)
+         ON sc.showtime_id = k.showtime_id AND sc.seat_label = k.seat_label
+       ORDER BY sc.showtime_id, sc.seat_label COLLATE "C"
+       FOR UPDATE OF sc`,
+      [keys.showtimeIds, keys.labels],
+    );
+    return result.rows;
+  }
+
+  /**
+   * Makes these bookings' held claims permanent (`claimed_until = NULL`, a sold seat that nothing
+   * overwrites, design §7.2); returns the seats changed. Only a booking's own, not yet sold claims
+   * change. Call it with the rows locked by `lockFor()`.
+   */
+  async confirm(claims: readonly BookingClaims[]): Promise<ChangedClaimRow[]> {
+    const keys = flatten(claims);
+    if (keys.showtimeIds.length === 0) return [];
+    const result = await this.db.executor().raw<{ rows: ChangedClaimRow[] }>(
+      `UPDATE seat_claims AS sc SET claimed_until = NULL
+       FROM unnest(?::bigint[], ?::text[], ?::bigint[]) AS k(showtime_id, seat_label, booking_id)
+       WHERE sc.showtime_id = k.showtime_id AND sc.seat_label = k.seat_label
+         AND sc.booking_id = k.booking_id AND sc.claimed_until IS NOT NULL
+       RETURNING sc.showtime_id, sc.seat_label`,
+      [keys.showtimeIds, keys.labels, keys.bookingIds],
+    );
+    return result.rows;
+  }
+
+  /** Moves the end of one booking's held claims to `until`; returns the seats changed. */
+  async extend(claims: BookingClaims, until: Date): Promise<ChangedClaimRow[]> {
+    if (claims.labels.length === 0) return [];
+    const result = await this.db.executor().raw<{ rows: ChangedClaimRow[] }>(
+      `UPDATE seat_claims SET claimed_until = ?
+       WHERE showtime_id = ? AND booking_id = ? AND seat_label = ANY(?::text[])
+         AND claimed_until IS NOT NULL
+       RETURNING showtime_id, seat_label`,
+      [until, claims.showtimeId, claims.bookingId, [...claims.labels]],
+    );
+    return result.rows;
+  }
+
+  /** Deletes these bookings' own claims on these seats, sold or held; returns the seats freed. */
+  async deleteOwn(claims: readonly BookingClaims[]): Promise<ChangedClaimRow[]> {
+    const keys = flatten(claims);
+    if (keys.showtimeIds.length === 0) return [];
+    const result = await this.db.executor().raw<{ rows: ChangedClaimRow[] }>(
+      `DELETE FROM seat_claims AS sc
+       USING unnest(?::bigint[], ?::text[], ?::bigint[]) AS k(showtime_id, seat_label, booking_id)
+       WHERE sc.showtime_id = k.showtime_id AND sc.seat_label = k.seat_label
+         AND sc.booking_id = k.booking_id
+       RETURNING sc.showtime_id, sc.seat_label`,
+      [keys.showtimeIds, keys.labels, keys.bookingIds],
+    );
+    return result.rows;
+  }
+
   /** The showtime's live claims at `now`, by label in claim order. */
   async live(showtimeId: number, now: Date): Promise<SeatClaimRow[]> {
     const result = await this.db.executor().raw<{ rows: SeatClaimRow[] }>(
@@ -71,4 +148,19 @@ export class SeatClaimsRepository {
     );
     return result.rows;
   }
+}
+
+/** Parallel arrays of every seat named, for `unnest`; a booking id of 0 when none is given. */
+function flatten(groups: readonly (ShowtimeSeats | BookingClaims)[]): ClaimKeyArrays {
+  const showtimeIds: number[] = [];
+  const labels: string[] = [];
+  const bookingIds: number[] = [];
+  for (const group of groups) {
+    for (const label of group.labels) {
+      showtimeIds.push(group.showtimeId);
+      labels.push(label);
+      bookingIds.push('bookingId' in group ? group.bookingId : 0);
+    }
+  }
+  return { showtimeIds, labels, bookingIds };
 }
