@@ -128,10 +128,10 @@ a repository, a service, a controller or gateway, and the module file.
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
 | `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters. Showtimes and seating plug their rules into its `HallLifecycleRegistry`, so it imports neither (U5) |
 | `catalog` | `genres`, `movies`, `movie_genres`, `people`, `person_roles`, `movie_credits`, `movie_photos`, `movie_videos` | media |
-| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, seating (live claims behind `HALL_IN_USE`, U10), bookings (cancellation) |
+| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, seating (live claims behind `HALL_IN_USE`, U10), bookings (cancellation; the ticket holders of a move, registered by bookings with `RegisteredTicketHolders`, U11) |
 | `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
 | `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging; it reads showtimes, halls, theaters, catalog, customers and media through their exported services (U10, `docs/gh-11-holds/spec.md`) |
-| `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
+| `payments` | `payments`; the payment-provider interface and the simulated provider. *Deviation (U11, `docs/gh-12-checkout/spec.md`):* `SettlementService`, confirmation and the tickets live in `bookings`, which writes the bookings, claims and messages they change | — |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
@@ -144,7 +144,8 @@ Rules:
 - Modules talk to each other only through exported services, never another module's
   repository.
 - Dependencies point one way. `seating` and `messaging` depend on nothing else in this table.
-  `payments` uses `seating` to confirm claims when it settles a payment. `bookings`
+  `payments` depends on nothing in this table either (U11): `bookings` settles payments and
+  confirms their claims through `seating`. `bookings`
   orchestrates holds, payments and refunds.
 - The showtimes ↔ bookings cycle (cancelling a showtime refunds its bookings) is broken by
   `bookings` exporting a `ShowtimeCancellationService` that `showtimes` calls. `bookings` reads
@@ -234,7 +235,7 @@ Rules:
 | `bookings` | Holds and bookings | `reference` UNIQUE; `status` (`held`, `confirmed`, `refunded`); `channel` (`online`, `counter`); nullable `customer_id`; `hold_token_hash`; `hold_expires_at`; `has_declined_payment`; `total_amount` plus `currency`; `seat_count` 1–8; contact name, email and phone; `created_by_staff_id`; `confirmed_at`; `refunded_at`; `qr_version`; `checked_in_at`, `checked_in_by_staff_id`; UNIQUE (`id`, `showtime_id`). CHECKs: the reference pattern, `channel = 'counter'` exactly when `created_by_staff_id` is set, `hold_token_hash` only on an online unowned hold, the timestamps and `qr_version` of each status (U10, `docs/gh-11-holds/spec.md`) |
 | `booking_seats` | Seat and price snapshot | PK (`booking_id`, `seat_label`); `row_label`, `seat_number`, `zone`, `price`, `is_wheelchair` |
 | `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold; `<= :now` means free: an expired or released hold) |
-| `payments` | Charges and refunds | `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `refund_of_payment_id` (a refund names the charge it returns); `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
+| `payments` | Charges and refunds | As built (U11): `currency`; `provider_idempotency_key` (`<reference>-c<n>` / `-r<n>`, UNIQUE, exactly for online methods); `completed_at` (exactly when final); CHECKs per kind, method and status for every column, the counter and payout ones included. `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `refund_of_payment_id` (a refund names the charge it returns); `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
 | `booking_notes` | Internal staff notes | `staff_user_id`, `body` (at most 1,000 characters) |
 
 ```mermaid
@@ -275,7 +276,11 @@ payment, the 8-seat limit and the last-admin rule.
 Every operation that touches seats takes its locks in one fixed order, so two operations can
 wait for each other but never deadlock in a cycle:
 
-1. **Settle due payments first**, in their own short transaction (§7.5).
+1. **Settle due payments first**, in their own short transaction (§7.5). *As built (U11):* a
+   route marked `@SettleFirst('booking' | 'showtime')` runs `SettlementService.settleDue()` from
+   `SettleFirstInterceptor`, after the guards and before the request transaction opens, for the
+   path's booking or showtime and the calling customer's bookings. Settlement itself takes
+   steps 2, 5 and 6 (showtimes `FOR SHARE` in id order, bookings, claims), then the charges.
 2. **Showtime row.** `FOR SHARE` to read it as bookable (holds, payments, edits). `FOR UPDATE`
    to change it (move, cancel, price change). With two showtimes (an edit), lock both in id
    order. Admin showtime writes first lock the theater `FOR SHARE`, then (to schedule or move)
@@ -508,6 +513,34 @@ stateless and decides each result from the test token:
 | `sim_wallet_apple_pay`, `sim_wallet_google_pay` | Approved |
 | `sim_wallet_cancelled` | Cancelled by the customer (not a decline) |
 
+**As built (U11, `docs/gh-12-checkout/spec.md`).**
+
+- **Refusals of `POST /bookings/{ref}/payments`**, in order: `NOT_FOUND` (not the caller's),
+  `ALREADY_PAID`, `SHOWTIME_NOT_BOOKABLE { reason }` (U10's rule, so a theater that paused sales
+  refuses the payment), `ACCOUNT_BLOCKED`, then under the booking lock `ALREADY_PAID`,
+  `HOLD_EXPIRED` (also at exactly `hold_expires_at`) and `PAYMENT_IN_PROGRESS`, then under the
+  claim locks `HOLD_EXPIRED`. The customer is locked (§7.1 step 4) between the showtime and the
+  booking. A token of the other method is `VALIDATION_FAILED` on `token`.
+- **Processing extends, never shortens**: the hold and its claims end at `settles_at + 30 s` only
+  when that is later than they already end, not capped at the start (PRD Seats 5), announced with
+  `seat.held`. A hold whose payment is processing is never released or replaced
+  (`PAYMENT_IN_PROGRESS` on release, a new hold of its customer and a claim).
+- **Provider keys**: `<reference>-c<n>` for the booking's n-th charge, `<reference>-r<n>` for its
+  n-th refund, counted under the booking lock, so the write interceptor's retry reuses them.
+- **The simulated provider** is stateless: its charge reference is `sim.<token>.<settles at, ms>.
+  <16 hex of sha256(key)>`, which `retrieve()` reads back against the `Clock`. Card details per
+  token: Visa 4242, Mastercard 4444, Meeza 0011, declined Visa 0002, slow Visa 3184, slow
+  declined Visa 0341; a cancelled wallet records Apple Pay.
+- **Settlement** finds due charges through `idx_payments_settles_at_processing` alone (nothing due
+  is one query and no transaction), filters their bookings by scope, then locks, retrieves and
+  finishes them with one conditional update. A success is refunded at once, through the
+  provider, when its showtime is no longer scheduled (cancelled meanwhile) or a claim is no longer
+  the booking's: the booking ends `refunded` and its remaining claims are deleted. An expired but
+  untouched claim still confirms (PRD Seats 5). `settleAllDue()` settles everything due for the
+  admin screens (U14, U16, U17).
+- **Payment status** (`paymentStatusOf()`): `refunded`, `paid` for confirmed, and for a hold
+  `processing` (latest sale charge), else `declined` after any decline, else `unpaid`.
+
 ### 7.6 Counter sales
 
 1. A staff member picks seats on the live map. `POST /admin/counter-holds` creates a
@@ -585,6 +618,17 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - **QR payload.** `MQ1.<reference>.<qr_version>.<signature>`, where the signature is HMAC-SHA256
   under `QR_SIGNING_KEY`, truncated to 16 bytes and base64url-encoded. The API returns the
   payload string; the frontend draws the code.
+- **As built (U11).** The signature is the first 16 bytes of HMAC-SHA256 over
+  `MQ1.<reference>.<qr_version>` (`hmacSha256Bytes()`), 22 base64url characters, verified by a
+  strict pattern and a constant-time compare (`QrCodeService.verify()`, for U13's scanning).
+  `GET /bookings/{ref}` returns `ticket: { qrCode, admits }` while the booking is confirmed or
+  completed. The tickets email and SMS carry the payload only inside a one-time link to the
+  frontend page `/ticket?token=<payload>`, which draws the code, so no stored copy holds it
+  (§13.1). The PDF is A5 with the built-in Helvetica (characters outside WinAnsi print as `?`;
+  PRD v1 has no Arabic titles), the QR drawn as one rectangle per dark module; the `.ics` has one
+  `VEVENT` in UTC with the theater's address as `LOCATION`. Both are sent with
+  `Content-Disposition: attachment` and `Cache-Control: private, no-store`; a booking without a
+  ticket is `TICKET_NOT_AVAILABLE { status }`, anyone else's `NOT_FOUND`.
 - **Downloads.** `GET /bookings/{ref}/ticket.pdf` (owner), `GET /admin/bookings/{ref}/ticket.pdf`
   (staff) and `GET /bookings/{ref}/calendar.ics` (owner) are built on demand with pdfkit and
   qrcode. The frontend fetches them with its `Authorization` header and saves the file. No token
@@ -1147,6 +1191,10 @@ generated contract (§19).
   `payload_ciphertext`, encrypted like stored idempotency responses (§14.1) with AAD
   `messages:<id>`, while the message is `queued` or `failed`, and cleared once it is `sent`. The
   Message log never reads that column.
+- **Tickets (U11).** `booking.tickets` (email) and `booking.tickets_sms` (SMS to a phone on
+  file) are queued in the confirming transaction, one `queueMany()` for a batch. The QR payload is
+  their secret parameter: the email links to `/ticket?token=<payload>` and `/my-bookings/<ref>`,
+  and the stored copies show `[one-time link hidden]` in place of the ticket link.
 - **SMS.** A simulated SMS goes through the same outbox and is recorded as `sent` on its first
   attempt, right after commit.
 - **The Message log** lists every email and SMS with its delivery status (U2b).
@@ -1261,6 +1309,9 @@ Three carve-outs:
 - **Business results that must persist**, such as a declined payment, are successful responses,
   not errors, so they commit and replay correctly.
 
+Settling due payments (§7.5) runs before the request transaction of a `@SettleFirst()` route,
+write or read, in a short transaction of its own (`SettleFirstInterceptor`, U11).
+
 GET requests run without a request transaction. The few GET paths that write open their own
 short transactions explicitly: settlement and export audit rows.
 
@@ -1354,6 +1405,7 @@ Codes added by later units (`src/common/errors/error-catalogue.ts` holds the ful
 | `SHOWTIME_NOT_SCHEDULABLE` | 409 | U7: a movie that is not Now showing, a hall that is not active, or no prices; `details.reasons` lists them |
 | `SHOWTIMES_NOT_CREATED` | 409 | U7: a batch create that created nothing; `details.results` gives every date's result |
 | `SHOWTIME_NOT_EDITABLE` | 409 | U7: moving or re-pricing a started showtime, cancelling an ended one, changing a cancelled one; `details.reason` |
+| `TICKET_NOT_AVAILABLE` | 409 | U11: a ticket download for a booking that is not confirmed or completed; `details.status` |
 
 ### 14.4 Logging and observability
 
@@ -1375,7 +1427,9 @@ Codes added by later units (`src/common/errors/error-catalogue.ts` holds the ful
 Environment variables are validated at boot, and a missing or malformed value stops the start:
 
 - `DATABASE_URL`, `DB_SCHEMA` (`maqady`);
-- `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`;
+- `JWT_SECRET_CUSTOMER`, `JWT_SECRET_STAFF`, `QR_SIGNING_KEY`, `DATA_ENCRYPTION_KEY`; the QR key
+  is base64 of at least 32 bytes and must differ from the other three (and the previous
+  encryption key), so one leaked secret forges no other credential (U11);
 - `STORAGE_DRIVER` (`supabase` or `local`, no default), `SUPABASE_URL`,
   `SUPABASE_SERVICE_ROLE_KEY` (both required for `supabase`), `STORAGE_BUCKET`, and for `local`
   `LOCAL_STORAGE_DIR` and `LOCAL_STORAGE_PUBLIC_URL`;
