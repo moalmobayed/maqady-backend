@@ -912,11 +912,11 @@ describe('Admin showtimes (integration)', () => {
         ['showtime.moved_sms', '+201001234567', 501],
         ['showtime.moved', 'omar@example.com', 502],
       ]);
-      expect(messages[0].subject).toBe(
+      expect(messages[0]!.subject).toBe(
         `New time for ${fixture.movieTitle}: Fri 16 Oct 2026, 20:15`,
       );
-      expect(messages[0].body_text).toContain('was Fri 16 Oct 2026, 19:30');
-      expect(messages[1].body_text).toContain('MQ-7K2P9X');
+      expect(messages[0]!.body_text).toContain('was Fri 16 Oct 2026, 19:30');
+      expect(messages[1]!.body_text).toContain('MQ-7K2P9X');
       expect(holders.calls).toEqual([showtime.id]);
       expect((await auditRows('showtime.moved'))[0]!.metadata).toMatchObject({ notifiedCount: 3 });
 
