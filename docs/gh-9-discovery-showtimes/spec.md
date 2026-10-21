@@ -91,7 +91,8 @@ of showtimes, so the frontend developer sees all of it on a local database.
 
 `src/modules/seed/`: `seed.steps.ts` adds the `showtimes` step last; `seed-data.ts` adds
 `SEED_SHOWTIMES`; `seed.constants.ts` adds `SEED_SHOWTIME_DAYS = 7`; `types.ts` adds the seed's
-showtime types; `seed.command.ts` passes the Clock's now to the steps (`SeedContext.now`).
+showtime types and `SeedContext.hallIds` (the `halls` step records each theater's seed hall);
+`listAll()` takes a path with its own filters.
 
 ## Migrations
 
@@ -227,7 +228,10 @@ A second run creates nothing. On a Thursday before 13:30 the step creates 4 slot
 - `src/modules/discovery/*` (U8a): as listed above. `NoShowtimesTickerSource` and
   `NoHallsCountSource` are removed (their unit tests replaced); `FixedTickerSource` stays in
   `test/support/discovery.ts`.
-- `src/modules/seed/*` (U8a): the `showtimes` step and `SeedContext.now`.
+- `src/modules/seed/*` (U8a): the `showtimes` step, `SeedContext.hallIds`, `listAll()` with
+  filters.
+- `src/modules/discovery/catalog-browse.controller.ts` (U8a): passes `showDate` to
+  `MovieBrowseService.listMovies()` (a fix found by the show-date suite while red).
 - `test/integration/modules/discovery/theater-browse.controller.test.ts` (U8a): the fixed query
   count of `/theaters` grows by the hall counts' 3 queries and `/home`'s bound by the ticker's;
   `test/integration/modules/seed/seed.command.test.ts`: runs at a fixed Clock and expects the new
@@ -268,9 +272,14 @@ Integration (`test/integration/modules/discovery/`, the real app and Postgres, a
   soonest first, the next one of each, never a started, cancelled, tomorrow's, Coming soon,
   draft-theater or paused-theater showtime; every item validates against the draft's `TickerItem`
   and the whole response against `HomeResponse`; `hallCount` counts active halls only.
-- `catalog-browse.controller.test.ts` (added): `showDate` today, tomorrow and weekend with tab
-  counts; `showDate` with Coming soon `400`; the side panel.
-- `theater-browse.controller.test.ts` (added): the theater page halls.
+- `showtime-browse.service.test.ts`: what `ShowtimeBrowseService` adds to the U8a routes, through
+  them: the side panel of `GET /movies/{id}` (next show today, cinemas, lowest "from" price, at
+  several Clock instants; empty for Coming soon, started-only and cancelled-only movies) and
+  `GET /movies?showDate=` (today, tomorrow, weekend, with `q` and paging, the tab counts, the
+  night over, `400` with Coming soon or an unknown value).
+- `theater-browse.controller.test.ts` (added): the theater page halls (active only, by name,
+  seats and wheelchair spaces) and `hallCount` 2 with a draft and a retired hall beside.
+- All three new suites share `test/support/discovery-showtimes.ts` `buildShowtimeWorld()`.
 - `test/integration/modules/seed/seed.command.test.ts`: at a fixed Thursday 10:00, the first run
   creates 144 showtimes, the second none (`showtimes` counted with the other tables), and `/home`
   then has a ticker that validates against the draft.

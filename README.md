@@ -121,7 +121,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `npm run contract` | Writes `contracts/openapi.yaml` from the code, with no database and no listener |
 | `npm run admin:create` | Migrates, then creates the first active admin from `BOOTSTRAP_ADMIN_*` unless an active admin exists. Safe to repeat; never prints the email or password |
 | `npm run media:orphans` | Lists stored image files that no `images` row points to (older than an hour); `npm run media:orphans -- --delete` removes them. It only tidies up |
-| `npm run seed` | Fills a development database with Cairo and Giza theaters, people and movies through the real admin API (see "Development seed"). Refuses production. Safe to repeat |
+| `npm run seed` | Fills a development database with Cairo and Giza theaters, halls, people, movies and a week of showtimes through the real admin API (see "Development seed"). Refuses production. Safe to repeat |
 | `npm run db:local` | Starts a local PostgreSQL 16 cluster and creates `maqady_dev` and `maqady_test` |
 
 ## Development seed
@@ -141,7 +141,11 @@ pages and the admin dashboard.
 - What it adds: 6 theaters (5 published, Dokki left a draft) with weekly hours, some past
   midnight, a special date, prices, phones, facilities, a cover and gallery photos; 18 people with
   photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the first is the
-  backdrop), two YouTube videos each and credits; 5 of them in the home carousel. Names, phones
+  backdrop), two YouTube videos each and credits; 5 of them in the home carousel; showtimes over
+  the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00 and 21:45,
+  plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
+  nights), so the ticker, the movie and theater showtime lists and the show-date filter have
+  data. Names, phones
   and emails are invented; release dates are relative to the day you run it. Pictures are
   generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
   videos are Blender Foundation open movies on YouTube, so the embeds play.
@@ -149,7 +153,9 @@ pages and the admin dashboard.
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
 - Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
   active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
-  only with an active hall; showtimes go at the end, when that unit adds them.
+  only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,
+  keeps the slots already scheduled, dry-runs the missing dates and creates only the `available`
+  ones, so a started slot or a night whose hours don't fit is simply skipped.
 
 ## Dependencies
 
@@ -215,6 +221,10 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/discovery.ts` reads the home-page draft as data: `schemaStructure()` compares a
   generated schema with the draft's, and `draftValidator('HomeResponse')` validates a real
   response against it (ajv).
+- `test/support/discovery-showtimes.ts`: `buildShowtimeWorld(testApp, admin, clock)` sets up,
+  through the admin routes, two active theaters, a draft and a paused one, and showtimes on
+  Friday 16 October 2026 and after (ended, running, cancelled, after midnight, outside the
+  7 days), then sets the clock to `WORLD_NOW` (18:00) for the discovery suites.
 - `test/support/messaging/one-time-link.ts`: `oneTimeTokenFrom(email.text, '/admin/set-password')`
   reads the token of a one-time link from an email the recording sender captured.
 - `test/support/customer-auth.ts` does the same for customer routes: `registerCustomer(testApp)`
@@ -294,13 +304,17 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   (whom a move notifies) and `ShowtimeSeatClaimService` (live claims behind `HALL_IN_USE`).
   Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
   `toShowtimePricesResponse()`).
-- **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`): the public reads
-  (`GET /home`, `/genres`, `/movies`, `/movies/{id}`, `/movies/{id}/similar`, `/people`,
-  `/theaters`, `/theaters/{id}`) through the catalog and theater read services. The home ticker
-  and the cards' `hallCount` come from `HomeTickerSource` and `TheaterHallCountSource`, whose
-  defaults answer nothing until showtimes and halls exist; replace the provider in
-  `DiscoveryModule` to fill them. `DiscoveryResponseMapper` builds `MovieCard` and
-  `TheaterCard` for other public reads.
+- **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`,
+  `docs/gh-9-discovery-showtimes/spec.md`): the public reads (`GET /home`, `/genres`, `/movies`
+  with the `showDate` filter, `/movies/{id}` with its side panel, `/movies/{id}/showtimes`,
+  `/movies/{id}/similar`, `/people`, `/theaters`, `/theaters/{id}` with its halls,
+  `/theaters/{id}/showtimes`) through the catalog, theater, hall and showtime read services. The
+  home ticker and the cards' `hallCount` come from `HomeTickerSource` (bound to
+  `ShowtimesTickerSource`) and `TheaterHallCountSource` (`ActiveHallCountSource`).
+  `ShowtimeBrowseService` answers a movie's and a theater's showtimes over 7 cinema days (only
+  scheduled, of active theaters and Now showing movies, grouped by cinema date).
+  `DiscoveryResponseMapper` builds `MovieCard`, `TheaterCard` and `PublicShowtime` for other
+  public reads.
 
 ## Database and migrations
 
