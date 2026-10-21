@@ -118,7 +118,7 @@ describe('Seats and holds in the OpenAPI document and the router', () => {
   });
 
   it('publishes the schemas the frontend builds the seat page and checkout from', () => {
-    expect(schema('PublicShowtime').required ?? []).toEqual(
+    expect(schema('ShowtimeSeatPage').required ?? []).toEqual(
       expect.arrayContaining([
         'prices',
         'fromPrice',

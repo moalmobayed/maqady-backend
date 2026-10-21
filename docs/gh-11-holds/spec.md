@@ -493,7 +493,7 @@ showtime send `Cache-Control: no-store`.
   (in label order), `seatCount`, `total`, `holdExpiresAt`, `serverTime`, `createdAt`.
 - `HoldResponse` (schema `Hold`): `BookingResponse` plus `holdCode` (`string | null`, "Shown
   once. Keep it for this browser session and send it as `X-Hold-Token`").
-- `PublicShowtimeResponse` (schema `PublicShowtime`): the fields of `BookingShowtimeResponse`,
+- `PublicShowtimeResponse` (schema `ShowtimeSeatPage`): the fields of `BookingShowtimeResponse`,
   plus `prices` (U7's `ShowtimePrices`), `fromPrice`, `seatCapacity`, `layout` (U5's `HallLayout`
   via `toHallLayoutResponse`), `bookable`, `notBookableReason` (enum or `null`), `maxSeatsPerHold`
   (8) and `holdMinutes` (5).
@@ -666,7 +666,7 @@ and the test helpers of `test/support/holds.ts` (`bookableShowtime()`, `holdSeat
 - `test/integration/modules/bookings/dto/bookings-contract.test.ts`: the 6 routes and their
   access (`listHttpRoutes()`), the gateway present; tags, prose, error examples, security, the
   `X-Hold-Token` header on 4 operations (required on the claim), required `Idempotency-Key` on
-  both `POST`s; the `PublicShowtime`, `SeatSnapshot`, `TakenSeat`, `Booking`, `Hold`,
+  both `POST`s; the `ShowtimeSeatPage`, `SeatSnapshot`, `TakenSeat`, `Booking`, `Hold`,
   `BookingShowtime` schemas and the `BookingStatus` and `NotBookableReason` enums.
 - `test/integration/common/database/transaction.repository.test.ts` (extended): rollback hooks run
   after the outermost rollback, outside it, never after a commit; a savepoint's wait for the

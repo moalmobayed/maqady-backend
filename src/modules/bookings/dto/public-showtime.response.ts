@@ -8,7 +8,7 @@ import type { NotBookableReason } from '../types';
 import { BookingShowtimeResponse } from './booking-showtime.response';
 
 /** The seat page (PRD C6): the showtime header, the hall's own layout, the zone prices. */
-@ApiSchema({ name: 'PublicShowtime' })
+@ApiSchema({ name: 'ShowtimeSeatPage' })
 export class PublicShowtimeResponse extends BookingShowtimeResponse {
   @ApiProperty({
     type: () => ShowtimePricesResponse,

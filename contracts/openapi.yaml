@@ -19454,7 +19454,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PublicShowtime'
+                $ref: '#/components/schemas/ShowtimeSeatPage'
         '400':
           description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
           headers:
@@ -26376,7 +26376,7 @@ components:
         - movie_unavailable
         - hall_unavailable
       description: 'Why seats cannot be held now, or null: `cancelled`; `started` ("Showtimes that have started can''t be booked"); `sales_paused` by the theater; `movie_unavailable` (no longer Now showing); `hall_unavailable`.'
-    PublicShowtime:
+    ShowtimeSeatPage:
       type: object
       properties:
         id:
