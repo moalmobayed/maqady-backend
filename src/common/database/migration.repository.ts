@@ -2,13 +2,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Knex } from 'knex';
 import { APP_CONFIG } from '../config/config.constants';
 import type { AppConfig } from '../config/types';
-import {
-  KNEX,
-  MIGRATION_ADVISORY_LOCK,
-  MIGRATIONS_DIRECTORY,
-  MIGRATIONS_TABLE,
-} from './database.constants';
-import { DirectoryMigrationSource } from './migration-source';
+import { KNEX, MIGRATION_ADVISORY_LOCK, MIGRATIONS_TABLE } from './database.constants';
+import { MIGRATIONS } from './migration-list';
+import { ListedMigrationSource } from './migration-source';
 import type { MigrationResult } from './types';
 
 /**
@@ -44,7 +40,7 @@ export class MigrationRepository {
       await this.knex.raw('CREATE SCHEMA IF NOT EXISTS ??', [schema]);
 
       return (await this.knex.migrate.latest({
-        migrationSource: new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, { schema }),
+        migrationSource: new ListedMigrationSource(MIGRATIONS, { schema }),
         schemaName: schema,
         tableName: MIGRATIONS_TABLE,
       })) as [number, string[]];

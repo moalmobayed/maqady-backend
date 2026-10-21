@@ -7,10 +7,12 @@ import { loadDotenv } from './common/config/dotenv';
 import { loadConfig } from './common/config/load-config';
 import { MigrationRepository } from './common/database/migration.repository';
 import { serializeError } from './common/logging/error-serializer';
+import { bootstrapAdminRequested, runAdminCreate } from './modules/staff/admin-create.command';
 
 /**
- * Boot order: validate the environment, create the app, migrate the database, then listen.
- * A bad environment or a failed migration stops the process before it serves anything.
+ * Boot order: validate the environment, create the app, migrate the database, create the first
+ * admin when `BOOTSTRAP_ADMIN_PASSWORD` is set (hosts with no shell), then listen. A bad
+ * environment, a failed migration or a bad bootstrap admin stops the process before it serves.
  */
 async function bootstrap(): Promise<void> {
   loadDotenv();
@@ -25,8 +27,12 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.get(MigrationRepository).migrateLatest();
+  const logger = new Logger('Bootstrap');
+  if (bootstrapAdminRequested(process.env)) {
+    await runAdminCreate(app, process.env, (line) => logger.log(line));
+  }
   await app.listen(config.port, '0.0.0.0');
-  new Logger('Bootstrap').log(`Listening on port ${config.port}`);
+  logger.log(`Listening on port ${config.port}`);
 }
 
 bootstrap().catch((error: unknown) => {
