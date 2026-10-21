@@ -3,6 +3,7 @@ import { AppError } from '../../common/errors/app-error';
 import type { Page, PageRequest } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
 import { addDays, cinemaDateOf } from '../../common/time/time';
+import { HallReadService } from '../halls/hall-read.service';
 import { TheaterHoursService } from '../theaters/theater-hours.service';
 import { TheaterReadService } from '../theaters/theater-read.service';
 import type { TheaterDetails } from '../theaters/types';
@@ -24,6 +25,7 @@ export class TheaterBrowseService {
     private readonly theaters: TheaterReadService,
     private readonly hours: TheaterHoursService,
     private readonly halls: TheaterHallCountSource,
+    private readonly hallReads: HallReadService,
     private readonly clock: Clock,
   ) {}
 
@@ -44,12 +46,16 @@ export class TheaterBrowseService {
     return pageInMemory(cards, page);
   }
 
-  /** `GET /theaters/{id}`: an active theater's page; `NOT_FOUND` otherwise. */
+  /**
+   * `GET /theaters/{id}`: an active theater's page with its active halls by name (its
+   * `hallCount` is their number, read once); `NOT_FOUND` otherwise.
+   */
   async find(id: number): Promise<PublicTheaterView> {
     const theater = await this.theaters.findActive(id);
     if (!theater) throw new AppError('NOT_FOUND');
     const now = this.clock.now();
-    const [card] = await this.cardsOf([theater], now);
+    const halls = (await this.hallReads.listByTheaters([id], ['active'])).get(id) ?? [];
+    const [card] = await this.cardsOf([theater], now, new Map([[id, halls.length]]));
     const today = cinemaDateOf(now);
     const specials = await this.hours.specialDates(
       [id],
@@ -65,13 +71,18 @@ export class TheaterBrowseService {
       phones: contacts ? theater.phones : [],
       photos: theater.photos,
       specialDates: specials.get(id) ?? [],
+      halls,
     };
   }
 
-  /** Cards of these theaters, in their order: hours, open states and hall counts batched. */
+  /**
+   * Cards of these theaters, in their order: hours, open states and hall counts batched. The
+   * hall counts come from the seam unless the caller already has them.
+   */
   private async cardsOf(
     theaters: readonly TheaterDetails[],
     now: Date,
+    knownHallCounts?: ReadonlyMap<number, number>,
   ): Promise<TheaterCardView[]> {
     if (theaters.length === 0) return [];
     const ids = theaters.map((theater) => theater.id);
@@ -80,7 +91,7 @@ export class TheaterBrowseService {
     const openStates = await this.hours.openStates(ids, now);
     const todays = await this.hours.hoursFor(ids, today, today);
     const weekly = await this.hours.weeklyHours(ids);
-    const hallCounts = await this.halls.countsOf(ids);
+    const hallCounts = knownHallCounts ?? (await this.halls.countsOf(ids));
     return theaters.map((theater) => ({
       id: theater.id,
       name: theater.name,

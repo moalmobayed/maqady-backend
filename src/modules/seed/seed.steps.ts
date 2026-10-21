@@ -1,6 +1,12 @@
 import { addDays } from '../../common/time/time';
-import { SEED_HALL_NAME, SEED_IMAGE_SIZES, SEED_LIST_LIMIT, SEED_PRICES } from './seed.constants';
-import { SEED_MOVIES, SEED_PEOPLE, SEED_THEATERS } from './seed-data';
+import {
+  SEED_HALL_NAME,
+  SEED_IMAGE_SIZES,
+  SEED_LIST_LIMIT,
+  SEED_PRICES,
+  SEED_SHOWTIME_DAYS,
+} from './seed.constants';
+import { SEED_MOVIES, SEED_PEOPLE, SEED_SHOWTIMES, SEED_THEATERS } from './seed-data';
 import { placeholderImage } from './seed-images';
 import type {
   SeedAdminMovie,
@@ -14,9 +20,12 @@ import type {
   SeedNamedRow,
   SeedPage,
   SeedPersonRow,
+  SeedShowtimeBatch,
+  SeedShowtimeCheck,
   SeedStep,
   SeedStepResult,
   SeedTheater,
+  SeedTimelineShowtime,
   SeedTitledRow,
 } from './types';
 
@@ -24,8 +33,8 @@ import type {
  * The steps of `npm run seed`, in order. Each finds what exists through the admin list routes
  * and creates only what is missing, so the seed can run again (or resume after a failure)
  * without duplicating anything. `halls` gives each theater to publish an active hall (its
- * `active_hall` publish requirement, U5) before `publish-theaters`; U8b appends showtimes at the
- * end.
+ * `active_hall` publish requirement, U5) before `publish-theaters`; `showtimes` (U8b) schedules
+ * the next 7 cinema days last, once the movies are Now showing.
  */
 export const SEED_STEPS: readonly SeedStep[] = [
   { name: 'theaters', run: seedTheaters },
@@ -34,16 +43,18 @@ export const SEED_STEPS: readonly SeedStep[] = [
   { name: 'people', run: seedPeople },
   { name: 'movies', run: seedMovies },
   { name: 'featured', run: seedFeatured },
+  { name: 'showtimes', run: seedShowtimes },
 ];
 
-/** Every row of an admin list, page by page. */
+/** Every row of an admin list, page by page; `path` may carry its own filters. */
 async function listAll<T>(api: SeedApi, path: string): Promise<T[]> {
   const rows: T[] = [];
+  const separator = path.includes('?') ? '&' : '?';
   let cursor: string | null = null;
   do {
     const query: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
     const page: SeedPage<T> = await api.get<SeedPage<T>>(
-      `${path}?limit=${SEED_LIST_LIMIT}${query}`,
+      `${path}${separator}limit=${SEED_LIST_LIMIT}${query}`,
     );
     rows.push(...page.items);
     cursor = page.nextCursor;
@@ -160,6 +171,7 @@ async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
     if (hall.status !== 'active') {
       await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
     }
+    context.hallIds.set(theater.name, hall.id);
   }
   return { created, kept };
 }
@@ -334,4 +346,75 @@ async function seedFeatured(context: SeedContext): Promise<SeedStepResult> {
     created += 1;
   }
   return { created, kept };
+}
+
+// --- Showtimes ------------------------------------------------------------------------------
+
+/**
+ * Schedules `SEED_SHOWTIMES` on today's cinema date and the 6 after, through the admin API so
+ * every U7 rule applies. A date that already has a scheduled showtime in the slot's hall at its
+ * start time is kept; the others are dry-run first and only the `available` ones are created, so
+ * a slot that has started, a closed night or a night whose hours don't fit is left out, and a
+ * second run never meets a conflict.
+ */
+async function seedShowtimes(context: SeedContext): Promise<SeedStepResult> {
+  const { api } = context;
+  const dates = Array.from({ length: SEED_SHOWTIME_DAYS }, (_, index) =>
+    addDays(context.today, index),
+  );
+  const scheduled = new Map<string, Set<string>>();
+  let created = 0;
+  let kept = 0;
+  for (const slot of SEED_SHOWTIMES) {
+    const theaterId = context.theaterIds.get(slot.theater);
+    const hallId = context.hallIds.get(slot.theater);
+    const movieId = context.movieIds.get(slot.movie);
+    if (theaterId === undefined || hallId === undefined || movieId === undefined) {
+      throw new Error(
+        `Seed: no theater, hall or movie for the ${slot.theater} ${slot.startTime} slot`,
+      );
+    }
+    let existing = scheduled.get(slot.theater);
+    if (existing === undefined) {
+      existing = await scheduledSlots(api, theaterId, dates);
+      scheduled.set(slot.theater, existing);
+    }
+    const missing = dates.filter((date) => !existing.has(slotKey(hallId, date, slot.startTime)));
+    kept += dates.length - missing.length;
+    if (missing.length === 0) continue;
+    const request = { movieId, hallId, dates: missing, startTime: slot.startTime };
+    const check = await api.write<SeedShowtimeCheck>('POST', '/admin/showtime-checks', request);
+    const available = check.results
+      .filter((result) => result.result === 'available')
+      .map((result) => result.cinemaDate);
+    if (available.length === 0) continue;
+    const batch = await api.write<SeedShowtimeBatch>('POST', '/admin/showtimes', {
+      ...request,
+      dates: available,
+      skipUnavailable: false,
+    });
+    created += batch.createdCount;
+  }
+  return { created, kept };
+}
+
+/** The (hall, cinema date, start time) of every scheduled showtime of a theater on the dates. */
+async function scheduledSlots(
+  api: SeedApi,
+  theaterId: number,
+  dates: readonly string[],
+): Promise<Set<string>> {
+  const slots = new Set<string>();
+  for (const date of dates) {
+    const rows = await listAll<SeedTimelineShowtime>(
+      api,
+      `/admin/showtimes?theaterId=${theaterId}&date=${date}&status=scheduled`,
+    );
+    for (const row of rows) slots.add(slotKey(row.hall.id, row.cinemaDate, row.startTime));
+  }
+  return slots;
+}
+
+function slotKey(hallId: number, cinemaDate: string, startTime: string): string {
+  return `${hallId}|${cinemaDate}|${startTime}`;
 }

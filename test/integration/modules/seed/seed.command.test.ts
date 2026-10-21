@@ -1,8 +1,10 @@
 import type { AddressInfo } from 'node:net';
 import type { HomeResponse } from '../../../../src/modules/discovery/dto/home.response';
+import type { TheaterShowtimesResponse } from '../../../../src/modules/discovery/dto/theater-showtimes.response';
 import { runSeed } from '../../../../src/modules/seed/seed.command';
 import { SEED_ADMIN_EMAIL } from '../../../../src/modules/seed/seed.constants';
 import { expectStatus } from '../../../support/catalog';
+import { TestClock } from '../../../support/clock';
 import { draftValidator } from '../../../support/discovery';
 import { mediaDirectory, removeMediaDirectory, storedFiles } from '../../../support/media';
 import { createTestApp } from '../../../support/test-app';
@@ -28,7 +30,14 @@ const COUNTED_TABLES = [
   'movie_videos',
   'movie_credits',
   'images',
+  'showtimes',
 ] as const;
+
+/**
+ * Thursday 22 October 2026, 10:00 Cairo time: every slot of today is still ahead, and the 7
+ * cinema dates hold the late Thursday and Friday nights of Downtown and New Cairo.
+ */
+const SEED_NOW = new Date('2026-10-22T10:00:00+03:00');
 
 describe('npm run seed', () => {
   let directory: string;
@@ -48,6 +57,7 @@ describe('npm run seed', () => {
     directory = await mediaDirectory();
     testApp = await createTestApp({
       config: buildTestConfig({}, { LOCAL_STORAGE_DIR: directory }),
+      clock: new TestClock(SEED_NOW),
     });
     await testApp.app.listen(0, '127.0.0.1');
     const { port } = testApp.app.getHttpServer().address() as AddressInfo;
@@ -77,6 +87,8 @@ describe('npm run seed', () => {
       'people: 18 created, 0 already there',
       'movies: 12 created, 0 already there',
       'featured: 5 created, 0 already there',
+      // 4 slots × 5 theaters × 7 days, and 2 after-midnight slots on Thursday and Friday.
+      'showtimes: 144 created, 0 already there',
       `Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`,
     ]);
     const afterFirst = await counts();
@@ -87,6 +99,7 @@ describe('npm run seed', () => {
       people: 18,
       movies: 12,
       movie_videos: 24,
+      showtimes: 144,
     });
     // Covers, gallery photos, people photos, posters and stills, all through the pipeline.
     expect(afterFirst.images).toBe(6 + 6 + 18 + 12 + 20);
@@ -101,6 +114,7 @@ describe('npm run seed', () => {
       'people: 0 created, 18 already there',
       'movies: 0 created, 12 already there',
       'featured: 0 created, 5 already there',
+      'showtimes: 0 created, 144 already there',
       `Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`,
     ]);
     expect(await counts()).toEqual(afterFirst);
@@ -133,5 +147,40 @@ describe('npm run seed', () => {
     expect(zayed.mainPhone).toBeNull();
     expect(body.cinemas.every((card: { cover: unknown }) => card.cover !== null)).toBe(true);
     expect(body.genres.find((genre) => genre.slug === 'drama')!.movieCount).toBe(3);
+    expect(body.cinemas.every((card) => card.hallCount === 1)).toBe(true);
+    // Every Now showing movie has a showtime still ahead today, the first ones at 13:30.
+    expect(body.ticker).toHaveLength(7);
+    expect(body.ticker[0]!.nextShowtime).toMatchObject({
+      startsAt: '2026-10-22T13:30:00+03:00',
+      cinemaDate: '2026-10-22',
+    });
+  });
+
+  it('schedules the after-midnight slots only on the late Thursday and Friday nights', async () => {
+    const rows = await testApp
+      .knex('showtimes as s')
+      .join('theaters as t', 't.id', 's.theater_id')
+      .select<{ name: string; cinema_date: string }[]>('t.name', 's.cinema_date')
+      .whereRaw("(s.starts_at AT TIME ZONE 'Africa/Cairo')::time < '06:00'")
+      .orderBy([{ column: 's.cinema_date' }, { column: 't.name' }]);
+    expect(rows.map((row) => `${row.cinema_date} ${row.name}`)).toEqual([
+      '2026-10-22 Maqady Downtown',
+      '2026-10-22 Maqady New Cairo',
+      '2026-10-23 Maqady Downtown',
+      '2026-10-23 Maqady New Cairo',
+    ]);
+    const theaters = expectStatus(await testApp.http().get('/api/v1/theaters'), 200).body.items as {
+      id: number;
+      name: string;
+    }[];
+    const downtown = theaters.find((item) => item.name === 'Maqady Downtown')!;
+    const showtimes = expectStatus(
+      await testApp.http().get(`/api/v1/theaters/${downtown.id}/showtimes?date=2026-10-22`),
+      200,
+    ).body as TheaterShowtimesResponse;
+    const late = showtimes.days[0]!.movies.flatMap((movie) => movie.showtimes).find(
+      (showtime) => showtime.startsAt === '2026-10-23T00:15:00+03:00',
+    );
+    expect(late).toMatchObject({ cinemaDate: '2026-10-22' });
   });
 });

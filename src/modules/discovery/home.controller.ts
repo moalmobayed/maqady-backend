@@ -26,11 +26,11 @@ export class HomeController {
     description: [
       'Public; anyone may call it, no token needed. Returns, in one call:',
       '- `featured`: up to 5 movies for the hero carousel, ordered by `position`, each with its hero video and backdrop.',
-      '- `ticker`: Now showing movies that still have a bookable showtime today (current cinema day), with that next showtime, soonest first. Movies with nothing left today are left out. Empty until showtimes are scheduled.',
+      '- `ticker`: Now showing movies that still have a bookable showtime today (current cinema day), with that next showtime, soonest first. Movies with nothing left today are left out. Only scheduled showtimes of theaters open for sales count; a showtime that has started is not bookable, so it never appears.',
       '- `genres`: every genre, alphabetical, with how many Now showing and Coming soon movies it has. Hide genres with `movieCount: 0` if you like.',
       '- `nowShowing`: up to 12 Now showing movies, newest release first, plus the `total` for "View all".',
       '- `comingSoon`: up to 12 Coming soon movies, soonest release first, plus the `total`.',
-      '- `cinemas`: every theater open for sales, alphabetical, with its open state at `serverTime` (judged by the cinema day, 06:00 to 06:00). `mainPhone` is null when the theater hides its contacts.',
+      '- `cinemas`: every theater open for sales, alphabetical, with its open state at `serverTime` (judged by the cinema day, 06:00 to 06:00). `mainPhone` is null when the theater hides its contacts; `hallCount` counts its active halls.',
       '',
       'Drafts, archived movies and theaters that are drafts or have sales paused never appear. Responses may be cached for 60 seconds (`Cache-Control: public, max-age=60`).',
     ].join('\n'),

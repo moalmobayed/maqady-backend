@@ -107,6 +107,17 @@ export interface SeedMovie {
   readonly colour: string;
 }
 
+/**
+ * A showtime slot of the development seed: a theater's `Hall 1` shows `movie` at `startTime`
+ * (`HH:mm`; `00:00`–`05:59` is after midnight) on each of the next cinema dates it fits.
+ */
+export interface SeedShowtimeSlot {
+  readonly theater: string;
+  readonly startTime: string;
+  /** The title of a Now showing seed movie. */
+  readonly movie: string;
+}
+
 /** What one step did: how many things it created and how many it found already there. */
 export interface SeedStepResult {
   readonly created: number;
@@ -124,6 +135,8 @@ export interface SeedContext {
   readonly api: SeedApi;
   readonly today: CalendarDate;
   readonly theaterIds: Map<string, number>;
+  /** The seed hall (`SEED_HALL_NAME`) of each published theater, by theater name. */
+  readonly hallIds: Map<string, number>;
   readonly personIds: Map<string, number>;
   readonly movieIds: Map<string, number>;
 }
@@ -217,6 +230,27 @@ export interface SeedAdminMovie {
   readonly photos: readonly { readonly id: number; readonly kind: string }[];
   readonly videos: readonly { readonly id: number; readonly youtubeId: string }[];
   readonly credits: readonly unknown[];
+}
+
+/** A showtime of the admin timeline, as the seed reads it. */
+export interface SeedTimelineShowtime {
+  readonly hall: { readonly id: number };
+  readonly cinemaDate: CalendarDate;
+  readonly startTime: string;
+}
+
+/** One date of the dry run's answer, as the seed reads it. */
+export interface SeedDateCheck {
+  readonly cinemaDate: CalendarDate;
+  readonly result: string;
+}
+
+export interface SeedShowtimeCheck {
+  readonly results: readonly SeedDateCheck[];
+}
+
+export interface SeedShowtimeBatch {
+  readonly createdCount: number;
 }
 
 /** Why the seed refuses to run here; empty when it may. */

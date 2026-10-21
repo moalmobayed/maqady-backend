@@ -133,7 +133,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging |
 | `payments` | `payments`; the payment-provider interface, the simulated provider and `SettlementService` | seating |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
-| `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`); the ticker and hall-count seams U8b fills | catalog, theaters, media |
+| `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
@@ -1008,8 +1008,17 @@ are cursor-paginated (`/genres` and `/theaters` page in memory over the short se
 services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts`;
 `/theaters` takes `openNow` and `parking`; `/movies/{id}/similar` is a bounded `{ items }` of at
 most 4. The ticker and `hallCount` come from the `HomeTickerSource` and `TheaterHallCountSource`
-seams, empty until U8b (showtimes and halls). `npm run seed` fills a development database
-through the admin API.
+seams, bound by U8b (`docs/gh-9-discovery-showtimes/spec.md`) to the showtimes (per Now showing
+movie, its next scheduled showtime of today's cinema date at an active theater that starts after
+now, soonest first) and to the active halls. `/movies/{id}/showtimes` answers the 7 cinema days
+from today with a theater picker, `/theaters/{id}/showtimes` the 7 days or one `date` (a date
+outside them answers an empty day); both show only scheduled showtimes of active theaters and Now
+showing movies, grouped by the stored `cinemaDate`, leave out ended ones and mark started ones
+(`hasStarted`), with the zone prices and the "from" price (§7.10). `/movies?showDate=`
+(`today`, `tomorrow`, `weekend`: Friday and Saturday) keeps the Now showing movies with a showtime
+still to start then; `/movies/{id}` adds the side panel (`showtimeSummary`: next show today,
+cinemas, lowest "from" price) and `/theaters/{id}` its active `halls`. `npm run seed` fills a
+development database through the admin API, a week of showtimes included.
 
 An integration test sends a box-office token to every Admin route and expects `FORBIDDEN`.
 Exact request and response shapes are defined in each unit's spec and published in the
@@ -1476,6 +1485,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-29 | Customer accounts: registration signs in; a phone is E.164 or an Egyptian local mobile, stored as E.164; sessions end 30 days after sign-in, never extended; a password change keeps the caller's session and ends the others; a reset verifies the email and opens no session; customer self-service writes no audit rows (§13.5); resend verification is limited per customer | Builder (U9, `docs/gh-10-customer-accounts/spec.md`) |
 | D-30 | Catalog: genres seeded with slugs; movies need a synopsis, runtime, release date and a genre to be public, a poster optional; Now showing never goes back; a taken carousel position is refused; the hero is any of the movie's videos; poster routes and the person-side filmography route added to §11; deletion blockers registered by U7 and U10 | Builder (U6, `docs/gh-7-catalog/spec.md`) |
 | D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
+| D-32 | Discovery showtimes: customers see only scheduled showtimes of `active` theaters and Now showing movies; lists group by the stored cinema date, leave out ended showtimes and mark started ones; the ticker and the side panel count only showtimes still to start; "this weekend" is the Friday and Saturday cinema dates (today only on a Saturday); `hallCount` counts active halls; the seed schedules a week through the dry run, so a re-run never conflicts | Builder (U8b, `docs/gh-9-discovery-showtimes/spec.md`) |
 
 ## 19. Kit and process reconciliations
 
@@ -1526,7 +1536,7 @@ the frontend early: a deployed API with real reads comes before the booking flow
 | U5 Halls | Hall CRUD, layout editor API, the hall lock and in-use rule, retire and delete | U4 |
 | U6 Catalog | Genres, movies, people, credits, photos, YouTube videos, publishing, featured carousel | U4 |
 | U7 Showtimes | Scheduling with hours and overlap checks, dry run, batch create with savepoints, move with notifications, prices, admin timeline and list | U3, U5, U6 |
-| U8 Discovery reads | Home, movies list with filters, movie details, showtimes by movie and theater, theaters list and details, similar movies. Split in two: U8a (home and the reads that need no showtimes, the development seed; `docs/gh-9-home-and-browse/spec.md`, built on U4b and U6) and U8b (showtime reads, the ticker, hall counts, showtime seed data) | U7 (U8a: U4b, U6) |
+| U8 Discovery reads | Home, movies list with filters, movie details, showtimes by movie and theater, theaters list and details, similar movies. Split in two: U8a (home and the reads that need no showtimes, the development seed; `docs/gh-9-home-and-browse/spec.md`, built on U4b and U6) and U8b (showtime reads, the ticker, hall counts, the show-date filter, the movie side panel, theater halls, showtime seed data; `docs/gh-9-discovery-showtimes/spec.md`, built on U5 and U7) | U7 (U8a: U4b, U6) |
 | U9 Customer accounts | Register, sign-in, refresh, sign-out, verify email, forgot and reset, profile, password change, block checks | U2, U3 |
 | U10 Holds and live map | Seat claims with the lock order, holds, claims and release, availability snapshot, `hold_refusals`, WebSocket gateway | U7, U9 |
 | U11 Checkout | Payment provider interface, simulated provider, payments under claim locks, `SettlementService`, confirmation, tickets message, QR, PDF and calendar | U10 |

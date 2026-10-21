@@ -95,6 +95,7 @@ export async function runSeed(
     api,
     today: cinemaDateOf(app.get(Clock).now()),
     theaterIds: new Map(),
+    hallIds: new Map(),
     personIds: new Map(),
     movieIds: new Map(),
   };

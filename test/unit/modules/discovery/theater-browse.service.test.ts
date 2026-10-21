@@ -1,6 +1,8 @@
 import { AppError } from '../../../../src/common/errors/app-error';
 import { TheaterBrowseService } from '../../../../src/modules/discovery/theater-browse.service';
 import type { TheaterHallCountSource } from '../../../../src/modules/discovery/theater-hall-count.source';
+import type { HallReadService } from '../../../../src/modules/halls/hall-read.service';
+import type { HallSummary } from '../../../../src/modules/halls/types';
 import type { TheaterHoursService } from '../../../../src/modules/theaters/theater-hours.service';
 import type { TheaterReadService } from '../../../../src/modules/theaters/theater-read.service';
 import type {
@@ -78,6 +80,7 @@ describe('TheaterBrowseService', () => {
     Pick<TheaterHoursService, 'openStates' | 'hoursFor' | 'weeklyHours' | 'specialDates'>
   >;
   let halls: jest.Mocked<TheaterHallCountSource>;
+  let hallReads: jest.Mocked<Pick<HallReadService, 'listByTheaters'>>;
   let clock: TestClock;
   let service: TheaterBrowseService;
 
@@ -112,11 +115,13 @@ describe('TheaterBrowseService', () => {
           Promise.resolve(new Map(ids.map((id) => [id, id * 2]))),
         ),
     };
+    hallReads = { listByTheaters: jest.fn().mockResolvedValue(new Map([[1, []]])) };
     clock = new TestClock(NOW);
     service = new TheaterBrowseService(
       reads as unknown as TheaterReadService,
       hours as unknown as TheaterHoursService,
       halls,
+      hallReads as unknown as HallReadService,
       clock,
     );
   });
@@ -170,6 +175,35 @@ describe('TheaterBrowseService', () => {
       reads.findActive.mockResolvedValue(theater(1, 'Zamalek'));
       await service.find(1);
       expect(hours.specialDates).toHaveBeenCalledWith([1], '2026-10-16', '2026-10-22');
+    });
+
+    it('lists the active halls and counts them, without asking the hall-count seam', async () => {
+      const hall = (id: number, name: string): HallSummary =>
+        ({
+          id,
+          theaterId: 1,
+          name,
+          status: 'active',
+          seatCount: 186,
+          wheelchairCount: 4,
+        }) as HallSummary;
+      reads.findActive.mockResolvedValue(theater(1, 'Zamalek'));
+      hallReads.listByTheaters.mockResolvedValue(
+        new Map([[1, [hall(4, 'Hall 1'), hall(2, 'Hall 2')]]]),
+      );
+      const view = await service.find(1);
+      expect(hallReads.listByTheaters).toHaveBeenCalledWith([1], ['active']);
+      expect(view.halls.map((row) => row.id)).toEqual([4, 2]);
+      expect(view.hallCount).toBe(2);
+      expect(halls.countsOf).not.toHaveBeenCalled();
+    });
+
+    it('has no halls and a zero count for a theater without active halls', async () => {
+      reads.findActive.mockResolvedValue(theater(1, 'Zamalek'));
+      hallReads.listByTheaters.mockResolvedValue(new Map());
+      const view = await service.find(1);
+      expect(view.halls).toEqual([]);
+      expect(view.hallCount).toBe(0);
     });
 
     it('hides phones and email when the theater hides its contacts', async () => {

@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import {
   MovieListQuery,
   PublicTheaterListQuery,
+  TheaterShowtimesQuery,
 } from '../../../../../src/modules/discovery/dto/discovery.queries';
 
 async function parse<T extends object>(
@@ -70,6 +71,35 @@ describe('MovieListQuery', () => {
     expect((await parse(MovieListQuery, { people })).fields).toEqual(['people']);
     expect((await parse(MovieListQuery, { genres })).fields).toEqual(['genres']);
   });
+});
+
+describe('MovieListQuery.showDate', () => {
+  it.each(['today', 'tomorrow', 'weekend'])('takes %s', async (showDate) => {
+    const { value, fields } = await parse(MovieListQuery, { showDate });
+    expect(fields).toEqual([]);
+    expect(value.showDate).toBe(showDate);
+  });
+
+  it.each(['any', 'Today', '2026-10-16', ''])('refuses %p', async (showDate) => {
+    expect((await parse(MovieListQuery, { showDate })).fields).toEqual(['showDate']);
+  });
+});
+
+describe('TheaterShowtimesQuery', () => {
+  it('takes a cinema date, or none', async () => {
+    expect(await parse(TheaterShowtimesQuery, { date: '2026-10-16' })).toEqual({
+      value: Object.assign(new TheaterShowtimesQuery(), { date: '2026-10-16' }),
+      fields: [],
+    });
+    expect((await parse(TheaterShowtimesQuery, {})).fields).toEqual([]);
+  });
+
+  it.each(['2026-02-30', '16-10-2026', '2026-10-16T19:00', 'today', '9999-12-31'])(
+    'refuses %p',
+    async (date) => {
+      expect((await parse(TheaterShowtimesQuery, { date })).fields).toEqual(['date']);
+    },
+  );
 });
 
 describe('PublicTheaterListQuery', () => {

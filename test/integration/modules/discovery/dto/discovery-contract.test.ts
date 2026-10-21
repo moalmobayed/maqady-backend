@@ -14,9 +14,11 @@ const DISCOVERY_OPERATIONS = [
   'GET /movies',
   'GET /movies/{id}',
   'GET /movies/{id}/similar',
+  'GET /movies/{id}/showtimes',
   'GET /people',
   'GET /theaters',
   'GET /theaters/{id}',
+  'GET /theaters/{id}/showtimes',
 ];
 
 describe('Discovery in the OpenAPI document', () => {

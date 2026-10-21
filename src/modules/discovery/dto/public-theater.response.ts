@@ -56,6 +56,32 @@ export class PublicTheaterPageResponse {
   total!: number;
 }
 
+/** An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"). */
+@ApiSchema({ name: 'PublicHall' })
+export class PublicHallResponse {
+  @ApiProperty({ type: 'integer', example: 3, description: 'Hall id.' })
+  id!: number;
+
+  @ApiProperty({ type: String, example: 'Hall 3', description: 'Name.' })
+  name!: string;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 1,
+    example: 186,
+    description: 'Seats in its layout, wheelchair spaces included, gaps not.',
+  })
+  seatCount!: number;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    example: 4,
+    description: 'Wheelchair spaces among them.',
+  })
+  wheelchairCount!: number;
+}
+
 /** A gallery photo of a theater page. */
 @ApiSchema({ name: 'TheaterGalleryPhoto' })
 export class TheaterGalleryPhotoResponse {
@@ -182,7 +208,13 @@ export class PublicTheaterResponse {
     type: 'integer',
     minimum: 0,
     example: 6,
-    description: 'How many halls the theater has.',
+    description: 'How many halls the theater has open to customers (`halls.length`).',
   })
   hallCount!: number;
+
+  @ApiProperty({
+    type: () => [PublicHallResponse],
+    description: 'Its active halls, by name.',
+  })
+  halls!: PublicHallResponse[];
 }

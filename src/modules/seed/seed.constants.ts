@@ -32,3 +32,6 @@ export const SEED_LIST_LIMIT = 100;
 
 /** The hall the seed adds to each theater it publishes (the standard 12 × 16 layout). */
 export const SEED_HALL_NAME = 'Hall 1';
+
+/** The seed schedules showtimes on today's cinema date and the 6 after. */
+export const SEED_SHOWTIME_DAYS = 7;

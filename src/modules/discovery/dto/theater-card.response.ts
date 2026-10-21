@@ -54,7 +54,7 @@ export class TheaterCardResponse {
     type: 'integer',
     minimum: 0,
     example: 6,
-    description: 'How many halls the theater has.',
+    description: 'How many halls the theater has open to customers (active halls).',
   })
   hallCount!: number;
 
