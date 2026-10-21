@@ -2,6 +2,8 @@ import { AppError } from '../../../../src/common/errors/app-error';
 import type { CatalogReadService } from '../../../../src/modules/catalog/catalog-read.service';
 import type { MovieDetails, MovieSummary } from '../../../../src/modules/catalog/types';
 import { MovieBrowseService } from '../../../../src/modules/discovery/movie-browse.service';
+import type { ShowtimeBrowseService } from '../../../../src/modules/discovery/showtime-browse.service';
+import type { MovieShowtimeSummary } from '../../../../src/modules/discovery/types';
 
 const GENRES = [
   { id: 5, name: 'Drama', slug: 'drama' },
@@ -21,7 +23,9 @@ async function rejection(promise: Promise<unknown>): Promise<AppError> {
 
 describe('MovieBrowseService', () => {
   let catalog: jest.Mocked<CatalogReadService>;
+  let showtimes: jest.Mocked<Pick<ShowtimeBrowseService, 'movieIdsShowing' | 'summaryOf'>>;
   let service: MovieBrowseService;
+  const summary: MovieShowtimeSummary = { nextShowToday: null, cinemaCount: 2, fromPrice: null };
 
   beforeEach(() => {
     catalog = {
@@ -39,7 +43,11 @@ describe('MovieBrowseService', () => {
       listSimilar: jest.fn().mockResolvedValue([]),
       listPublicPeople: jest.fn(),
     } as unknown as jest.Mocked<CatalogReadService>;
-    service = new MovieBrowseService(catalog);
+    showtimes = {
+      movieIdsShowing: jest.fn().mockResolvedValue([3, 8]),
+      summaryOf: jest.fn().mockResolvedValue(summary),
+    };
+    service = new MovieBrowseService(catalog, showtimes as unknown as ShowtimeBrowseService);
   });
 
   describe('genresWithCounts', () => {
@@ -106,17 +114,53 @@ describe('MovieBrowseService', () => {
       });
       expect(catalog.listPublicMovies).not.toHaveBeenCalled();
     });
+
+    it('keeps the movies showing on the show date, and counts only the Now showing tab with it', async () => {
+      const page = { after: null, limit: 20 };
+      catalog.listPublicMovies.mockResolvedValue({ items: [], nextCursor: null, total: 1 });
+      const view = await service.listMovies({ status: 'now_showing', showDate: 'weekend' }, page);
+      expect(showtimes.movieIdsShowing).toHaveBeenCalledWith('weekend');
+      expect(catalog.listPublicMovies).toHaveBeenCalledWith(
+        { genreIds: [], personIds: [], status: 'now_showing', movieIds: [3, 8] },
+        page,
+      );
+      // The Coming soon count has no show date filter: the tab doesn't offer it.
+      expect(catalog.countPublicMovies).toHaveBeenCalledWith({ genreIds: [], personIds: [] });
+      expect(view.tabCounts).toEqual({ now_showing: 1, coming_soon: 2 });
+    });
+
+    it('asks no showtimes without a show date', async () => {
+      await service.listMovies({ status: 'now_showing' }, { after: null, limit: 20 });
+      expect(showtimes.movieIdsShowing).not.toHaveBeenCalled();
+      expect(catalog.listPublicMovies.mock.calls[0]![0]).not.toHaveProperty('movieIds');
+    });
+
+    it('refuses a show date on the Coming soon tab with VALIDATION_FAILED on showDate', async () => {
+      const error = await rejection(
+        service.listMovies(
+          { status: 'coming_soon', showDate: 'today' },
+          { after: null, limit: 20 },
+        ),
+      );
+      expect(error.code).toBe('VALIDATION_FAILED');
+      expect(error.details).toEqual({
+        fields: [{ field: 'showDate', messages: ['showDate applies to the now_showing tab only'] }],
+      });
+      expect(showtimes.movieIdsShowing).not.toHaveBeenCalled();
+    });
   });
 
   describe('findMovie', () => {
     it('is NOT_FOUND when the catalog has no public movie with that id', async () => {
       expect((await rejection(service.findMovie(7))).code).toBe('NOT_FOUND');
+      expect(showtimes.summaryOf).not.toHaveBeenCalled();
     });
 
-    it('returns the public movie', async () => {
-      const movie = { id: 7 } as MovieDetails;
+    it('returns the public movie with its side panel', async () => {
+      const movie = { id: 7, status: 'now_showing' } as MovieDetails;
       catalog.findPublicMovie.mockResolvedValue(movie);
-      expect(await service.findMovie(7)).toBe(movie);
+      expect(await service.findMovie(7)).toEqual({ movie, showtimeSummary: summary });
+      expect(showtimes.summaryOf).toHaveBeenCalledWith(movie);
     });
   });
 
