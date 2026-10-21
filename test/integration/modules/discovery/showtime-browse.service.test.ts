@@ -154,9 +154,8 @@ describe('The showtime parts of the movie reads', () => {
           status: 400,
           code: 'VALIDATION_FAILED',
         });
-        expect(response.body.error.details.fields.map((f: { field: string }) => f.field)).toEqual([
-          'showDate',
-        ]);
+        const fields = response.body.error.details.fields as { field: string }[];
+        expect(fields.map((entry) => entry.field)).toEqual(['showDate']);
       }
     });
   });
