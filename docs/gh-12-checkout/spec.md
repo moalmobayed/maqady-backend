@@ -69,7 +69,7 @@ gets a signed QR payload, a PDF ticket and a calendar file; everyone else gets `
 | **`SettlementService` lives in `bookings`, not `payments`.** `payments` is the ledger plus the provider and depends on nothing but `common/`. §5 is corrected | Settling writes `bookings` rows, claims, tickets and audit; in `payments` it would need bookings' repository, or a cycle. |
 | **Settle first, before the request transaction.** `@SettleFirst('booking' \| 'showtime')` marks a route. `SettleFirstInterceptor`, registered in `AppModule` between `OutboxDrainInterceptor` and `WriteInterceptor`, runs `SettlementService.settleDue()` in its own short transaction, committed before the request transaction opens | §7.1 step 1 "in their own short transaction". Inside the request it would lock bookings before the request's customer and break §7.1; a second connection inside the request could starve the 5-connection pool (U10's reason for `afterRollback`). Guards have run, so the caller is known; pipes have not, so a malformed `ref` / `id` settles nothing and the pipe answers `400`. |
 | Settlement scope = the path's booking **or** showtime, **or** the calling customer's bookings | A hold or claim releases the caller's live hold on another showtime, so that hold's due charge is settled first too. Guest holds can't have payments. |
-| **Due charges are found without a join**: one query over the partial index `idx_payments_settles_at_processing` (`status = 'processing' AND settles_at <= now`), then, only when something is due, the bookings by id, filtered by scope in code | The common case (nothing due) costs one indexed query on an almost empty index, and `payments` never reads `bookings` in SQL. |
+| **Due charges are found without a join**: one query over the partial index `idx_payments_settles_at_processing` (`status = 'processing' AND settles_at <= now`), then, only when something is due, the bookings by id, filtered by scope in code; when a whole page of 100 is outside the scope, the next page (keyset on `settles_at`, `id`, review R1) | The common case (nothing due) costs one indexed query on an almost empty index, and `payments` never reads `bookings` in SQL. |
 | `settleDue()` refuses to run inside an open transaction (`INTERNAL`) | Settling under a request's locks would break §7.1. |
 | **Lock order inside settlement**: showtimes `FOR SHARE` (id order) → bookings `FOR UPDATE` (id order) → claims `FOR UPDATE` (showtime, label order) → one conditional `UPDATE payments … WHERE status = 'processing' RETURNING` | A subsequence of §7.1, like the payment route. Locking the showtime serializes settlement against U7's move and cancel (`FOR UPDATE`), so a booking is never confirmed after its showtime was cancelled, nor missed by a move's ticket-holder list. Payment rows are only written by a transaction holding their booking `FOR UPDATE`. |
 | A success whose showtime is no longer `scheduled`, or whose claims are not all still the booking's, is refunded at once through the provider: a `refund` / `cancellation` / `succeeded` row naming the charge, the booking `refunded` (`confirmed_at = refunded_at = now`, `qr_version = 1`, as U10's lifecycle CHECK requires), its remaining own claims deleted, `seat.released` after commit, audit `booking.refunded { reason: 'claims_lost' \| 'showtime_cancelled' }` | §7.5 "settlement refunds it at once". With the simulated provider it is defensive: settlement runs before any hold on the showtime, and claims outlive `settles_at` by 30 s. |
@@ -271,7 +271,7 @@ fixed number of statements for any batch size.
 
 **Settle** (`SettlementService.settleDue(scope)`; `INTERNAL` inside an open transaction):
 
-1. `PaymentsService.due(100)`: processing charges with `settles_at <= now`. None → `{ confirmed:
+1. `PaymentsService.due(100, after?)`: processing charges with `settles_at <= now`, paged on `(settles_at, id)` while a full page is outside the scope. None → `{ confirmed:
    0, declined: 0, refunded: 0 }` with no transaction. Otherwise their bookings by id, filtered by
    the scope; none left → the same.
 2. In one transaction: `ShowtimeReadService.lockForShareMany()`, `BookingsRepository
@@ -381,7 +381,7 @@ class PaymentsService {                       // writes need an open transaction
   refundOnline(inputs: readonly OnlineRefundInput[]): Promise<readonly Payment[]>;    // { charge, reference }
   latestSalesOf(bookingIds: readonly number[]): Promise<ReadonlyMap<number, Payment>>;
   processingSaleBookingIds(bookingIds: readonly number[]): Promise<ReadonlySet<number>>;
-  due(limit: number): Promise<readonly DueCharge[]>;           // { paymentId, bookingId, providerReference }
+  due(limit: number, after?: DueCursor): Promise<readonly DueCharge[]>;  // { paymentId, bookingId, providerReference, settlesAt }
 }
 ```
 

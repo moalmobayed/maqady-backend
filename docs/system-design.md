@@ -533,7 +533,9 @@ stateless and decides each result from the test token:
   declined Visa 0341; a cancelled wallet records Apple Pay.
 - **Settlement** finds due charges through `idx_payments_settles_at_processing` alone (nothing due
   is one query and no transaction), filters their bookings by scope, then locks, retrieves and
-  finishes them with one conditional update. A success is refunded at once, through the
+  finishes them with one conditional update. When a whole page of 100 due charges is outside the
+  scope, it reads the next page (keyset on `settles_at`, `id`), so other bookings' unread due
+  charges never hide the scope's (review R1, `docs/gh-12-checkout/review.md`). A success is refunded at once, through the
   provider, when its showtime is no longer scheduled (cancelled meanwhile) or a claim is no longer
   the booking's: the booking ends `refunded` and its remaining claims are deleted. An expired but
   untouched claim still confirms (PRD Seats 5). `settleAllDue()` settles everything due for the
