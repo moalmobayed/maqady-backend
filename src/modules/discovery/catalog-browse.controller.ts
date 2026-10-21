@@ -62,6 +62,7 @@ export class CatalogBrowseController {
         ...(query.genres === undefined ? {} : { genreSlugs: query.genres }),
         ...(query.people === undefined ? {} : { personIds: query.people }),
         ...(query.q === undefined ? {} : { q: query.q }),
+        ...(query.showDate === undefined ? {} : { showDate: query.showDate }),
       },
       toPageRequest(query, 'text'),
     );
