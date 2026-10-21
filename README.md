@@ -337,13 +337,13 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 
 | Direction | Event | Data |
 |---|---|---|
-| Client → server | `subscribe` | `{ showtimeId }`: answered with a `snapshot`, then live events. Again for the same showtime: a fresh snapshot |
+| Client → server | `subscribe` | `{ showtimeId }`: answered with a `snapshot`, then live events. Again for the same showtime: a fresh snapshot (one, however many arrive while it is read) |
 | Client → server | `unsubscribe` | `{ showtimeId }` |
 | Server → client | `snapshot` | `{ showtimeId, serverTime, seats: [{ label, state: "held" \| "booked", heldUntil? }] }` (taken seats only, by label; `heldUntil` on held seats) |
 | Server → client | `seat.held` | `{ showtimeId, labels, heldUntil }` |
 | Server → client | `seat.released` | `{ showtimeId, labels }` (a released or replaced hold) |
 | Server → client | `seat.booked` | `{ showtimeId, labels }` (from checkout and the box office, U11 and U13) |
-| Server → client | `error` | `{ code }`: `VALIDATION_FAILED` (a `showtimeId` that is not a positive integer), `RATE_LIMITED` (a 4th subscription; the connection stays), `FORBIDDEN` (origin) |
+| Server → client | `error` | `{ code }`: `VALIDATION_FAILED` (a `showtimeId` that is not a positive integer), `RATE_LIMITED` (a 4th subscription, or more snapshots from one address than `RATE_LIMIT_DEFAULT` allows; the connection stays), `FORBIDDEN` (origin) |
 
 - The `Origin` header must be one of `CORS_ORIGINS`; otherwise `error FORBIDDEN` and close
   `1008`. More than `WS_CONNECTIONS_PER_IP` open connections from one address: `error

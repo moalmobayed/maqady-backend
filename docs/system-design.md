@@ -922,7 +922,7 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 | Pay | 10 per 5 minutes | Booking |
 | Customer "Email again" | 3 per hour | Booking |
 | Search | 60 per minute | IP address |
-| WebSocket | 20 connections, 3 subscriptions each | IP address and connection |
+| WebSocket | 20 connections, 3 subscriptions each; snapshot reads count against the default limit (U10) | IP address and connection |
 | Every other route | 300 per minute, counted per route | The signed-in customer, else the IP address |
 
 The per-IP hold limit is looser than the per-customer one because mobile carriers in Egypt put
@@ -1085,8 +1085,10 @@ generated contract (§19).
 - **As built (U10).** A refused origin (missing or not in `CORS_ORIGINS`) gets `error FORBIDDEN`
   and close `1008`; a connection beyond `WS_CONNECTIONS_PER_IP` (20) from one address, `error
   RATE_LIMITED` and close `1013`; a subscription beyond `WS_SUBSCRIPTIONS_PER_CONNECTION` (3),
-  `error RATE_LIMITED` with the connection kept; a `showtimeId` that is not a positive integer,
-  `error VALIDATION_FAILED`. The client address is the rightmost `X-Forwarded-For` entry, like
+  `error RATE_LIMITED` with the connection kept, as is a snapshot read beyond the `default` rate
+  limit of one address (`RATE_LIMIT_DEFAULT`, the budget of `GET /showtimes/{id}/seats`; a
+  subscribe while that showtime's snapshot is still being read reads nothing more); a
+  `showtimeId` that is not a positive integer, `error VALIDATION_FAILED`. The client address is the rightmost `X-Forwarded-For` entry, like
   Express's `trust proxy 1`. Any positive id may be subscribed (an unknown one has no seats), so
   seating depends on no feature module. A new subscription is registered before its snapshot is
   read and buffers events until the snapshot is sent, then flushes them in order.

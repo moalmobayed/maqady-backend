@@ -427,7 +427,9 @@ lists); the repository's own "live hold" reads use it.
 - **Connection.** Check the origin, then the per-IP count (`SeatMapConnections.admit(ip)`). A
   refusal sends `error` and closes with the code above.
 - **`subscribe { showtimeId }`.** Parse the id (a positive safe integer, else `VALIDATION_FAILED`).
-  An existing subscription just gets a new snapshot. Over the limit gives `RATE_LIMITED`.
+  An existing subscription just gets a new snapshot, unless its snapshot is still being read
+  (that one answers: a burst costs one read). Over the limit gives `RATE_LIMITED`, and so does a
+  read beyond the `default` rate limit of the client address (`RATE_LIMIT_DEFAULT`, review R1).
   Otherwise register the subscription as pending, read `snapshot()`, send `snapshot`, then flush
   the buffer and mark it live.
 - **`unsubscribe { showtimeId }`.** Remove the subscription. Unknown ids are ignored.

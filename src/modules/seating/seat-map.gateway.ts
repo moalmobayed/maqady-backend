@@ -12,6 +12,7 @@ import { WebSocket } from 'ws';
 import { Public } from '../../common/auth/access.decorators';
 import { APP_CONFIG } from '../../common/config/config.constants';
 import type { AppConfig } from '../../common/config/types';
+import { Clock } from '../../common/time/clock';
 import { clientAddressOf } from './client-address';
 import { SeatAvailabilityService } from './seat-availability.service';
 import { SeatEventBus } from './seat-event.bus';
@@ -36,8 +37,10 @@ import type { OutboundSeatMapMessage, SeatEvent } from './types';
  * - **`subscribe { showtimeId }`.** A positive integer id (else `error VALIDATION_FAILED`), at most
  *   `WS_SUBSCRIPTIONS_PER_CONNECTION` per connection (else `error RATE_LIMITED`, connection kept).
  *   The answer is a `snapshot` of the taken seats and the server time; events committed while it
- *   is read follow it, in order. Subscribing again sends a fresh snapshot. Any positive id is
- *   accepted, an unknown one simply has no seats, so seating depends on no other module.
+ *   is read follow it, in order. Subscribing again sends a fresh snapshot, except while one is
+ *   still being read (that one answers). Snapshot reads per address follow the `default` rate
+ *   limit (`RATE_LIMIT_DEFAULT`), else `error RATE_LIMITED`. Any positive id is accepted, an
+ *   unknown one simply has no seats, so seating depends on no other module.
  * - **Events.** `seat.held`, `seat.released` and `seat.booked`, from the in-process bus, which
  *   only carries events of committed transactions (`SeatEventPublisher`). An expiry is never
  *   announced: clients free a seat when its `heldUntil` passes.
@@ -60,6 +63,7 @@ export class SeatMapGateway
     private readonly connections: SeatMapConnections<WebSocket>,
     private readonly availability: SeatAvailabilityService,
     private readonly bus: SeatEventBus,
+    private readonly clock: Clock,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.origins = new Set(config.corsOrigins);
@@ -107,11 +111,17 @@ export class SeatMapGateway
       this.send(client, errorMessage('VALIDATION_FAILED'));
       return;
     }
-    const { outcome, generation } = this.connections.subscribe(client, showtimeId);
-    if (outcome === 'limit') {
+    const { outcome, generation } = this.connections.subscribe(
+      client,
+      this.clock.now(),
+      showtimeId,
+    );
+    if (outcome === 'limit' || outcome === 'rate_limited') {
       this.send(client, errorMessage('RATE_LIMITED'));
       return;
     }
+    // That showtime's snapshot is already being read: it answers this subscribe too.
+    if (outcome === 'pending') return;
     try {
       const snapshot = await this.availability.snapshot(showtimeId);
       // A newer subscribe (or an unsubscribe, or a close) made this snapshot stale.
@@ -140,7 +150,7 @@ export class SeatMapGateway
    * that did not answer the previous ping is terminated, every other one is pinged.
    */
   sweepConnections(): void {
-    const { stale, ping } = this.connections.sweep();
+    const { stale, ping } = this.connections.sweep(this.clock.now());
     for (const client of stale) {
       this.connections.release(client);
       client.terminate();

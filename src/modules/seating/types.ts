@@ -164,8 +164,12 @@ export type OutboundSeatMapMessage =
     }
   | { readonly event: 'error'; readonly data: { readonly code: SeatMapErrorCode } };
 
-/** One subscription of a connection: buffering events until its snapshot went out, then live. */
+/**
+ * One subscription of a connection: buffering events until its snapshot went out, then live.
+ * `generation` names the `subscribe()` whose snapshot this is, so an older one is dropped.
+ */
 export interface SeatMapSubscription {
+  readonly generation: number;
   live: boolean;
   readonly pending: OutboundSeatMapMessage[];
 }
@@ -176,8 +180,15 @@ export interface SeatMapClientState {
   /** False once a ping went out unanswered; the next sweep then terminates the client. */
   alive: boolean;
   readonly subscriptions: Map<number, SeatMapSubscription>;
-  /** Per showtime, the latest `subscribe()`: only its snapshot is sent. */
-  readonly generations: Map<number, number>;
+  /** The generation of this connection's latest `subscribe()`: it only ever grows. */
+  lastGeneration: number;
+}
+
+/** One client address's snapshot reads in the current rate limit window. */
+export interface SnapshotReadWindow {
+  /** When the window started, in epoch milliseconds from the `Clock`. */
+  readonly startedAt: number;
+  count: number;
 }
 
 /** What admitting a new connection decided. */
@@ -185,8 +196,12 @@ export type SeatMapAdmission =
   | { readonly admitted: true }
   | { readonly admitted: false; readonly code: SeatMapErrorCode; readonly closeCode: number };
 
-/** What a `subscribe` decided. */
-export type SubscribeOutcome = 'subscribed' | 'refreshed' | 'limit';
+/**
+ * What a `subscribe` decided: a new subscription or a refreshed one (read a snapshot), one whose
+ * snapshot is already being read (read nothing more), or a refusal: too many subscriptions on
+ * the connection (`limit`) or too many snapshot reads from its address (`rate_limited`).
+ */
+export type SubscribeOutcome = 'subscribed' | 'refreshed' | 'pending' | 'limit' | 'rate_limited';
 
 /** A `subscribe` as registered: its outcome, and the generation its snapshot belongs to. */
 export interface SubscribeResult {

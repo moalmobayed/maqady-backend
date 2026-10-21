@@ -5,6 +5,7 @@ import { registerCustomer } from '../../../support/customer-auth';
 import { bookableShowtime, expectHold, holdSeats, seatMapClient } from '../../../support/holds';
 import { SeatMapProbeModule } from '../../../support/seat-map-probe.module';
 import { staffSession } from '../../../support/staff-auth';
+import { buildTestConfig } from '../../../support/test-config';
 import { createTestApp } from '../../../support/test-app';
 import type { BookableShowtimeFixture, SeatMapTestClient, TestApp } from '../../../support/types';
 
@@ -200,6 +201,28 @@ describe('The seat map gateway (integration)', () => {
     expect(await client.closed()).toBe(1009);
   });
 
+  it('answers a burst of subscribes to one showtime with one snapshot read', async () => {
+    let reads = 0;
+    const onQuery = (query: { sql: string }) => {
+      if (query.sql.includes('FROM seat_claims')) reads += 1;
+    };
+    testApp.knex.on('query', onQuery);
+    try {
+      const client = await connect();
+      for (let index = 0; index < 200; index += 1) {
+        client.send('subscribe', { showtimeId: showtime.showtimeId });
+      }
+      expect((await client.next()).event).toBe('snapshot');
+      // Once that snapshot is out, one more subscribe is a fresh read: every message is handled.
+      client.send('subscribe', { showtimeId: showtime.showtimeId });
+      expect((await client.next()).event).toBe('snapshot');
+      expect(client.pending()).toEqual([]);
+      expect(reads).toBeLessThanOrEqual(3);
+    } finally {
+      testApp.knex.off('query', onQuery);
+    }
+  });
+
   it('drops a client that did not answer the previous ping', async () => {
     const gateway = testApp.app.get(SeatMapGateway);
     const lively = await subscribed(showtime.showtimeId);
@@ -216,5 +239,43 @@ describe('The seat map gateway (integration)', () => {
     gateway.sweepConnections();
     gateway.sweepConnections();
     expect(await quiet.closed()).toBe(1006);
+  });
+});
+
+describe('The seat map gateway under the default rate limit (integration)', () => {
+  let testApp: TestApp;
+  const clients: SeatMapTestClient[] = [];
+
+  beforeAll(async () => {
+    const config = buildTestConfig();
+    testApp = await createTestApp({
+      clock: new TestClock(NOW),
+      config: {
+        ...config,
+        rateLimits: { ...config.rateLimits, default: { limit: 3, windowSeconds: 60 } },
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+    await testApp.close();
+  });
+
+  it('refuses snapshot reads beyond the default limit of one address, keeping the connection', async () => {
+    const first = await seatMapClient(testApp);
+    const second = await seatMapClient(testApp);
+    clients.push(first, second);
+    for (const showtimeId of [1, 2]) {
+      first.send('subscribe', { showtimeId });
+      expect((await first.next()).event).toBe('snapshot');
+    }
+    second.send('subscribe', { showtimeId: 1 });
+    expect((await second.next()).event).toBe('snapshot');
+    second.send('subscribe', { showtimeId: 3 });
+    expect(await second.next()).toEqual({ event: 'error', data: { code: 'RATE_LIMITED' } });
+    first.send('subscribe', { showtimeId: 1 });
+    expect(await first.next()).toEqual({ event: 'error', data: { code: 'RATE_LIMITED' } });
+    expect(first.socket.readyState).toBe(first.socket.OPEN);
   });
 });
