@@ -207,4 +207,80 @@ describe('TransactionRepository and TransactionContext (integration)', () => {
       expect(await codes()).toEqual(['a']);
     });
   });
+
+  describe('post-rollback hooks', () => {
+    it('run once the outermost transaction rolled back, outside it, and never after a commit', async () => {
+      const seen: { active: boolean; codes: string[] }[] = [];
+      const failure = new AppError('SEAT_TAKEN');
+      await expect(
+        transactions.run(async () => {
+          await insert('lost');
+          await transactions.run(() =>
+            transactions.afterRollback(async () => {
+              seen.push({ active: context.isActive(), codes: await codes() });
+              // A hook may open its own transaction, which commits.
+              await transactions.run(() => insert('recorded'));
+            }),
+          );
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      expect(seen).toEqual([{ active: false, codes: [] }]);
+      expect(await codes()).toEqual(['recorded']);
+
+      const unused = jest.fn();
+      await transactions.run(() => transactions.afterRollback(unused));
+      expect(unused).not.toHaveBeenCalled();
+    });
+
+    it('of a savepoint wait for the outermost transaction, released or rolled back', async () => {
+      const released = jest.fn();
+      const rolledBack = jest.fn();
+      await transactions.run(async () => {
+        await transactions.savepoint(() => transactions.afterRollback(released));
+        await transactions
+          .savepoint(async () => {
+            await transactions.afterRollback(rolledBack);
+            throw new AppError('CONFLICT');
+          })
+          .catch(() => undefined);
+      });
+      expect(released).not.toHaveBeenCalled();
+      expect(rolledBack).not.toHaveBeenCalled();
+
+      await expect(
+        transactions.run(async () => {
+          await transactions
+            .savepoint(async () => {
+              await transactions.afterRollback(rolledBack);
+              throw new AppError('CONFLICT');
+            })
+            .catch(() => undefined);
+          throw new AppError('CONFLICT');
+        }),
+      ).rejects.toThrow(AppError);
+      expect(rolledBack).toHaveBeenCalledTimes(1);
+    });
+
+    it('that fail are logged, and the original error is still thrown', async () => {
+      const failure = new AppError('CONFLICT');
+      const later = jest.fn();
+      await expect(
+        transactions.run(async () => {
+          await transactions.afterRollback(() => {
+            throw new Error('hook failure');
+          });
+          await transactions.afterRollback(later);
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      expect(later).toHaveBeenCalledTimes(1);
+    });
+
+    it('are refused outside a transaction', async () => {
+      await expect(transactions.afterRollback(jest.fn())).rejects.toEqual(
+        new AppError('INTERNAL', 'afterRollback() needs an open transaction.'),
+      );
+    });
+  });
 });
