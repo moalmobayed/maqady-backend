@@ -250,6 +250,27 @@ describe('ShowtimeBrowseService', () => {
       expect(view.days[1]!.movies.map((group) => group.movie.id)).toEqual([7]);
     });
 
+    it('orders movies whose first showtimes start together by movie id, not showtime id', async () => {
+      reads.listScheduled.mockResolvedValue([
+        showtime(1, { movieId: 8, startsAt: '2026-10-16T19:00:00+03:00' }),
+        showtime(2, { movieId: 7, startsAt: '2026-10-16T19:00:00+03:00' }),
+        showtime(3, { movieId: 8, startsAt: '2026-10-16T22:00:00+03:00' }),
+      ]);
+      catalog.findPublicMoviesByIds.mockResolvedValue(
+        new Map([
+          [7, card(7)],
+          [8, card(8)],
+        ]),
+      );
+      const view = await service.theaterShowtimes(1);
+      expect(
+        view.days[0]!.movies.map((group) => [group.movie.id, group.showtimes.map((s) => s.id)]),
+      ).toEqual([
+        [7, [2]],
+        [8, [1, 3]],
+      ]);
+    });
+
     it('answers only the date asked for', async () => {
       const view = await service.theaterShowtimes(1, '2026-10-18');
       expect(reads.listScheduled).toHaveBeenCalledWith({

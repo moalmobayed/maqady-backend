@@ -90,7 +90,7 @@ export class ShowtimeBrowseService {
 
   /**
    * `GET /theaters/{id}/showtimes`: the 7 cinema days from today's, or only `date`; movies by
-   * their first showtime of the day, then id. A date outside the 7 days has no movies; a theater
+   * their first showtime of the day, then movie id. A date outside the 7 days has no movies; a theater
    * that isn't `active` is `NOT_FOUND`.
    */
   async theaterShowtimes(theaterId: number, date?: CalendarDate): Promise<TheaterShowtimesView> {
@@ -112,13 +112,16 @@ export class ShowtimeBrowseService {
 
     const days: TheaterShowtimeDay[] = dates.map((cinemaDate) => {
       const ofDay = listed.filter((showtime) => showtime.cinemaDate === cinemaDate);
-      // `ofDay` is by start then id, so each group's first showtime is its earliest and the
-      // groups come out in the order of their first showtime.
+      // `ofDay` is by start then id, so each group's first showtime is its earliest; the groups
+      // are then ordered by that start, ties by movie id.
       return {
         cinemaDate,
-        movies: [...groupBy(ofDay, (showtime) => showtime.movieId).entries()].map(
-          ([movieId, showtimes]) => ({ movie: movies.get(movieId)!, showtimes }),
-        ),
+        movies: [...groupBy(ofDay, (showtime) => showtime.movieId).entries()]
+          .sort(
+            ([firstId, first], [secondId, second]) =>
+              first[0]!.startsAt.getTime() - second[0]!.startsAt.getTime() || firstId - secondId,
+          )
+          .map(([movieId, showtimes]) => ({ movie: movies.get(movieId)!, showtimes })),
       };
     });
     return { theaterId, cinemaDate: today, days };
