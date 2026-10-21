@@ -1,7 +1,7 @@
 ---
 title: U7 — Showtimes - scheduling, overlap checks, dry run, batch create, move, prices
 owner: Mohamed Tarek
-status: Built — awaiting review
+status: Built — reviewed, see review.md
 last_verified: 2026-10-20
 tags: [showtimes, scheduling, cleaning-gap, exclusion-constraint, opening-hours, summer-time, cinema-day, prices, admin]
 ---
