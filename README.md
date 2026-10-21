@@ -430,6 +430,25 @@ curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Au
   the search path. Knex's bookkeeping tables live in the schema too, with row-level security on.
 - BIGINT comes back as a number, NUMERIC as a float, and DATE as a `YYYY-MM-DD` string.
 
+## Deploying to Vercel (staging, no card)
+
+Staging runs on Vercel's free Hobby plan, which needs no payment card. `vercel.json` makes the
+compiled `dist/main.js` the entrypoint (Vercel's NestJS runtime runs it as one function and
+handles its `listen()`) and pins the function to Frankfurt (`fra1`), next to the database.
+
+- Import the repository in Vercel, then set **Settings → Git → Production Branch** to the branch
+  to deploy (today `main-jf8hqi`) and redeploy.
+- Environment variables: the same as Render's (below), with these differences: Vercel has no
+  generated secrets, so set the four secrets yourself (`openssl rand -base64 32` each); end
+  `DATABASE_URL` with `?sslmode=no-verify` (the CA file in `certs/` is not part of a Vercel
+  function, so the connection is encrypted but the server is not verified: a follow-up); and set
+  `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` and `BOOTSTRAP_ADMIN_PASSWORD`, because there is
+  no shell: on boot, after migrating, the app creates the first admin when none exists.
+- Vercel ships only the files it traces from the entrypoint, which is why migrations run from the
+  static list in `src/common/database/migration-list.ts`: add each new migration there too (a
+  unit test fails when the list and `src/migrations/` differ).
+- Each cold start migrates (a no-op when up to date) and checks the first admin before serving.
+
 ## Deploying (Render and Supabase)
 
 Staging is described by `render.yaml`, a Render Blueprint: Render → New → Blueprint → this
