@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
 import { Clock } from '../../common/time/clock';
 import { addDays, isCalendarDate } from '../../common/time/time';
@@ -23,7 +24,8 @@ import type {
  *   `nextScheduledPerMovie()` for the home ticker, `movieIdsScheduled()` for the "show date"
  *   filter. They return scheduled showtimes of any theater asked for; U8 passes the `active`
  *   theaters and hides started ones itself, from the same `Clock`.
- * - U10 holds and the public showtime page: `findById()` in any status.
+ * - U10 holds and the public showtime page: `findById()` in any status, and `lockForShare()`
+ *   in a hold's transaction (design §7.1 step 2), before the hall.
  * - U10's seat claims: `listUnendedInHall()`.
  *
  * Every read costs a fixed number of queries whatever the number of showtimes: one for the
@@ -36,11 +38,27 @@ export class ShowtimeReadService {
     private readonly halls: HallReadService,
     private readonly catalog: CatalogReadService,
     private readonly clock: Clock,
+    private readonly context: TransactionContext,
   ) {}
 
   /** A showtime in any status; null when there is none. */
   async findById(id: number): Promise<ShowtimeView | null> {
     const row = await this.showtimes.findById(id);
+    if (!row) return null;
+    return (await this.viewsOf([row]))[0] ?? null;
+  }
+
+  /**
+   * Locks the showtime `FOR SHARE` in the open transaction and returns it in any status; null
+   * when there is none. A move, a price change or a cancel waits until that transaction ends, so
+   * the status, start and prices read here stay true while it runs (U10 holds). Lock the
+   * showtime first and its hall second (design §7.1).
+   */
+  async lockForShare(id: number): Promise<ShowtimeView | null> {
+    if (!this.context.isActive()) {
+      throw new AppError('INTERNAL', 'lockForShare() needs an open transaction.');
+    }
+    const row = await this.showtimes.findByIdForShare(id);
     if (!row) return null;
     return (await this.viewsOf([row]))[0] ?? null;
   }

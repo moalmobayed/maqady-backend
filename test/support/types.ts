@@ -2,6 +2,7 @@ import type { ModuleMetadata } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Knex } from 'knex';
 import type { DestinationStream } from 'pino';
+import type { WebSocket } from 'ws';
 import type request from 'supertest';
 import type { AccessLevel, Principal, StaffRole } from '../../src/common/auth/types';
 import type { AppConfig } from '../../src/common/config/types';
@@ -242,3 +243,48 @@ export type ShowtimeWorldName =
   | 'draftLighthouse'
   | 'draftOnly'
   | 'pausedLighthouse';
+/** A Now showing movie's showtime in a published theater, ready to hold (U10). */
+export interface BookableShowtimeFixture extends SchedulingFixture {
+  readonly showtimeId: number;
+  readonly startsAt: Date;
+}
+
+/** What `bookableShowtime()` may change. */
+export interface BookableShowtimeOptions {
+  /** `2026-10-11` by default. */
+  readonly cinemaDate?: string;
+  /** `19:30` by default. */
+  readonly startTime?: string;
+  /** Another showtime in the hall of an earlier fixture, instead of a new theater. */
+  readonly fixture?: SchedulingFixture;
+}
+
+/** What `holdSeats()` sends besides the seats. */
+export interface HoldRequestOptions {
+  /** `Bearer …` of a customer; a guest sends none. */
+  readonly authorization?: string;
+  /** `X-Hold-Token`. */
+  readonly holdCode?: string;
+  /** `Idempotency-Key`; a new UUID by default. */
+  readonly key?: string;
+}
+
+/** A message the seat map sent, parsed. */
+export interface SeatMapMessage {
+  readonly event: string;
+  readonly data: Record<string, unknown>;
+}
+
+/** A `ws` client of the test app's seat map that waits for messages, never sleeps. */
+export interface SeatMapTestClient {
+  readonly socket: WebSocket;
+  /** Sends `{ event, data }`. */
+  send(event: string, data: unknown): void;
+  /** The next message not yet taken; fails after `timeoutMs` (default 5 s). */
+  next(timeoutMs?: number): Promise<SeatMapMessage>;
+  /** Resolves with the close code once the server closes the socket. */
+  closed(): Promise<number>;
+  /** Messages received but not yet taken by `next()`. */
+  pending(): readonly SeatMapMessage[];
+  close(): Promise<void>;
+}

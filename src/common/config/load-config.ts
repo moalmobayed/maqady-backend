@@ -12,6 +12,9 @@ export const DEFAULT_PORT = 3000;
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
 export const DEFAULT_STORAGE_BUCKET = 'media';
 export const DEFAULT_LOCAL_STORAGE_DIR = '.media';
+/** Design §10.6: 20 open seat-map connections per IP address, 3 subscriptions each. */
+export const DEFAULT_WS_CONNECTIONS_PER_IP = 20;
+export const DEFAULT_WS_SUBSCRIPTIONS_PER_CONNECTION = 3;
 
 /** Thrown at boot when the environment is incomplete or malformed. Lists names, never values. */
 export class ConfigValidationError extends Error {
@@ -64,6 +67,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
         : {}),
     },
     rateLimits: rateLimitsFrom(present),
+    seatMap: {
+      connectionsPerIp: variables.WS_CONNECTIONS_PER_IP ?? DEFAULT_WS_CONNECTIONS_PER_IP,
+      subscriptionsPerConnection:
+        variables.WS_SUBSCRIPTIONS_PER_CONNECTION ?? DEFAULT_WS_SUBSCRIPTIONS_PER_CONNECTION,
+    },
     frontendBaseUrl: trimTrailingSlashes(variables.FRONTEND_BASE_URL),
     email: emailFrom(variables),
     storage: storageFrom(variables, port),

@@ -19425,6 +19425,1363 @@ paths:
         - 'Admin: showtimes'
       security:
         - staff: []
+  /showtimes/{id}:
+    get:
+      description: |-
+        Public. Any showtime of a published theater is shown, in any status, with `bookable` and `notBookableReason`; a showtime of an unpublished (draft) theater, or an unknown id, is `NOT_FOUND`. Never cached (`Cache-Control: no-store`): the map is live.
+
+        The header (movie with age rating and poster, theater, hall, date and time), this hall's own layout (rows and zones, wheelchair spaces, gaps, aisles), the price of each zone and the "from" price, the seat capacity, and the hold rules (`maxSeatsPerHold`, `holdMinutes`). The taken seats come from `GET /showtimes/{id}/seats` and then live over the `/ws` seat map.
+      operationId: getPublicShowtime
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Showtime id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+      responses:
+        '200':
+          description: The showtime and its seat map
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicShowtime'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: 'The seat page: showtime header, hall layout and prices'
+      tags:
+        - Seats and holds
+      security: []
+  /showtimes/{id}/seats:
+    get:
+      description: |-
+        Public. Any showtime of a published theater is shown, in any status, with `bookable` and `notBookableReason`; a showtime of an unpublished (draft) theater, or an unknown id, is `NOT_FOUND`. Never cached (`Cache-Control: no-store`): the map is live.
+
+        Every seat held or sold right now, with `heldUntil` for held ones (free the seat on screen when it passes, using `serverTime` to correct the clock), and how many seats are left (`availableCount`, `soldOut`). A hold that ended is free without any message. For live updates subscribe on the `/ws` seat map, which starts with this same snapshot.
+      operationId: getShowtimeSeats
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Showtime id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+      responses:
+        '200':
+          description: The taken seats
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeatSnapshot'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: The taken seats of a showtime now
+      tags:
+        - Seats and holds
+      security: []
+  /showtimes/{id}/holds:
+    post:
+      description: |-
+        A guest, or a signed-in customer (send the access token). Requires an `Idempotency-Key`. Rate-limited per IP address and per customer.
+
+        - Holds 1 to 8 seats for 5 minutes, or until the showtime starts if sooner. Each seat is priced from its row's zone now; the total is what checkout charges.
+        - Picking new seats replaces the browser's previous hold: a customer's live hold (on any showtime), and the guest hold whose code is sent in `X-Hold-Token`. Their seats are released at once. A customer has at most one live hold.
+        - A guest gets a private `holdCode`, shown only in this answer (and its replay). Keep it for the browser session: send it as `X-Hold-Token` to read or release the hold, and to claim it after signing in (`POST /holds/{ref}/claims`).
+        - A seat someone else holds or bought: `SEAT_TAKEN` with `details.seats`; nothing changes, the previous hold stays. Refresh the map and pick again.
+        - `SHOWTIME_NOT_BOOKABLE` with `details.reason`: `cancelled`, `started`, `sales_paused`, `movie_unavailable` or `hall_unavailable`. A seat not in this hall: `VALIDATION_FAILED` on `seats.<index>`. A blocked customer: `ACCOUNT_BLOCKED`.
+        - Everyone on the seat map gets `seat.held` (and `seat.released` for a replaced hold) once the hold is saved. Recorded in the booking's history.
+      operationId: createHold
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Showtime id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+        - name: X-Hold-Token
+          in: header
+          description: 'The guest''s hold code, as `holdCode` returned it when the hold was made. Optional: the hold this browser made before, released by this one. A missing, malformed or wrong code matches no hold.'
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{43}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHoldRequest'
+      responses:
+        '201':
+          description: The hold, with the hold code for a guest
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hold'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `SHOWTIME_NOT_BOOKABLE`: The showtime started, was cancelled, or its theater paused sales. Pick another showtime.
+
+            `SEAT_TAKEN`: Another customer holds or bought at least one of the seats. `details.seats` lists them; pick other seats.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SHOWTIME_NOT_BOOKABLE:
+                  summary: SHOWTIME_NOT_BOOKABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_BOOKABLE
+                      message: This showtime can no longer be booked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SEAT_TAKEN:
+                  summary: SEAT_TAKEN
+                  value:
+                    error:
+                      code: SEAT_TAKEN
+                      message: Some of these seats were just taken.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Hold seats for 5 minutes ("Continue")
+      tags:
+        - Seats and holds
+      security:
+        - {}
+        - customer: []
+  /holds/{ref}/claims:
+    post:
+      description: |-
+        A signed-in customer, with the guest hold's code in `X-Hold-Token` (required). Requires an `Idempotency-Key`. Call it right after signing in or creating an account in the booking flow (PRD Seats 3).
+
+        - The hold becomes the customer's, with their name, email and phone as its contact, and the code stops working. The countdown is not restarted: `holdExpiresAt` stays.
+        - The customer's other live hold, if any, is released (one live hold per customer), and its seats are announced free on the seat map.
+        - A hold the customer already owns answers `201` as it is (a second tab).
+        - An unknown reference, someone else's booking, or a code that does not match: `NOT_FOUND`. The code matches but the hold ran out: `HOLD_EXPIRED` (pick seats again). No `X-Hold-Token`: `VALIDATION_FAILED`.
+        - Recorded in the booking's history.
+      operationId: claimHold
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+        - name: X-Hold-Token
+          in: header
+          description: 'The guest''s hold code, as `holdCode` returned it when the hold was made. Required: it proves this browser made the hold. A missing, malformed or wrong code matches no hold.'
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{43}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '201':
+          description: The hold, now the customer's (`holdCode` is null)
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hold'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`HOLD_EXPIRED`: The hold ran out before this action. Choose the seats again.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                HOLD_EXPIRED:
+                  summary: HOLD_EXPIRED
+                  value:
+                    error:
+                      code: HOLD_EXPIRED
+                      message: Your seat hold has expired.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Claim a guest hold after signing in
+      tags:
+        - Seats and holds
+      security:
+        - customer: []
+  /holds/{ref}:
+    delete:
+      description: 'The owner (send the access token), or a guest with the hold code in `X-Hold-Token`. An `Idempotency-Key` is optional. The seats are free at once (announced on the seat map) and the booking reads as `abandoned` from then on. A hold that already ended answers `204` and changes nothing. A paid booking is never released here: `ALREADY_PAID`. Anyone else, and any unknown reference: `NOT_FOUND`. Recorded in the booking''s history.'
+      operationId: releaseHold
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+        - name: X-Hold-Token
+          in: header
+          description: The guest's hold code, as `holdCode` returned it when the hold was made. Required for a guest hold. A missing, malformed or wrong code matches no hold.
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{43}$
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '204':
+          description: Released
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`ALREADY_PAID`: A successful payment exists. Show the tickets instead of paying again.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ALREADY_PAID:
+                  summary: ALREADY_PAID
+                  value:
+                    error:
+                      code: ALREADY_PAID
+                      message: This booking is already paid.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Release a hold
+      tags:
+        - Seats and holds
+      security:
+        - {}
+        - customer: []
+  /bookings/{ref}:
+    get:
+      description: 'The owner (send the access token) in any status, or a guest with the hold code in `X-Hold-Token` while the hold lasts and nobody claimed it. Anyone else, a guest whose hold ended, and any unknown reference: `NOT_FOUND`. The checkout summary: the showtime, the seats by zone with their prices, the total, the countdown (`holdExpiresAt` against `serverTime`) and the status, decided now.'
+      operationId: getBooking
+      parameters:
+        - name: ref
+          required: true
+          in: path
+          description: 'Booking reference: `MQ-` and 6 characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (upper case; no 0, O, 1, I or L).'
+          schema:
+            pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+        - name: X-Hold-Token
+          in: header
+          description: The guest's hold code, as `holdCode` returned it when the hold was made. Required for a guest hold. A missing, malformed or wrong code matches no hold.
+          required: false
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{43}$
+      responses:
+        '200':
+          description: The booking
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_BLOCKED`: The customer account was blocked by an admin. Contact the cinema.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_BLOCKED:
+                  summary: ACCOUNT_BLOCKED
+                  value:
+                    error:
+                      code: ACCOUNT_BLOCKED
+                      message: This account is blocked.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Get a booking
+      tags:
+        - Seats and holds
+      security:
+        - {}
+        - customer: []
 info:
   title: Maqady API
   description: |-
@@ -24958,6 +26315,533 @@ components:
         - theaterId
         - startTime
         - results
+    BookingMovie:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 12
+          description: Movie id.
+        title:
+          type: string
+          nullable: false
+          example: The Nile Light
+          description: Title.
+        ageRating:
+          nullable: false
+          example: 12+
+          description: Age rating, shown in the seat page header.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+        runtimeMinutes:
+          type: integer
+          nullable: true
+          example: 128
+          description: Runtime in minutes.
+        poster:
+          nullable: true
+          description: 'The poster in every size (alt text: the title), or null without one.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+      required:
+        - id
+        - title
+        - ageRating
+        - runtimeMinutes
+        - poster
+    NamedRef:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 3
+          description: Id.
+        name:
+          type: string
+          nullable: false
+          example: Hall 3
+          description: Name.
+      required:
+        - id
+        - name
+    NotBookableReason:
+      type: string
+      enum:
+        - cancelled
+        - started
+        - sales_paused
+        - movie_unavailable
+        - hall_unavailable
+      description: 'Why seats cannot be held now, or null: `cancelled`; `started` ("Showtimes that have started can''t be booked"); `sales_paused` by the theater; `movie_unavailable` (no longer Now showing); `hall_unavailable`.'
+    PublicShowtime:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 81
+          description: Showtime id.
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:30:00+03:00'
+          description: Start, Cairo time with its offset.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:38:00+03:00'
+          description: End (start plus the movie's runtime), Cairo time with its offset.
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema day it belongs to (06:00 to 06:00 Cairo time).
+        movie:
+          nullable: false
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/BookingMovie'
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        hall:
+          nullable: false
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        prices:
+          nullable: false
+          description: The price of a seat in each zone; a hold prices each seat by its row's zone.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePrices'
+        fromPrice:
+          nullable: false
+          description: The lowest zone price among the zones this hall has seats in ("from EGP 150").
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        seatCapacity:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 192
+          description: 'Seats on sale: the seats of the layout (wheelchair spaces included, gaps not).'
+        layout:
+          nullable: false
+          description: 'The hall''s seat map: rows and their zones, wheelchair spaces, gaps and aisles.'
+          allOf:
+            - $ref: '#/components/schemas/HallLayout'
+        bookable:
+          type: boolean
+          nullable: false
+          example: true
+          description: True when seats can be held now. False with `notBookableReason` otherwise; the map is still shown.
+        notBookableReason:
+          nullable: true
+          example: null
+          description: 'Why seats cannot be held now, or null: `cancelled`; `started` ("Showtimes that have started can''t be booked"); `sales_paused` by the theater; `movie_unavailable` (no longer Now showing); `hall_unavailable`.'
+          allOf:
+            - $ref: '#/components/schemas/NotBookableReason'
+        maxSeatsPerHold:
+          type: integer
+          nullable: false
+          example: 8
+          description: The most seats one hold may have.
+        holdMinutes:
+          type: integer
+          nullable: false
+          example: 5
+          description: How long a hold lasts, in minutes (never past the start).
+      required:
+        - id
+        - startsAt
+        - endsAt
+        - cinemaDate
+        - movie
+        - theater
+        - hall
+        - prices
+        - fromPrice
+        - seatCapacity
+        - layout
+        - bookable
+        - notBookableReason
+        - maxSeatsPerHold
+        - holdMinutes
+    TakenSeatState:
+      type: string
+      enum:
+        - held
+        - booked
+      description: '`held`: on a live hold ("Temporarily unavailable"); `booked`: sold.'
+    TakenSeat:
+      type: object
+      properties:
+        label:
+          type: string
+          nullable: false
+          example: F7
+          description: Seat label.
+        state:
+          nullable: false
+          example: held
+          description: '`held`: on a live hold ("Temporarily unavailable"); `booked`: sold.'
+          allOf:
+            - $ref: '#/components/schemas/TakenSeatState'
+        heldUntil:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:05:00+03:00'
+          description: When the hold ends (Cairo time); the seat is free from then on, without any message. Null for a booked seat.
+      required:
+        - label
+        - state
+        - heldUntil
+    SeatSnapshot:
+      type: object
+      properties:
+        showtimeId:
+          type: integer
+          nullable: false
+          example: 81
+          description: Showtime id.
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:00:12+03:00'
+          description: The server's time when the snapshot was read, to correct the client's clock against `heldUntil`.
+        seats:
+          nullable: false
+          description: Every seat held or sold right now, by label. Holds that ended are not listed.
+          type: array
+          items:
+            $ref: '#/components/schemas/TakenSeat'
+        availableCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 184
+          description: 'Seats that can be picked right now: the seat capacity minus the taken seats.'
+        soldOut:
+          type: boolean
+          nullable: false
+          example: false
+          description: True when every seat is held or sold right now ("Sold out"); it can flip back when a hold ends.
+      required:
+        - showtimeId
+        - serverTime
+        - seats
+        - availableCount
+        - soldOut
+    CreateHoldRequest:
+      type: object
+      properties:
+        seats:
+          nullable: false
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          example:
+            - F7
+            - F8
+          description: '1 to 8 distinct seat labels: the row letter (A to P without I) and the seat number (1 to 20), as `F7`. Each must be a seat of the hall''s current layout, not a gap (`VALIDATION_FAILED` on `seats.<index>` otherwise).'
+          type: array
+          items:
+            type: string
+            pattern: ^[A-HJ-P]([1-9]|1[0-9]|20)$
+      required:
+        - seats
+    BookingStatus:
+      type: string
+      enum:
+        - held
+        - failed
+        - abandoned
+        - confirmed
+        - completed
+        - refunded
+      description: 'Decided at `serverTime` from stored times: `held` while the hold lasts; `failed` once it ended after a declined payment; `abandoned` once it ended (or was released) otherwise; `confirmed` once paid, `completed` after the showtime ended; `refunded`.'
+    BookingChannel:
+      type: string
+      enum:
+        - online
+        - counter
+      description: '`online` on the website, `counter` at the box office.'
+    BookingOwner:
+      type: string
+      enum:
+        - guest
+        - customer
+      description: '`guest`: held while signed out, reachable only with its hold code until a customer claims it (`POST /holds/{ref}/claims`). `customer`: owned by a customer account.'
+    BookingShowtime:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 81
+          description: Showtime id.
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:30:00+03:00'
+          description: Start, Cairo time with its offset.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:38:00+03:00'
+          description: End (start plus the movie's runtime), Cairo time with its offset.
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema day it belongs to (06:00 to 06:00 Cairo time).
+        movie:
+          nullable: false
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/BookingMovie'
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        hall:
+          nullable: false
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+      required:
+        - id
+        - startsAt
+        - endsAt
+        - cinemaDate
+        - movie
+        - theater
+        - hall
+    BookingSeat:
+      type: object
+      properties:
+        label:
+          type: string
+          nullable: false
+          example: F7
+          description: 'Seat label: row letter and seat number.'
+        rowLabel:
+          type: string
+          nullable: false
+          pattern: ^[A-HJ-P]$
+          example: F
+          description: Row letter, A nearest the screen.
+        seatNumber:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 20
+          example: 7
+          description: Seat number from the left.
+        zone:
+          nullable: false
+          example: middle
+          description: The seat's zone when it was held; it decided the price.
+          allOf:
+            - $ref: '#/components/schemas/SeatZone'
+        price:
+          nullable: false
+          description: The price of this seat, fixed when the hold was made ("Price confirmed by Maqady").
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        isWheelchair:
+          type: boolean
+          nullable: false
+          example: false
+          description: True for a wheelchair space.
+      required:
+        - label
+        - rowLabel
+        - seatNumber
+        - zone
+        - price
+        - isWheelchair
+    Hold:
+      type: object
+      properties:
+        reference:
+          type: string
+          nullable: false
+          pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+          example: MQ-7K3P9Q
+          description: Booking reference; every booking route names the booking by it.
+        status:
+          nullable: false
+          example: held
+          description: 'Decided at `serverTime` from stored times: `held` while the hold lasts; `failed` once it ended after a declined payment; `abandoned` once it ended (or was released) otherwise; `confirmed` once paid, `completed` after the showtime ended; `refunded`.'
+          allOf:
+            - $ref: '#/components/schemas/BookingStatus'
+        channel:
+          nullable: false
+          example: online
+          description: '`online` on the website, `counter` at the box office.'
+          allOf:
+            - $ref: '#/components/schemas/BookingChannel'
+        owner:
+          nullable: false
+          example: customer
+          description: '`guest`: held while signed out, reachable only with its hold code until a customer claims it (`POST /holds/{ref}/claims`). `customer`: owned by a customer account.'
+          allOf:
+            - $ref: '#/components/schemas/BookingOwner'
+        showtime:
+          nullable: false
+          description: The showtime.
+          allOf:
+            - $ref: '#/components/schemas/BookingShowtime'
+        seats:
+          nullable: false
+          description: The seats, by label, each with its zone and price.
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSeat'
+        seatCount:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 8
+          example: 2
+          description: Number of seats.
+        total:
+          nullable: false
+          description: 'The sum of the seat prices: exactly what checkout charges. There are no fees.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        holdExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:05:00+03:00'
+          description: 'When the hold ends (Cairo time): 5 minutes after it was made, or the showtime start if sooner. Signing in does not restart it. A released hold ends when it was released. Show the countdown against `serverTime`.'
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:00:12+03:00'
+          description: The server's time when this answer was made, to correct the client's clock.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:00:00+03:00'
+          description: When the hold was made.
+        holdCode:
+          type: string
+          nullable: true
+          pattern: ^[A-Za-z0-9_-]{43}$
+          example: q3Jx1oV0b8m2Yc6Kp9Rz4Tn7Wd5Fh2Lg0Sa8Ue3Bi1
+          description: 'A guest hold only: the private hold code, shown this once. Keep it for this browser session and send it as `X-Hold-Token` to read, release or claim the hold (after signing in, `POST /holds/{ref}/claims`). Null for a customer hold and after a claim.'
+      required:
+        - reference
+        - status
+        - channel
+        - owner
+        - showtime
+        - seats
+        - seatCount
+        - total
+        - holdExpiresAt
+        - serverTime
+        - createdAt
+        - holdCode
+    Booking:
+      type: object
+      properties:
+        reference:
+          type: string
+          nullable: false
+          pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+          example: MQ-7K3P9Q
+          description: Booking reference; every booking route names the booking by it.
+        status:
+          nullable: false
+          example: held
+          description: 'Decided at `serverTime` from stored times: `held` while the hold lasts; `failed` once it ended after a declined payment; `abandoned` once it ended (or was released) otherwise; `confirmed` once paid, `completed` after the showtime ended; `refunded`.'
+          allOf:
+            - $ref: '#/components/schemas/BookingStatus'
+        channel:
+          nullable: false
+          example: online
+          description: '`online` on the website, `counter` at the box office.'
+          allOf:
+            - $ref: '#/components/schemas/BookingChannel'
+        owner:
+          nullable: false
+          example: customer
+          description: '`guest`: held while signed out, reachable only with its hold code until a customer claims it (`POST /holds/{ref}/claims`). `customer`: owned by a customer account.'
+          allOf:
+            - $ref: '#/components/schemas/BookingOwner'
+        showtime:
+          nullable: false
+          description: The showtime.
+          allOf:
+            - $ref: '#/components/schemas/BookingShowtime'
+        seats:
+          nullable: false
+          description: The seats, by label, each with its zone and price.
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSeat'
+        seatCount:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 8
+          example: 2
+          description: Number of seats.
+        total:
+          nullable: false
+          description: 'The sum of the seat prices: exactly what checkout charges. There are no fees.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        holdExpiresAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:05:00+03:00'
+          description: 'When the hold ends (Cairo time): 5 minutes after it was made, or the showtime start if sooner. Signing in does not restart it. A released hold ends when it was released. Show the countdown against `serverTime`.'
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:00:12+03:00'
+          description: The server's time when this answer was made, to correct the client's clock.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:00:00+03:00'
+          description: When the hold was made.
+      required:
+        - reference
+        - status
+        - channel
+        - owner
+        - showtime
+        - seats
+        - seatCount
+        - total
+        - holdExpiresAt
+        - serverTime
+        - createdAt
     ErrorResponse:
       type: object
       properties:

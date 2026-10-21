@@ -68,6 +68,7 @@ describe('loadConfig', () => {
       auth: { customerTokenSecret: CUSTOMER_SECRET, staffTokenSecret: STAFF_SECRET },
       encryption: { key: ENCRYPTION_KEY },
       rateLimits: DEFAULT_RATE_LIMITS,
+      seatMap: { connectionsPerIp: 20, subscriptionsPerConnection: 3 },
       frontendBaseUrl: 'https://maqady.example',
       email: { driver: 'simulated' },
       storage: {
@@ -136,6 +137,21 @@ describe('loadConfig', () => {
       JWT_SECRET_STAFF: same.toString('base64url'),
     });
     expect(problems).toEqual(['JWT_SECRET_STAFF must differ from JWT_SECRET_CUSTOMER']);
+  });
+
+  it('reads the seat map limits from WS_* variables and refuses one out of range', () => {
+    const { seatMap } = loadConfig({
+      ...VALID_ENV,
+      WS_CONNECTIONS_PER_IP: '50',
+      WS_SUBSCRIPTIONS_PER_CONNECTION: '5',
+    });
+    expect(seatMap).toEqual({ connectionsPerIp: 50, subscriptionsPerConnection: 5 });
+    expect(problemsFor({ ...VALID_ENV, WS_CONNECTIONS_PER_IP: '0' })).toEqual([
+      'WS_CONNECTIONS_PER_IP must be an integer between 1 and 10000',
+    ]);
+    expect(problemsFor({ ...VALID_ENV, WS_SUBSCRIPTIONS_PER_CONNECTION: '2.5' })).toEqual([
+      'WS_SUBSCRIPTIONS_PER_CONNECTION must be an integer between 1 and 100',
+    ]);
   });
 
   it('reads rate limits from RATE_LIMIT_* variables, in seconds, minutes or hours', () => {

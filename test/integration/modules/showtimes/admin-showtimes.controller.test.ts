@@ -6,6 +6,7 @@ import { createPublishedMovie } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
 import { waitForLockWaiters } from '../../../support/database';
 import { createHall, HALLS, setHallStatus } from '../../../support/halls';
+import { heldBookingIds } from '../../../support/holds';
 import { listHttpRoutes, samplePath } from '../../../support/routes';
 import {
   cancelShowtime,
@@ -18,7 +19,13 @@ import { RecordingCancellation } from '../../../support/showtimes/recording-canc
 import { ScriptedTicketHolders } from '../../../support/showtimes/scripted-ticket-holders';
 import { signInStaff, staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
-import { createTheater, DEFAULT_PRICES, everyDay, THEATERS } from '../../../support/theaters';
+import {
+  createTheater,
+  DEFAULT_PRICES,
+  everyDay,
+  setTheaterStatus,
+  THEATERS,
+} from '../../../support/theaters';
 import type {
   SchedulingFixture,
   ShowtimeBody,
@@ -901,16 +908,19 @@ describe('Admin showtimes (integration)', () => {
     it('queues an email per ticket holder and an SMS per phone in one insert, and nothing when the move fails', async () => {
       const fixture = await createSchedulingFixture(testApp, admin);
       const showtime = await scheduleShowtime(testApp, admin, fixture, '2026-10-16', '19:30');
+      // messages.related_booking_id references bookings (U10): the holders' bookings are real.
+      await setTheaterStatus(testApp, admin.authorization, fixture.theaterId, 'active');
+      const [firstId, secondId, thirdId] = await heldBookingIds(testApp, showtime.id, 3);
       holders.holders.set(showtime.id, [
         {
-          bookingId: 501,
+          bookingId: firstId!,
           bookingReference: 'MQ-7K2P9X',
           customerId: null,
           email: 'layla@example.com',
           phone: '+201001234567',
         },
         {
-          bookingId: 502,
+          bookingId: secondId!,
           bookingReference: 'MQ-3H8D4M',
           customerId: null,
           email: 'omar@example.com',
@@ -941,9 +951,9 @@ describe('Admin showtimes (integration)', () => {
         >('template', 'recipient', 'subject', 'body_text', 'related_booking_id')
         .orderBy('id');
       expect(messages.map((row) => [row.template, row.recipient, row.related_booking_id])).toEqual([
-        ['showtime.moved', 'layla@example.com', 501],
-        ['showtime.moved_sms', '+201001234567', 501],
-        ['showtime.moved', 'omar@example.com', 502],
+        ['showtime.moved', 'layla@example.com', firstId],
+        ['showtime.moved_sms', '+201001234567', firstId],
+        ['showtime.moved', 'omar@example.com', secondId],
       ]);
       expect(messages[0]!.subject).toBe(
         `New time for ${fixture.movieTitle}: Fri 16 Oct 2026, 20:15`,
@@ -956,7 +966,7 @@ describe('Admin showtimes (integration)', () => {
       // A holder whose phone can't be messaged fails the whole move: nothing moves, nothing queues.
       holders.holders.set(showtime.id, [
         {
-          bookingId: 503,
+          bookingId: thirdId!,
           bookingReference: 'MQ-9Q2W5E',
           customerId: null,
           email: 'nour@example.com',

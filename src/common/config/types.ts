@@ -64,6 +64,14 @@ export interface LocalStorageConfig {
 /** Where uploaded images go (`STORAGE_DRIVER`). */
 export type StorageConfig = SupabaseStorageConfig | LocalStorageConfig;
 
+/** The live seat map's admission limits (design §10.6, §12). */
+export interface SeatMapConfig {
+  /** Open WebSocket connections one client address may hold. */
+  readonly connectionsPerIp: number;
+  /** Showtimes one connection may subscribe to at once. */
+  readonly subscriptionsPerConnection: number;
+}
+
 /** The validated environment, built once at boot by `loadConfig()`. */
 export interface AppConfig {
   readonly port: number;
@@ -74,6 +82,7 @@ export interface AppConfig {
   readonly auth: AuthConfig;
   readonly encryption: EncryptionConfig;
   readonly rateLimits: RateLimitsConfig;
+  readonly seatMap: SeatMapConfig;
   /** Where links in emails point, without a trailing slash, for example `https://maqady.example`. */
   readonly frontendBaseUrl: string;
   readonly email: EmailConfig;

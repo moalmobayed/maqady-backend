@@ -4,7 +4,8 @@ import { AppError } from '../../../../src/common/errors/app-error';
 import { TestClock } from '../../../support/clock';
 import { FoundationsProbeModule } from '../../../support/foundations-probe.module';
 import { registerCustomer } from '../../../support/customer-auth';
-import { createStaffMember } from '../../../support/staff-auth';
+import { bookableShowtime, heldBookingIds } from '../../../support/holds';
+import { createStaffMember, signInStaff } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { TestApp } from '../../../support/types';
 
@@ -68,23 +69,27 @@ describe('AuditService (integration)', () => {
   });
 
   it('records staff and customer actors in their own columns, inside a service transaction', async () => {
-    // The actor columns reference staff_users (U2a) and customers (U9), so the actors are real.
+    // The actor columns reference staff_users (U2a) and customers (U9), and booking_id bookings
+    // (U10), so the actors and the booking are real.
     const staff = await createStaffMember(testApp, { role: 'admin' });
     const { customerId } = await registerCustomer(testApp);
+    const admin = await signInStaff(testApp, staff.email, staff.password);
+    const showtime = await bookableShowtime(testApp, admin, { cinemaDate: '2026-10-17' });
+    const bookingId = (await heldBookingIds(testApp, showtime.showtimeId, 1))[0]!;
     await testApp.knex('audit_events').truncate();
     const audit = testApp.app.get(AuditService);
     await testApp.app.get(TransactionRepository).run(async () => {
       await audit.record({
         actor: { kind: 'staff', id: staff.id },
         action: 'booking.refunded',
-        entity: { type: 'booking', id: 12 },
-        bookingId: 12,
+        entity: { type: 'booking', id: bookingId },
+        bookingId,
       });
       await audit.record({
         actor: { kind: 'customer', id: customerId },
         action: 'booking.claimed',
-        entity: { type: 'booking', id: 12 },
-        bookingId: 12,
+        entity: { type: 'booking', id: bookingId },
+        bookingId,
       });
     });
     const rows = await testApp
@@ -96,13 +101,13 @@ describe('AuditService (integration)', () => {
         actor_kind: 'staff',
         actor_staff_user_id: staff.id,
         actor_customer_id: null,
-        booking_id: 12,
+        booking_id: bookingId,
       },
       {
         actor_kind: 'customer',
         actor_staff_user_id: null,
         actor_customer_id: customerId,
-        booking_id: 12,
+        booking_id: bookingId,
       },
     ]);
   });

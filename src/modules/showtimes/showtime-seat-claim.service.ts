@@ -1,5 +1,3 @@
-import { Injectable } from '@nestjs/common';
-
 /**
  * The seam through which the hall lock learns about live seat claims (PRD "Halls and seat maps"
  * 4, design §9): which of these showtimes have a seat held or sold right now. Seating (U10)
@@ -8,18 +6,9 @@ import { Injectable } from '@nestjs/common';
  * showtimes that have not ended, and refuses the layout save with `HALL_IN_USE` for every one
  * named.
  *
- * `ShowtimesModule` binds `NoSeatClaims` until seat claims exist. U10 replaces that binding in
- * `ShowtimesModule`'s own `providers` (`useExisting` the implementation its module exports);
- * binding the token only in another module leaves this default in force.
+ * `ShowtimesModule` binds this token to seating's `SeatAvailabilityService` (`useExisting`, in
+ * its own `providers`), which has the same method; seating imports nothing from showtimes.
  */
 export abstract class ShowtimeSeatClaimService {
   abstract showtimeIdsWithLiveClaims(showtimeIds: readonly number[]): Promise<ReadonlySet<number>>;
-}
-
-/** Before seat claims exist, no seat is held or sold. */
-@Injectable()
-export class NoSeatClaims extends ShowtimeSeatClaimService {
-  showtimeIdsWithLiveClaims(): Promise<ReadonlySet<number>> {
-    return Promise.resolve(new Set<number>());
-  }
 }
