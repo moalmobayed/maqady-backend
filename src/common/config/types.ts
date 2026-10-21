@@ -28,6 +28,11 @@ export interface EncryptionConfig {
   readonly previousKey?: string;
 }
 
+/** Tickets (design §7.9): the key that signs QR payloads. Base64 text of at least 32 bytes. */
+export interface TicketsConfig {
+  readonly qrSigningKey: string;
+}
+
 /**
  * How email is sent (ADR 0004). `simulated` records every email as sent without contacting
  * anyone (local runs, CI); `resend` sends through Resend's HTTP API.
@@ -81,6 +86,7 @@ export interface AppConfig {
   readonly database: DatabaseConfig;
   readonly auth: AuthConfig;
   readonly encryption: EncryptionConfig;
+  readonly tickets: TicketsConfig;
   readonly rateLimits: RateLimitsConfig;
   readonly seatMap: SeatMapConfig;
   /** Where links in emails point, without a trailing slash, for example `https://maqady.example`. */

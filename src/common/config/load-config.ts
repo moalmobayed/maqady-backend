@@ -46,6 +46,18 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     // One secret for both audiences would let a customer token pass as a staff token.
     problems.push('JWT_SECRET_STAFF must differ from JWT_SECRET_CUSTOMER');
   }
+  if (problems.length === 0) {
+    // A leaked QR key must not forge an access token or open encrypted data, and the reverse.
+    const others = [
+      variables.JWT_SECRET_CUSTOMER,
+      variables.JWT_SECRET_STAFF,
+      variables.DATA_ENCRYPTION_KEY,
+      ...(variables.DATA_ENCRYPTION_PREVIOUS_KEY ? [variables.DATA_ENCRYPTION_PREVIOUS_KEY] : []),
+    ];
+    if (others.some((other) => sameSecret(variables.QR_SIGNING_KEY, other))) {
+      problems.push('QR_SIGNING_KEY must differ from the JWT secrets and the data encryption keys');
+    }
+  }
   if (problems.length > 0) {
     throw new ConfigValidationError(problems);
   }
@@ -66,6 +78,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
         ? { previousKey: variables.DATA_ENCRYPTION_PREVIOUS_KEY }
         : {}),
     },
+    tickets: { qrSigningKey: variables.QR_SIGNING_KEY },
     rateLimits: rateLimitsFrom(present),
     seatMap: {
       connectionsPerIp: variables.WS_CONNECTIONS_PER_IP ?? DEFAULT_WS_CONNECTIONS_PER_IP,

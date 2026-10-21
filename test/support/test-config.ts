@@ -19,6 +19,7 @@ export const TEST_FRONTEND_BASE_URL = 'http://localhost:5173';
 export const TEST_CUSTOMER_TOKEN_SECRET = Buffer.alloc(32, 0x11).toString('base64');
 export const TEST_STAFF_TOKEN_SECRET = Buffer.alloc(32, 0x22).toString('base64');
 export const TEST_DATA_ENCRYPTION_KEY = Buffer.alloc(32, 0x33).toString('base64');
+export const TEST_QR_SIGNING_KEY = Buffer.alloc(32, 0x44).toString('base64');
 
 /** Design §15: limits are raised in tests, so concurrency tests aren't throttled. */
 export const TEST_RATE_LIMIT_RULE = '100000/1m';
@@ -43,6 +44,7 @@ export function testEnvironment(): Record<string, string> {
     JWT_SECRET_CUSTOMER: TEST_CUSTOMER_TOKEN_SECRET,
     JWT_SECRET_STAFF: TEST_STAFF_TOKEN_SECRET,
     DATA_ENCRYPTION_KEY: TEST_DATA_ENCRYPTION_KEY,
+    QR_SIGNING_KEY: TEST_QR_SIGNING_KEY,
     FRONTEND_BASE_URL: TEST_FRONTEND_BASE_URL,
     EMAIL_DRIVER: 'simulated',
     STORAGE_DRIVER: 'local',

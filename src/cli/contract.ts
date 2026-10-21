@@ -25,6 +25,7 @@ const CONTRACT_CONFIG = loadConfig({
   JWT_SECRET_CUSTOMER: Buffer.alloc(32, 1).toString('base64'),
   JWT_SECRET_STAFF: Buffer.alloc(32, 2).toString('base64'),
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+  QR_SIGNING_KEY: Buffer.alloc(32, 4).toString('base64'),
   FRONTEND_BASE_URL: 'http://localhost:5173',
   EMAIL_DRIVER: 'simulated',
   // The local driver writes nothing until an upload, and the document never uploads.
