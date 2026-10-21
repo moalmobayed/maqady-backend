@@ -1,4 +1,4 @@
-import type { SeedDayHours, SeedMovie, SeedPerson, SeedTheater } from './types';
+import type { SeedDayHours, SeedMovie, SeedPerson, SeedShowtimeSlot, SeedTheater } from './types';
 
 /**
  * The development seed's data: invented Cairo and Giza theaters, people and movies. Every name
@@ -501,3 +501,53 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     colour: '#335c67',
   },
 ];
+
+/**
+ * The seed's showtimes, in each published theater's `Hall 1`: four slots a day everywhere (each
+ * leaves the 20-minute cleaning gap before the next, and ends before the theater closes), plus
+ * an after-midnight slot at Downtown and New Cairo that fits only their late Thursday and Friday
+ * nights. Every movie is Now showing; most play in several theaters.
+ */
+export const SEED_SHOWTIMES: readonly SeedShowtimeSlot[] = [
+  ...slots('Maqady Zamalek', [
+    'The Last Lighthouse',
+    'Little Falafel Detectives',
+    'Nile After Midnight',
+    'Sandstorm Protocol',
+  ]),
+  ...slots('Maqady Downtown', [
+    'Khan el-Khalili Blues',
+    'The Last Lighthouse',
+    'Red Sea Rising',
+    'Garden City Romance',
+  ]),
+  { theater: 'Maqady Downtown', startTime: '00:15', movie: 'Khan el-Khalili Blues' },
+  ...slots('Maqady Heliopolis', [
+    'Little Falafel Detectives',
+    'Garden City Romance',
+    'The Last Lighthouse',
+    'Red Sea Rising',
+  ]),
+  ...slots('Maqady New Cairo', [
+    'Sandstorm Protocol',
+    'Khan el-Khalili Blues',
+    'Garden City Romance',
+    'Nile After Midnight',
+  ]),
+  { theater: 'Maqady New Cairo', startTime: '00:20', movie: 'Nile After Midnight' },
+  ...slots('Maqady Sheikh Zayed', [
+    'Red Sea Rising',
+    'Sandstorm Protocol',
+    'Little Falafel Detectives',
+    'The Last Lighthouse',
+  ]),
+];
+
+/** The four daily slots of a theater, 13:30, 16:15, 19:00 and 21:45, with their movies. */
+function slots(theater: string, movies: readonly string[]): SeedShowtimeSlot[] {
+  return ['13:30', '16:15', '19:00', '21:45'].map((startTime, index) => ({
+    theater,
+    startTime,
+    movie: movies[index]!,
+  }));
+}
