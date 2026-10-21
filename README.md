@@ -78,6 +78,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | for `supabase` | The project URL (`https://<ref>.supabase.co`, no trailing slash) and the service role key, which never leaves the server |
 | `STORAGE_BUCKET` | yes, optional | The public-read Supabase bucket. Default `media` |
 | `LOCAL_STORAGE_DIR`, `LOCAL_STORAGE_PUBLIC_URL` | for `local`, optional | The directory the files go to (default `.media`, created on the first upload) and its public URL (default `http://localhost:<PORT>/media`) |
+| `WS_CONNECTIONS_PER_IP`, `WS_SUBSCRIPTIONS_PER_CONNECTION` | yes, optional | The live seat map's limits: open WebSocket connections per client address (default 20) and showtimes one connection may subscribe to (default 3) |
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all twelve |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
 | `SEED_ADMIN_PASSWORD` | `npm run seed` only, optional | The seed admin's password (default `Maqady-seed-2026`, development only); it must meet the password policy |
@@ -159,6 +160,8 @@ pages and the admin dashboard.
   from CommonJS only on Node 24.9+, and the suite must also run on Node 22 (design D-23).
 - `overrides` moves `@nestjs/swagger`'s pinned `js-yaml` to 5.4.2, which fixes a YAML-parsing
   advisory. Drop the override once the Swagger version in use depends on a fixed `js-yaml`.
+- The seat map runs on `@nestjs/websockets` and `@nestjs/platform-ws` (11.2.7, like the other
+  Nest packages) with `ws` pinned to the version `platform-ws` itself depends on (8.21.2).
 - `npm audit` reports a moderate advisory in `sprintf-js`, reached only through Jest's coverage
   tooling (dev only, no fix upstream). `npm audit --omit=dev` is clean.
 
@@ -205,8 +208,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   the admin routes.
 - `test/support/halls.ts` adds halls through the admin routes: `createHall()`,
   `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
-  `test/support/halls-probe.module.ts` adds a scripted layout participant beside the real ones,
-  standing in for the live-claim check holds will register (`HallLifecycleRegistry`).
+  `test/support/halls-probe.module.ts` adds a scripted layout participant beside the real ones
+  (`HallLifecycleRegistry`).
 - `test/support/showtimes.ts` schedules through the admin routes: `createSchedulingFixture()`
   (a theater open 12:00–01:00 with prices, an active hall, a Now showing movie) and
   `scheduleShowtime(testApp, admin, fixture, '2026-10-16', '19:30')`, plus `cancelShowtime()`.
@@ -222,6 +225,15 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `signInCustomer()` opens another session, `blockCustomer()` blocks through `CustomerService`,
   and `customerLinkToken(text, '/verify-email')` reads a link's token from an email the
   recording sender caught.
+- `test/support/holds.ts` (U10) builds holds through the real routes:
+  `bookableShowtime(testApp, admin)` (a published theater, its active hall with `SMALL_LAYOUT`,
+  4 × 8 with `A1` a wheelchair space and `D8` a gap, a Now showing movie, a showtime on
+  2026-10-11 at 19:30, so the suite's clock must be earlier), `holdSeats()` / `expectHold()`
+  (`POST /showtimes/{id}/holds` as a guest, a customer, with a hold code or a key),
+  `heldBookingIds()` (real booking ids for seams that take them), and `seatMapClient(testApp)`, a
+  `ws` client on the listening app that waits for messages (`next()`, `closed()`), never for
+  time. `test/support/seat-map-probe.module.ts` publishes a seat event in a transaction that
+  rolls back.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -288,10 +300,12 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   and read showtimes through `ShowtimeReadService` (`findById(s)` in any status; `listScheduled`
   by movie or theater over up to 31 cinema dates; `nextScheduledPerMovie` for the ticker;
   `movieIdsScheduled`; `listUnendedInHall`), each a fixed number of queries; never query
-  `showtimes`. Bookings plug in by replacing, in `ShowtimesModule`'s own `providers` (a binding
-  made only in the bookings module has no effect: the module's own provider wins), three seams
-  it binds to no-bookings defaults: `ShowtimeCancellationService` (refunds on cancel), `ShowtimeTicketHolderService`
-  (whom a move notifies) and `ShowtimeSeatClaimService` (live claims behind `HALL_IN_USE`).
+  `showtimes`; `lockForShare(id)` locks one in a hold's transaction. Bookings plug in by
+  replacing, in `ShowtimesModule`'s own `providers` (a binding made only in the bookings module
+  has no effect: the module's own provider wins), the seams it binds to no-bookings defaults:
+  `ShowtimeCancellationService` (refunds on cancel, U14) and `ShowtimeTicketHolderService` (whom
+  a move notifies, U11). `ShowtimeSeatClaimService` (live claims behind `HALL_IN_USE`) is bound
+  to seating's `SeatAvailabilityService` (U10).
   Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
   `toShowtimePricesResponse()`).
 - **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`): the public reads
@@ -301,6 +315,49 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   defaults answer nothing until showtimes and halls exist; replace the provider in
   `DiscoveryModule` to fill them. `DiscoveryResponseMapper` builds `MovieCard` and
   `TheaterCard` for other public reads.
+
+- **Seats and holds** (`modules/seating`, `modules/bookings`, `docs/gh-11-holds/spec.md`).
+  Seating owns `seat_claims` and `hold_refusals` and depends on no feature module:
+  `SeatClaimService.write({ now, claim?, release })` is the only way to claim or free seats (one
+  `INSERT … ON CONFLICT` per showtime, showtime then label order, inside the open transaction,
+  after the showtime, hall, principal and bookings are locked, design §7.1);
+  `SeatAvailabilityService` answers the snapshot, taken counts and live-claim checks from the
+  `Clock`; `SeatEventPublisher.publishAfterCommit()` is how a seat event reaches the map. Bookings
+  owns `bookings` and `booking_seats`: `HoldsService` (create, claim, release),
+  `BookingReadService.get(ref, access)` (owner, or a hold code while held; `NOT_FOUND` for anyone
+  else), and `booking-status.sql.ts`, the one place the clock-derived statuses (§7.4) live, as
+  code (`bookingStatusOf()`) and as SQL (`bookingStatusPredicate()`). A hold ends from its stored
+  `hold_expires_at`; nothing runs when it does. `TransactionRepository.afterRollback()` runs work
+  once a transaction rolled back (the refusal row of a refused hold).
+
+## Live seat map
+
+`ws://<host>/ws` (plain WebSocket, `@nestjs/platform-ws`, outside `/api/v1`), JSON messages
+`{ "event", "data" }`, no sign-in: seat labels only, never who holds a seat (design §12).
+
+| Direction | Event | Data |
+|---|---|---|
+| Client → server | `subscribe` | `{ showtimeId }`: answered with a `snapshot`, then live events. Again for the same showtime: a fresh snapshot |
+| Client → server | `unsubscribe` | `{ showtimeId }` |
+| Server → client | `snapshot` | `{ showtimeId, serverTime, seats: [{ label, state: "held" \| "booked", heldUntil? }] }` (taken seats only, by label; `heldUntil` on held seats) |
+| Server → client | `seat.held` | `{ showtimeId, labels, heldUntil }` |
+| Server → client | `seat.released` | `{ showtimeId, labels }` (a released or replaced hold) |
+| Server → client | `seat.booked` | `{ showtimeId, labels }` (from checkout and the box office, U11 and U13) |
+| Server → client | `error` | `{ code }`: `VALIDATION_FAILED` (a `showtimeId` that is not a positive integer), `RATE_LIMITED` (a 4th subscription; the connection stays), `FORBIDDEN` (origin) |
+
+- The `Origin` header must be one of `CORS_ORIGINS`; otherwise `error FORBIDDEN` and close
+  `1008`. More than `WS_CONNECTIONS_PER_IP` open connections from one address: `error
+  RATE_LIMITED` and close `1013`. A message over 4 KB closes the socket (`1009`); messages that
+  are not JSON or name an unknown event are ignored.
+- An expiry is never announced: free a held seat when its `heldUntil` passes, correcting the
+  client's clock with `serverTime`. Events are sent only after the transaction that caused them
+  commits; a reconnect must subscribe again and gets a fresh snapshot.
+- The server pings every 30 seconds and drops a client that did not answer the previous ping.
+
+```bash
+npx wscat -c ws://localhost:3000/ws -H 'Origin: http://localhost:5173'
+> {"event":"subscribe","data":{"showtimeId":81}}
+```
 
 ## Database and migrations
 
@@ -355,8 +412,9 @@ src/
                                          rate-limit, audit
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
                                          (credentials), staff, media, theaters, catalog,
-                                         customers, halls, discovery, showtimes, seed (the
-                                         development seed)
+                                         customers, halls, discovery, showtimes, seating (seat
+                                         claims and the /ws seat map), bookings (holds), seed
+                                         (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)
