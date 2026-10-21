@@ -1,5 +1,4 @@
 # maqady-backend
-
 The API behind **Maqady**, a cinema seat-booking platform for Cairo cinemas: the customer
 website (browse movies and theaters, hold seats, pay, tickets) and the admin dashboard
 (catalog, theaters and halls, showtimes, bookings, box office, analytics).
