@@ -36,6 +36,41 @@ const EXAMPLE_DETAILS: Partial<Record<ErrorCode, ErrorDetails>> = {
   },
   HALL_NOT_DELETABLE: { reasons: ['has_showtimes'] },
   HALL_NOT_RETIRABLE: { reasons: ['has_future_showtimes'] },
+  SHOWTIME_CONFLICT: {
+    conflicts: [
+      {
+        showtimeId: 81,
+        movieTitle: 'The Nile Light',
+        startsAt: '2026-10-16T19:30:00+03:00',
+        endsAt: '2026-10-16T21:38:00+03:00',
+        cleaningEndsAt: '2026-10-16T21:58:00+03:00',
+      },
+    ],
+  },
+  SHOWTIME_NOT_SCHEDULABLE: { reasons: ['movie_not_now_showing'] },
+  SHOWTIMES_NOT_CREATED: {
+    results: [
+      {
+        cinemaDate: '2026-10-16',
+        result: 'conflict',
+        conflicts: [
+          {
+            showtimeId: 81,
+            movieTitle: 'The Nile Light',
+            startsAt: '2026-10-16T19:30:00+03:00',
+            endsAt: '2026-10-16T21:38:00+03:00',
+            cleaningEndsAt: '2026-10-16T21:58:00+03:00',
+          },
+        ],
+      },
+      { cinemaDate: '2026-10-17', result: 'outside_opening_hours', conflicts: [] },
+    ],
+  },
+  SHOWTIME_NOT_EDITABLE: { reason: 'started' },
+  OUTSIDE_OPENING_HOURS: {
+    window: { opensAt: '2026-10-16T12:00:00+03:00', closesAt: '2026-10-17T01:00:00+03:00' },
+  },
+  TIME_DOES_NOT_EXIST: { date: '2026-04-24', time: '00:30', cinemaDate: '2026-04-23' },
   IMAGE_TOO_LARGE: { maxBytes: 10485760 },
   UNSUPPORTED_IMAGE_TYPE: { allowed: ['jpeg', 'png'] },
   IMAGE_TOO_MANY_PIXELS: { maxPixels: 40000000, width: 8000, height: 6000 },

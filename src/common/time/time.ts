@@ -1,7 +1,9 @@
 import { DateTime } from 'luxon';
 import { AppError } from '../errors/app-error';
 import {
+  CAIRO_DISPLAY_FORMAT,
   CAIRO_ISO_FORMAT,
+  CAIRO_WALL_CLOCK_FORMAT,
   CAIRO_TIME_ZONE,
   CALENDAR_DATE_PATTERN,
   CINEMA_DAY_START_HOUR,
@@ -125,6 +127,21 @@ export function cinemaMinuteToInstant(cinemaDate: CalendarDate, minute: number):
 /** An instant as the API writes it: Cairo time with its offset, `2026-10-16T19:30:00+03:00`. */
 export function formatCairoIso(instant: Date): string {
   return DateTime.fromJSDate(instant, { zone: CAIRO_TIME_ZONE }).toFormat(CAIRO_ISO_FORMAT);
+}
+
+/**
+ * An instant as messages show it to people: Cairo wall clock with the weekday, in English,
+ * `Fri 16 Oct 2026, 19:30`. Never parsed back; the API itself always writes `formatCairoIso`.
+ */
+export function formatCairoDisplay(instant: Date): string {
+  return DateTime.fromJSDate(instant, { zone: CAIRO_TIME_ZONE })
+    .setLocale('en-GB')
+    .toFormat(CAIRO_DISPLAY_FORMAT);
+}
+
+/** The Cairo wall-clock time of day of an instant, `HH:mm`: 2026-10-17 00:30 Cairo is `00:30`. */
+export function cairoWallClockOf(instant: Date): string {
+  return DateTime.fromJSDate(instant, { zone: CAIRO_TIME_ZONE }).toFormat(CAIRO_WALL_CLOCK_FORMAT);
 }
 
 /** The instant a fixed amount of real time after another, for expiries such as "24 hours". */

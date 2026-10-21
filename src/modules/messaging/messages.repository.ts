@@ -33,8 +33,31 @@ export class MessagesRepository {
     return id;
   }
 
+  /** Reserves `count` ids from the same sequence in one query, for `queueMany()`. */
+  async nextIds(count: number): Promise<number[]> {
+    if (!Number.isInteger(count) || count < 1) {
+      throw new AppError('INTERNAL', 'nextIds() reserves at least one id.');
+    }
+    const { rows } = await this.db
+      .executor()
+      .raw<{ rows: { id: number }[] }>(
+        "SELECT nextval(pg_get_serial_sequence('messages', 'id'))::bigint AS id FROM generate_series(1, ?)",
+        [count],
+      );
+    if (rows.length !== count) throw new AppError('INTERNAL', 'Too few message ids were reserved.');
+    return rows.map((row) => row.id).sort((a, b) => a - b);
+  }
+
   async insert(row: NewMessageRow): Promise<void> {
     await this.db.executor()('messages').insert(row);
+  }
+
+  /** Inserts several messages in one multi-row statement. */
+  async insertMany(rows: readonly NewMessageRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .executor()('messages')
+      .insert([...rows]);
   }
 
   /**

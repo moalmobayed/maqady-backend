@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'supertest';
+import { createPublishedMovie } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
-import {
-  addActiveHall,
-  createHall,
-  HALLS,
-  setHallStatus,
-  theaterHallsPath,
-} from '../../../support/halls';
+import { createHall, HALLS, setHallStatus, theaterHallsPath } from '../../../support/halls';
 import { HallLifecycleProbe, HallsProbeModule } from '../../../support/halls-probe.module';
 import { listHttpRoutes, samplePath } from '../../../support/routes';
+import {
+  cancelShowtime,
+  createSchedulingFixture,
+  scheduleShowtime,
+} from '../../../support/showtimes';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import { createTheater, prepareTheater, THEATERS } from '../../../support/theaters';
@@ -536,11 +536,22 @@ describe('Admin halls (integration)', () => {
       );
     });
 
-    it('refuses deleting a hall a deletion blocker keeps, and shows it as not deletable', async () => {
+    it('refuses deleting a hall that ever had a showtime, and shows it as not deletable', async () => {
       const theaterId = await createTheater(testApp, admin.authorization);
+      await prepareTheater(testApp, admin.authorization, theaterId);
       const kept = await createHall(testApp, admin.authorization, theaterId, 'Hall A');
+      await setHallStatus(testApp, admin.authorization, kept, 'active');
       await createHall(testApp, admin.authorization, theaterId, 'Hall B');
-      probe.withShowtimes.add(kept);
+      const { id: movieId } = await createPublishedMovie(testApp, admin);
+      const showtime = await scheduleShowtime(
+        testApp,
+        admin,
+        { movieId, hallId: kept },
+        '2026-10-17',
+        '19:30',
+      );
+      // Even a cancelled showtime keeps the hall: it is history.
+      await cancelShowtime(testApp, admin, showtime.id);
       const refused = await testApp
         .http()
         .delete(`${HALLS}/${kept}`)
@@ -558,10 +569,10 @@ describe('Admin halls (integration)', () => {
       expect(await testApp.knex('halls').where({ id: kept }).first()).toBeDefined();
     });
 
-    it('refuses retiring a hall a retirement blocker keeps', async () => {
-      const theaterId = await createTheater(testApp, admin.authorization);
-      const id = await addActiveHall(testApp, admin.authorization, theaterId);
-      probe.withFutureShowtimes.add(id);
+    it('refuses retiring a hall with a showtime that has not ended', async () => {
+      const fixture = await createSchedulingFixture(testApp, admin);
+      const id = fixture.hallId;
+      await scheduleShowtime(testApp, admin, fixture, '2026-10-17', '19:30');
       const refused = await patch(id, { name: 'Renamed', status: 'retired' });
       expectError(refused, 409, 'HALL_NOT_RETIRABLE');
       expect(refused.body.error.details).toEqual({ reasons: ['has_future_showtimes'] });

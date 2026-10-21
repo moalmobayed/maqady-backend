@@ -83,6 +83,17 @@ export interface QueuedMessage {
   readonly id: number;
 }
 
+/** A checked message with its stored copy rendered, before it has an id. */
+export interface PreparedMessage {
+  readonly channel: MessageChannel;
+  readonly template: string;
+  readonly recipient: string;
+  readonly stored: RenderedMessage;
+  /** The template parameters as JSON, encrypted once the id is known. */
+  readonly payload: string;
+  readonly related: RelatedRecords;
+}
+
 /** A new `messages` row, as `MessagesRepository.insert()` writes it. */
 export interface NewMessageRow {
   readonly id: number;

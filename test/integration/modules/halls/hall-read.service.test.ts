@@ -142,6 +142,31 @@ describe('HallReadService (integration)', () => {
     expect(one).toBe(3);
   });
 
+  it('reads many halls by id in any status, in three queries whatever their number', async () => {
+    const theaterId = await createTheater(testApp, admin.authorization);
+    const draft = await createHall(testApp, admin.authorization, theaterId, 'Hall 1');
+    const active = await addActiveHall(testApp, admin.authorization, theaterId);
+    expect((await putLayout(draft, LAYOUT)).status).toBe(200);
+
+    const found = await reads.findByIds([draft, active, draft, 999]);
+    expect([...found.keys()].sort((a, b) => a - b)).toEqual([draft, active]);
+    expect(found.get(draft)).toEqual(
+      expect.objectContaining({ name: 'Hall 1', status: 'draft', seatCount: 31 }),
+    );
+    expect(found.get(active)).toEqual(
+      expect.objectContaining({ status: 'active', seatCount: 192 }),
+    );
+    expect(await reads.findByIds([])).toEqual(new Map());
+
+    const ids = [draft, active];
+    for (let index = 0; index < 8; index += 1) {
+      ids.push(await createHall(testApp, admin.authorization, theaterId));
+    }
+    expect(await queriesOf(() => reads.findByIds([draft]))).toBe(3);
+    expect(await queriesOf(() => reads.findByIds(ids))).toBe(3);
+    expect(await queriesOf(() => reads.findByIds([]))).toBe(0);
+  });
+
   it('holds the hall FOR SHARE, so a layout save waits for the lock holder and then succeeds', async () => {
     const theaterId = await createTheater(testApp, admin.authorization);
     const id = await createHall(testApp, admin.authorization, theaterId);

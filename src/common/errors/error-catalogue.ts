@@ -116,7 +116,25 @@ export const ERROR_CATALOGUE = {
     status: 409,
     message: 'This showtime overlaps another in the same hall.',
     description:
-      'Showtimes in a hall must be at least 20 minutes apart, cleaning included. `details` names the overlapping showtime.',
+      'Showtimes in a hall must be at least 20 minutes apart, cleaning included. `details.conflicts` names the overlapping showtimes, each as `{ showtimeId, movieTitle, startsAt, endsAt, cleaningEndsAt }` (Cairo time with its offset).',
+  },
+  SHOWTIME_NOT_SCHEDULABLE: {
+    status: 409,
+    message: 'This movie and hall cannot be scheduled.',
+    description:
+      "Only a Now showing movie in an active hall can be scheduled, with prices (the request's, or the theater's defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.",
+  },
+  SHOWTIMES_NOT_CREATED: {
+    status: 409,
+    message: 'None of these showtimes could be created.',
+    description:
+      'Nothing was created: no date fitted, or one did not and `skipUnavailable` was false. `details.results` gives every date as `{ cinemaDate, result, conflicts }`, where `result` is `available` (it would have fitted), `conflict`, `outside_opening_hours`, `time_does_not_exist` or `in_past`, and `conflicts` lists `{ showtimeId, movieTitle, startsAt, endsAt, cleaningEndsAt }`. Check the dates with `POST /admin/showtime-checks` and retry with a new key.',
+  },
+  SHOWTIME_NOT_EDITABLE: {
+    status: 409,
+    message: 'This showtime can no longer be changed this way.',
+    description:
+      'A showtime is moved and re-priced only before it starts, and cancelled only before it ends; a cancelled showtime is final. `details.reason` is `started`, `ended` or `cancelled`.',
   },
   HALL_IN_USE: {
     status: 409,
@@ -229,12 +247,13 @@ export const ERROR_CATALOGUE = {
     status: 422,
     message: 'This time does not exist in Cairo that night.',
     description:
-      'The clocks skip this hour for summer time. `details` echoes the `date` and `time`; pick a time after the change.',
+      'The clocks skip this hour for summer time. `details` echoes the calendar `date` and the `time` (and, for a showtime, its `cinemaDate`); pick a time after the change.',
   },
   OUTSIDE_OPENING_HOURS: {
     status: 422,
     message: 'This time is outside the theater opening hours.',
-    description: 'A showtime must start and end inside the opening hours of its cinema date.',
+    description:
+      "A showtime must start and end inside the opening hours of its cinema date (its cleaning may run past closing). `details.window` gives that date's `{ opensAt, closesAt }` in Cairo time with its offset, or null when the theater is closed or has no hours that date.",
   },
   IMAGE_TOO_MANY_PIXELS: {
     status: 422,

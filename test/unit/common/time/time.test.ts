@@ -4,7 +4,9 @@ import {
   addToInstant,
   cinemaDateOf,
   cinemaDayBounds,
+  cairoWallClockOf,
   cinemaMinuteToInstant,
+  formatCairoDisplay,
   formatCairoIso,
   isCalendarDate,
   isIsoInstant,
@@ -136,6 +138,30 @@ describe('formatCairoIso', () => {
   it('writes Cairo time with its offset and no milliseconds', () => {
     expect(formatCairoIso(at('2026-10-16T16:30:00.123Z'))).toBe('2026-10-16T19:30:00+03:00');
     expect(formatCairoIso(at('2026-01-10T17:30:00Z'))).toBe('2026-01-10T19:30:00+02:00');
+  });
+});
+
+describe('formatCairoDisplay', () => {
+  it('writes the Cairo wall clock with the weekday, in summer and in winter time', () => {
+    expect(formatCairoDisplay(at('2026-10-16T16:30:00Z'))).toBe('Fri 16 Oct 2026, 19:30');
+    expect(formatCairoDisplay(at('2026-01-10T17:30:00Z'))).toBe('Sat 10 Jan 2026, 19:30');
+  });
+
+  it('shows an after-midnight start on its own calendar day', () => {
+    expect(formatCairoDisplay(at('2026-10-16T21:30:00Z'))).toBe('Sat 17 Oct 2026, 00:30');
+  });
+});
+
+describe('cairoWallClockOf', () => {
+  it('gives the Cairo time of day, HH:mm, whatever the offset', () => {
+    expect(cairoWallClockOf(at('2026-10-16T16:30:00Z'))).toBe('19:30');
+    expect(cairoWallClockOf(at('2026-10-16T21:30:00Z'))).toBe('00:30');
+    expect(cairoWallClockOf(at('2026-01-10T17:05:00Z'))).toBe('19:05');
+  });
+
+  it('gives both occurrences of the fall-back hour the same wall clock', () => {
+    expect(cairoWallClockOf(at('2026-10-29T20:30:00Z'))).toBe('23:30');
+    expect(cairoWallClockOf(at('2026-10-29T21:30:00Z'))).toBe('23:30');
   });
 });
 

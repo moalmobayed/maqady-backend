@@ -17758,6 +17758,1362 @@ paths:
       tags:
         - Discovery
       security: []
+  /admin/showtimes:
+    get:
+      description: 'Admin only: the Showtimes page (PRD A5). For one theater and cinema date (06:00 to 06:00 Cairo time): the date''s opening hours (`window`, null when closed), the hall rows (every active hall, plus any other hall with a showtime that date, by name), and a page of the showtimes by start, scheduled and cancelled, with `hallId` and `status` filters. Cursor-paged.'
+      operationId: listShowtimes
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: theaterId
+          required: true
+          in: query
+          description: The theater whose timeline to show.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: date
+          required: true
+          in: query
+          description: The cinema date, `YYYY-MM-DD`. A cinema day runs from 06:00 to 06:00, so a showtime at 00:30 on 17 Oct is on the 16 Oct timeline.
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: hallId
+          required: false
+          in: query
+          description: Only showtimes in this hall.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 3
+            type: integer
+        - name: status
+          required: false
+          in: query
+          description: Only showtimes in this status. Both are listed by default.
+          schema:
+            $ref: '#/components/schemas/ShowtimeStatus'
+      responses:
+        '200':
+          description: The timeline and one page of showtimes
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShowtimeTimelineResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A theater's showtime timeline for one cinema date
+      tags:
+        - 'Admin: showtimes'
+      security:
+        - staff: []
+    post:
+      description: |-
+        Admin only: "Create" in the scheduling dialog. Schedules one Now showing movie in one active hall at one start time on 1 to 31 cinema dates, each date in its own savepoint, with the same checks as `POST /admin/showtime-checks` (the database itself refuses two showtimes in a hall less than 20 minutes apart, cleaning included). Requires an `Idempotency-Key`.
+
+        - Prices: `prices`, or else the theater's default prices (`SHOWTIME_NOT_SCHEDULABLE` `no_prices` when it has none). Seat capacity: the hall's seat count.
+        - `skipUnavailable: true` creates the dates that fit and reports the others; `false` creates all of them or none.
+        - When nothing is created (or one date fails with `skipUnavailable: false`) the answer is `SHOWTIMES_NOT_CREATED` with every date's result, nothing is written, and the key is not used up: retry after fixing.
+        - Each new showtime is recorded in the activity log.
+      operationId: createShowtimes
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShowtimesRequest'
+      responses:
+        '201':
+          description: Every date, in date order, with the showtimes created
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShowtimeBatchResponse'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `SHOWTIME_NOT_SCHEDULABLE`: Only a Now showing movie in an active hall can be scheduled, with prices (the request's, or the theater's defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.
+
+            `SHOWTIMES_NOT_CREATED`: Nothing was created: no date fitted, or one did not and `skipUnavailable` was false. `details.results` gives every date as `{ cinemaDate, result, conflicts }`, where `result` is `available` (it would have fitted), `conflict`, `outside_opening_hours`, `time_does_not_exist` or `in_past`, and `conflicts` lists `{ showtimeId, movieTitle, startsAt, endsAt, cleaningEndsAt }`. Check the dates with `POST /admin/showtime-checks` and retry with a new key.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SHOWTIME_NOT_SCHEDULABLE:
+                  summary: SHOWTIME_NOT_SCHEDULABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_SCHEDULABLE
+                      message: This movie and hall cannot be scheduled.
+                      details:
+                        reasons:
+                          - movie_not_now_showing
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SHOWTIMES_NOT_CREATED:
+                  summary: SHOWTIMES_NOT_CREATED
+                  value:
+                    error:
+                      code: SHOWTIMES_NOT_CREATED
+                      message: None of these showtimes could be created.
+                      details:
+                        results:
+                          - cinemaDate: '2026-10-16'
+                            result: conflict
+                            conflicts:
+                              - showtimeId: 81
+                                movieTitle: The Nile Light
+                                startsAt: '2026-10-16T19:30:00+03:00'
+                                endsAt: '2026-10-16T21:38:00+03:00'
+                                cleaningEndsAt: '2026-10-16T21:58:00+03:00'
+                          - cinemaDate: '2026-10-17'
+                            result: outside_opening_hours
+                            conflicts: []
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Schedule a movie on one or more dates
+      tags:
+        - 'Admin: showtimes'
+      security:
+        - staff: []
+  /admin/showtimes/{id}:
+    get:
+      description: 'Admin only: the manage panel. The showtime in any status, with its movie, theater, hall, times, prices, seat capacity and what can still be done with it (`movable`, `cancellable`).'
+      operationId: getShowtime
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Showtime id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+      responses:
+        '200':
+          description: The showtime
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminShowtimeDetailResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Get a showtime
+      tags:
+        - 'Admin: showtimes'
+      security:
+        - staff: []
+    patch:
+      description: |-
+        Admin only: the manage panel's actions, one per request. Requires an `Idempotency-Key`.
+
+        - **Move**: `startTime` (and `cinemaDate` for another date), in the same hall, before the showtime starts. Every check runs again with the movie's current runtime: Now showing movie and active hall (`SHOWTIME_NOT_SCHEDULABLE`), a start that exists that night (`TIME_DOES_NOT_EXIST`) and is in the future (`VALIDATION_FAILED`), inside the opening hours (`OUTSIDE_OPENING_HOURS` with `details.window`), 20 minutes from every other showtime in the hall (`SHOWTIME_CONFLICT` naming them). Every ticket holder is sent the new time by email, and by SMS when they gave a phone.
+        - **Prices**: `prices`, before the showtime starts; for new holds only.
+        - **Cancel**: `status: cancelled` with `cancelReason`, alone, until the showtime ends. Confirmed bookings are refunded and their holders told. Final; the slot is free again.
+        - A started showtime is not moved or re-priced, an ended one is not cancelled, a cancelled one is not changed (`SHOWTIME_NOT_EDITABLE` with `details.reason`).
+        - A request that changes nothing answers `200` and records nothing; anything else is recorded in the activity log.
+      operationId: updateShowtime
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Showtime id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateShowtimeRequest'
+      responses:
+        '200':
+          description: The showtime after the change
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminShowtimeResponse'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: |-
+            `SHOWTIME_NOT_SCHEDULABLE`: Only a Now showing movie in an active hall can be scheduled, with prices (the request's, or the theater's defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.
+
+            `SHOWTIME_NOT_EDITABLE`: A showtime is moved and re-priced only before it starts, and cancelled only before it ends; a cancelled showtime is final. `details.reason` is `started`, `ended` or `cancelled`.
+
+            `SHOWTIME_CONFLICT`: Showtimes in a hall must be at least 20 minutes apart, cleaning included. `details.conflicts` names the overlapping showtimes, each as `{ showtimeId, movieTitle, startsAt, endsAt, cleaningEndsAt }` (Cairo time with its offset).
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SHOWTIME_NOT_SCHEDULABLE:
+                  summary: SHOWTIME_NOT_SCHEDULABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_SCHEDULABLE
+                      message: This movie and hall cannot be scheduled.
+                      details:
+                        reasons:
+                          - movie_not_now_showing
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SHOWTIME_NOT_EDITABLE:
+                  summary: SHOWTIME_NOT_EDITABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_EDITABLE
+                      message: This showtime can no longer be changed this way.
+                      details:
+                        reason: started
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SHOWTIME_CONFLICT:
+                  summary: SHOWTIME_CONFLICT
+                  value:
+                    error:
+                      code: SHOWTIME_CONFLICT
+                      message: This showtime overlaps another in the same hall.
+                      details:
+                        conflicts:
+                          - showtimeId: 81
+                            movieTitle: The Nile Light
+                            startsAt: '2026-10-16T19:30:00+03:00'
+                            endsAt: '2026-10-16T21:38:00+03:00'
+                            cleaningEndsAt: '2026-10-16T21:58:00+03:00'
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: |-
+            `OUTSIDE_OPENING_HOURS`: A showtime must start and end inside the opening hours of its cinema date (its cleaning may run past closing). `details.window` gives that date's `{ opensAt, closesAt }` in Cairo time with its offset, or null when the theater is closed or has no hours that date.
+
+            `TIME_DOES_NOT_EXIST`: The clocks skip this hour for summer time. `details` echoes the calendar `date` and the `time` (and, for a showtime, its `cinemaDate`); pick a time after the change.
+
+            `IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                OUTSIDE_OPENING_HOURS:
+                  summary: OUTSIDE_OPENING_HOURS
+                  value:
+                    error:
+                      code: OUTSIDE_OPENING_HOURS
+                      message: This time is outside the theater opening hours.
+                      details:
+                        window:
+                          opensAt: '2026-10-16T12:00:00+03:00'
+                          closesAt: '2026-10-17T01:00:00+03:00'
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                TIME_DOES_NOT_EXIST:
+                  summary: TIME_DOES_NOT_EXIST
+                  value:
+                    error:
+                      code: TIME_DOES_NOT_EXIST
+                      message: This time does not exist in Cairo that night.
+                      details:
+                        date: '2026-04-24'
+                        time: '00:30'
+                        cinemaDate: '2026-04-23'
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Move, re-price or cancel a showtime
+      tags:
+        - 'Admin: showtimes'
+      security:
+        - staff: []
+  /admin/showtime-checks:
+    post:
+      description: |-
+        Admin only: the date chips of the scheduling dialog. Runs every scheduling check for one movie in one hall at one start time on each date, and writes nothing at all (an `Idempotency-Key` is ignored).
+
+        - The movie must be Now showing and the hall active (`SHOWTIME_NOT_SCHEDULABLE` with `details.reasons`); prices are not checked here.
+        - Each date gets the first check that fails, in this order: `time_does_not_exist` (the start is skipped by the summer-time change that night), `in_past`, `outside_opening_hours` (the showtime must start and end inside that cinema date's opening hours; its 20-minute cleaning may run past closing; a closed date fails), `conflict` (closer than 20 minutes, cleaning included, to another scheduled showtime in the hall, named in `conflicts`); otherwise `available`.
+        - `00:00`–`05:59` is after midnight: 16 Oct + `00:30` starts on 17 Oct at 00:30 and belongs to the 16 Oct cinema date.
+        - A date that is not available gets up to 3 `suggestions`: free starts on the 5-minute grid that pass every check, nearest to the requested time first.
+        - The answer is a forecast: `POST /admin/showtimes` checks again when it writes.
+      operationId: checkShowtimes
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckShowtimesRequest'
+      responses:
+        '200':
+          description: Every date, in date order
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShowtimeCheckResponse'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`SHOWTIME_NOT_SCHEDULABLE`: Only a Now showing movie in an active hall can be scheduled, with prices (the request''s, or the theater''s defaults). `details.reasons` lists what is wrong, from `movie_not_now_showing`, `hall_not_active` and `no_prices`.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SHOWTIME_NOT_SCHEDULABLE:
+                  summary: SHOWTIME_NOT_SCHEDULABLE
+                  value:
+                    error:
+                      code: SHOWTIME_NOT_SCHEDULABLE
+                      message: This movie and hall cannot be scheduled.
+                      details:
+                        reasons:
+                          - movie_not_now_showing
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Check showtimes before creating them (dry run)
+      tags:
+        - 'Admin: showtimes'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -22127,6 +23483,846 @@ components:
         - weeklyHours
         - specialDates
         - hallCount
+    ShowtimeStatus:
+      type: string
+      enum:
+        - scheduled
+        - cancelled
+    ShowtimeTheaterRefResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+          description: Theater id.
+        name:
+          type: string
+          nullable: false
+          example: Zamalek Cinema
+          description: Name.
+        status:
+          nullable: false
+          example: active
+          description: Customers see showtimes of `active` theaters only.
+          allOf:
+            - $ref: '#/components/schemas/TheaterStatus'
+      required:
+        - id
+        - name
+        - status
+    OpeningWindowResponse:
+      type: object
+      properties:
+        opensAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T12:00:00+03:00'
+          description: Opening, Cairo time. A showtime starts at or after it.
+        closesAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-17T01:00:00+03:00'
+          description: Closing, Cairo time. A showtime ends at or before it (its cleaning may run past).
+      required:
+        - opensAt
+        - closesAt
+    TimelineHallResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Hall id.
+        name:
+          type: string
+          nullable: false
+          example: Hall 3
+          description: Hall name.
+        status:
+          nullable: false
+          example: active
+          description: Only `active` halls can be scheduled; others appear when they have a showtime that date.
+          allOf:
+            - $ref: '#/components/schemas/HallStatus'
+        seatCount:
+          type: integer
+          minimum: 1
+          example: 190
+          description: Seats in its layout now.
+      required:
+        - id
+        - name
+        - status
+        - seatCount
+    ShowtimeMovieRefResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+          description: Movie id.
+        title:
+          type: string
+          nullable: false
+          example: The Nile Light
+          description: Title.
+        status:
+          nullable: false
+          example: now_showing
+          description: The movie status now. Only a Now showing movie can be scheduled or moved.
+          allOf:
+            - $ref: '#/components/schemas/CatalogMovieStatus'
+        runtimeMinutes:
+          type: integer
+          nullable: true
+          example: 128
+          description: 'The movie''s runtime now. A showtime keeps the runtime it was scheduled (or last moved) with: compare `endsAt − startsAt`.'
+        ageRating:
+          nullable: false
+          example: 12+
+          description: Age certificate.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+      required:
+        - id
+        - title
+        - status
+        - runtimeMinutes
+        - ageRating
+    ShowtimeHallRefResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+          description: Hall id.
+        name:
+          type: string
+          nullable: false
+          example: Hall 3
+          description: Hall name.
+      required:
+        - id
+        - name
+    ShowtimeCancelReason:
+      type: string
+      enum:
+        - technical_issue
+        - print_not_delivered
+        - low_sales
+        - private_event
+      description: Why it was cancelled; null while scheduled.
+    ShowtimePrices:
+      type: object
+      properties:
+        front:
+          description: Front rows (nearest the screen).
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        middle:
+          description: Middle rows.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        back:
+          description: Back rows.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - front
+        - middle
+        - back
+    AdminShowtimeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 81
+          description: Showtime id.
+        movie:
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeMovieRefResponse'
+        theaterId:
+          type: integer
+          example: 1
+          description: The theater.
+        hall:
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:30:00+03:00'
+          description: Start, Cairo time with its offset.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:38:00+03:00'
+          description: 'End: the start plus the runtime, in real minutes (a summer-time change never shortens it).'
+        cleaningEndsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:58:00+03:00'
+          description: 'When the hall is clean again: 20 minutes after the end. The next showtime in the hall starts at this time at the earliest.'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: 'The cinema date, `YYYY-MM-DD`: a cinema day runs from 06:00 to 06:00 Cairo time, so a 00:30 start belongs to the day before.'
+        startTime:
+          type: string
+          nullable: false
+          example: '19:30'
+          description: The Cairo wall-clock start, `HH:mm`, as an admin enters it.
+        status:
+          nullable: false
+          example: scheduled
+          description: '`scheduled`: on the timeline (started and ended follow from the clock: `hasStarted`, `hasEnded`). `cancelled`: called off; final, and its slot is free again.'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeStatus'
+        cancelReason:
+          nullable: true
+          example: null
+          description: Why it was cancelled; null while scheduled.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeCancelReason'
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: When it was cancelled; null while scheduled.
+        prices:
+          description: Price per seat zone.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePrices'
+        fromPrice:
+          description: 'The "from" price: the cheapest zone among the zones the hall''s current layout has seats in.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        seatCapacity:
+          type: integer
+          minimum: 1
+          maximum: 300
+          example: 190
+          description: 'Seats for sale: the hall''s seat count when scheduled, refreshed for upcoming showtimes when the hall layout is saved.'
+        hasStarted:
+          type: boolean
+          example: false
+          description: The start has passed.
+        hasEnded:
+          type: boolean
+          example: false
+          description: The end has passed.
+        movable:
+          type: boolean
+          example: true
+          description: 'Scheduled and not started: it can be moved and re-priced.'
+        cancellable:
+          type: boolean
+          example: true
+          description: 'Scheduled and not ended: it can be cancelled.'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T11:05:00+03:00'
+          description: When it was scheduled.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T11:05:00+03:00'
+          description: Last change.
+      required:
+        - id
+        - movie
+        - theaterId
+        - hall
+        - startsAt
+        - endsAt
+        - cleaningEndsAt
+        - cinemaDate
+        - startTime
+        - status
+        - cancelReason
+        - cancelledAt
+        - prices
+        - fromPrice
+        - seatCapacity
+        - hasStarted
+        - hasEnded
+        - movable
+        - cancellable
+        - createdAt
+        - updatedAt
+    ShowtimeTimelineResponse:
+      type: object
+      properties:
+        theater:
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeTheaterRefResponse'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date.
+        window:
+          nullable: true
+          description: Opening hours that date; null when closed or without hours.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/OpeningWindowResponse'
+        specialDateLabel:
+          type: string
+          nullable: true
+          example: null
+          description: The special date setting these hours, such as "Armed Forces Day"; null for weekly hours.
+        halls:
+          nullable: false
+          description: 'The rows: every active hall, and any other hall with a showtime that date, by name.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineHallResponse'
+        items:
+          nullable: false
+          description: This page of the showtimes, scheduled and cancelled, by start.
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminShowtimeResponse'
+        nextCursor:
+          type: string
+          nullable: true
+          example: null
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          example: 6
+          description: Showtimes that date, with the same filters.
+      required:
+        - theater
+        - cinemaDate
+        - window
+        - specialDateLabel
+        - halls
+        - items
+        - nextCursor
+        - total
+    ShowtimePricesRequest:
+      type: object
+      properties:
+        front:
+          description: Front rows (nearest the screen).
+          example:
+            amount: 15000
+            currency: EGP
+          allOf:
+            - $ref: '#/components/schemas/MoneyRequest'
+        middle:
+          description: Middle rows. Same currency as `front`.
+          example:
+            amount: 19000
+            currency: EGP
+          allOf:
+            - $ref: '#/components/schemas/MoneyRequest'
+        back:
+          description: Back rows. Same currency as `front`.
+          example:
+            amount: 23000
+            currency: EGP
+          allOf:
+            - $ref: '#/components/schemas/MoneyRequest'
+      required:
+        - front
+        - middle
+        - back
+    CreateShowtimesRequest:
+      type: object
+      properties:
+        movieId:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 12
+          description: The movie to schedule. It must be Now showing.
+        hallId:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 3
+          description: The hall to schedule in; its theater follows from it. It must be active.
+        dates:
+          nullable: false
+          minItems: 1
+          maxItems: 31
+          uniqueItems: true
+          example:
+            - '2026-10-16'
+            - '2026-10-17'
+            - '2026-10-18'
+          description: 'Cinema dates, `YYYY-MM-DD`: 1 to 31, no duplicates, all within 31 days. Answered in date order.'
+          type: array
+          items:
+            type: string
+            format: date
+        startTime:
+          type: string
+          nullable: false
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          example: '19:30'
+          description: Cairo wall-clock start, 24-hour `HH:mm`, any minute. `06:00`–`23:59` is on the cinema date; `00:00`–`05:59` is after midnight, on the next calendar day (still that cinema date).
+        prices:
+          nullable: false
+          description: The new showtimes' zone prices. Left out, they copy the theater's default prices (`SHOWTIME_NOT_SCHEDULABLE` `no_prices` when it has none).
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePricesRequest'
+        skipUnavailable:
+          type: boolean
+          nullable: false
+          example: true
+          description: '`true`: create the dates that fit and skip the others ("Skip unavailable dates"). `false`: create all of them or none.'
+      required:
+        - movieId
+        - hallId
+        - dates
+        - startTime
+        - skipUnavailable
+    ShowtimeBatchResult:
+      type: string
+      enum:
+        - created
+        - conflict
+        - outside_opening_hours
+        - time_does_not_exist
+        - in_past
+      description: '`created`, or the check that kept the date out (as in the dry run): `time_does_not_exist`, `in_past`, `outside_opening_hours` or `conflict`.'
+    ShowtimeConflictResponse:
+      type: object
+      properties:
+        showtimeId:
+          type: integer
+          example: 81
+          description: The showtime in the way.
+        movieTitle:
+          type: string
+          nullable: false
+          example: The Nile Light
+          description: Its movie.
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:30:00+03:00'
+          description: Its start, Cairo time.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:38:00+03:00'
+          description: Its end.
+        cleaningEndsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:58:00+03:00'
+          description: When its cleaning ends.
+      required:
+        - showtimeId
+        - movieTitle
+        - startsAt
+        - endsAt
+        - cleaningEndsAt
+    BatchItemResponse:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date.
+        result:
+          nullable: false
+          example: created
+          description: '`created`, or the check that kept the date out (as in the dry run): `time_does_not_exist`, `in_past`, `outside_opening_hours` or `conflict`.'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeBatchResult'
+        showtime:
+          nullable: true
+          description: The new showtime; null unless `created`.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/AdminShowtimeResponse'
+        conflicts:
+          nullable: false
+          description: The showtimes in the way; empty unless `conflict`.
+          type: array
+          items:
+            $ref: '#/components/schemas/ShowtimeConflictResponse'
+      required:
+        - cinemaDate
+        - result
+        - showtime
+        - conflicts
+    ShowtimeBatchResponse:
+      type: object
+      properties:
+        results:
+          nullable: false
+          description: One per date, in date order.
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchItemResponse'
+        createdCount:
+          type: integer
+          minimum: 1
+          example: 3
+          description: Dates created.
+        skippedCount:
+          type: integer
+          minimum: 0
+          example: 2
+          description: 'Dates skipped (only with `skipUnavailable: true`).'
+      required:
+        - results
+        - createdCount
+        - skippedCount
+    AdminShowtimeDetailResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 81
+          description: Showtime id.
+        movie:
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeMovieRefResponse'
+        theaterId:
+          type: integer
+          example: 1
+          description: The theater.
+        hall:
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:30:00+03:00'
+          description: Start, Cairo time with its offset.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:38:00+03:00'
+          description: 'End: the start plus the runtime, in real minutes (a summer-time change never shortens it).'
+        cleaningEndsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:58:00+03:00'
+          description: 'When the hall is clean again: 20 minutes after the end. The next showtime in the hall starts at this time at the earliest.'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: 'The cinema date, `YYYY-MM-DD`: a cinema day runs from 06:00 to 06:00 Cairo time, so a 00:30 start belongs to the day before.'
+        startTime:
+          type: string
+          nullable: false
+          example: '19:30'
+          description: The Cairo wall-clock start, `HH:mm`, as an admin enters it.
+        status:
+          nullable: false
+          example: scheduled
+          description: '`scheduled`: on the timeline (started and ended follow from the clock: `hasStarted`, `hasEnded`). `cancelled`: called off; final, and its slot is free again.'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeStatus'
+        cancelReason:
+          nullable: true
+          example: null
+          description: Why it was cancelled; null while scheduled.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeCancelReason'
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: When it was cancelled; null while scheduled.
+        prices:
+          description: Price per seat zone.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePrices'
+        fromPrice:
+          description: 'The "from" price: the cheapest zone among the zones the hall''s current layout has seats in.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        seatCapacity:
+          type: integer
+          minimum: 1
+          maximum: 300
+          example: 190
+          description: 'Seats for sale: the hall''s seat count when scheduled, refreshed for upcoming showtimes when the hall layout is saved.'
+        hasStarted:
+          type: boolean
+          example: false
+          description: The start has passed.
+        hasEnded:
+          type: boolean
+          example: false
+          description: The end has passed.
+        movable:
+          type: boolean
+          example: true
+          description: 'Scheduled and not started: it can be moved and re-priced.'
+        cancellable:
+          type: boolean
+          example: true
+          description: 'Scheduled and not ended: it can be cancelled.'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T11:05:00+03:00'
+          description: When it was scheduled.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T11:05:00+03:00'
+          description: Last change.
+        theater:
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeTheaterRefResponse'
+      required:
+        - id
+        - movie
+        - theaterId
+        - hall
+        - startsAt
+        - endsAt
+        - cleaningEndsAt
+        - cinemaDate
+        - startTime
+        - status
+        - cancelReason
+        - cancelledAt
+        - prices
+        - fromPrice
+        - seatCapacity
+        - hasStarted
+        - hasEnded
+        - movable
+        - cancellable
+        - createdAt
+        - updatedAt
+        - theater
+    UpdateShowtimeRequest:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-17'
+          description: 'Move: the new cinema date, `YYYY-MM-DD`. Needs `startTime`; left out, the date stays.'
+        startTime:
+          type: string
+          nullable: false
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          example: '21:00'
+          description: 'Move: the new Cairo wall-clock start, `HH:mm` (`00:00`–`05:59` is after midnight, still the same cinema date). Every scheduling check runs again with the movie''s current runtime.'
+        prices:
+          nullable: false
+          description: New zone prices. They apply to new holds only; seats already held or sold keep theirs.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimePricesRequest'
+        status:
+          type: string
+          enum:
+            - cancelled
+          nullable: false
+          example: cancelled
+          description: 'Cancel: always with `cancelReason`, and alone. Final.'
+        cancelReason:
+          nullable: false
+          example: technical_issue
+          description: 'Cancel: why. Required with `status: cancelled`.'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeCancelReason'
+    CheckShowtimesRequest:
+      type: object
+      properties:
+        movieId:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 12
+          description: The movie to schedule. It must be Now showing.
+        hallId:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 3
+          description: The hall to schedule in; its theater follows from it. It must be active.
+        dates:
+          nullable: false
+          minItems: 1
+          maxItems: 31
+          uniqueItems: true
+          example:
+            - '2026-10-16'
+            - '2026-10-17'
+            - '2026-10-18'
+          description: 'Cinema dates, `YYYY-MM-DD`: 1 to 31, no duplicates, all within 31 days. Answered in date order.'
+          type: array
+          items:
+            type: string
+            format: date
+        startTime:
+          type: string
+          nullable: false
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          example: '19:30'
+          description: Cairo wall-clock start, 24-hour `HH:mm`, any minute. `06:00`–`23:59` is on the cinema date; `00:00`–`05:59` is after midnight, on the next calendar day (still that cinema date).
+      required:
+        - movieId
+        - hallId
+        - dates
+        - startTime
+    ShowtimeCheckResult:
+      type: string
+      enum:
+        - available
+        - conflict
+        - outside_opening_hours
+        - time_does_not_exist
+        - in_past
+      description: 'The first check that fails, in this order: `time_does_not_exist` (the clocks skip the start that night, summer time), `in_past`, `outside_opening_hours` (also a closed date or one without hours), `conflict` (closer than 20 minutes to another showtime in the hall); else `available`.'
+    SuggestedStartResponse:
+      type: object
+      properties:
+        startTime:
+          type: string
+          nullable: false
+          example: '22:00'
+          description: Cairo wall-clock start, `HH:mm`, to send as `startTime`.
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T22:00:00+03:00'
+          description: The same start as an instant.
+      required:
+        - startTime
+        - startsAt
+    DateCheckResponse:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date.
+        result:
+          nullable: false
+          example: available
+          description: 'The first check that fails, in this order: `time_does_not_exist` (the clocks skip the start that night, summer time), `in_past`, `outside_opening_hours` (also a closed date or one without hours), `conflict` (closer than 20 minutes to another showtime in the hall); else `available`.'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeCheckResult'
+        startsAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:30:00+03:00'
+          description: The start; null for `time_does_not_exist`.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T21:38:00+03:00'
+          description: The end; null for `time_does_not_exist`.
+        cleaningEndsAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T21:58:00+03:00'
+          description: When the cleaning after it ends; null for `time_does_not_exist`.
+        window:
+          nullable: true
+          description: The date's opening hours; null when the theater is closed or has no hours that date.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/OpeningWindowResponse'
+        conflicts:
+          nullable: false
+          description: The showtimes it would overlap, cleaning included; empty unless `conflict`.
+          type: array
+          items:
+            $ref: '#/components/schemas/ShowtimeConflictResponse'
+        suggestions:
+          nullable: false
+          description: Up to 3 free starts that pass every check, on the 5-minute grid, nearest to the requested time first; empty for an `available` date or when nothing fits.
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestedStartResponse'
+      required:
+        - cinemaDate
+        - result
+        - startsAt
+        - endsAt
+        - cleaningEndsAt
+        - window
+        - conflicts
+        - suggestions
+    ShowtimeCheckResponse:
+      type: object
+      properties:
+        movie:
+          description: The movie.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeMovieRefResponse'
+        hall:
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        theaterId:
+          type: integer
+          example: 1
+          description: The hall's theater.
+        startTime:
+          type: string
+          nullable: false
+          example: '19:30'
+          description: The requested start time.
+        results:
+          nullable: false
+          description: One per requested date, in date order.
+          type: array
+          items:
+            $ref: '#/components/schemas/DateCheckResponse'
+      required:
+        - movie
+        - hall
+        - theaterId
+        - startTime
+        - results
     ErrorResponse:
       type: object
       properties:

@@ -5,10 +5,7 @@ import { listHttpRoutes, samplePath } from '../../../support/routes';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import { TestClock } from '../../../support/clock';
-import {
-  TheaterLifecycleProbe,
-  TheaterLifecycleProbeModule,
-} from '../../../support/theaters-probe.module';
+import { createSchedulingFixture, scheduleShowtime } from '../../../support/showtimes';
 import {
   createTheater,
   DEFAULT_PRICES,
@@ -42,7 +39,6 @@ describe('Admin theaters (integration)', () => {
   let testApp: TestApp;
   let admin: StaffSession;
   let boxOffice: StaffSession;
-  let probe: TheaterLifecycleProbe;
   const clock = new TestClock(NOW);
 
   const auditRows = (entityId?: number): Promise<AuditRow[]> => {
@@ -66,15 +62,13 @@ describe('Admin theaters (integration)', () => {
     testApp.http().patch(`${THEATERS}/${id}`).set('Authorization', admin.authorization).send(body);
 
   beforeAll(async () => {
-    testApp = await createTestApp({ clock, imports: [TheaterLifecycleProbeModule] });
-    probe = testApp.app.get(TheaterLifecycleProbe);
+    testApp = await createTestApp({ clock });
     admin = await staffSession(testApp, 'admin');
     boxOffice = await staffSession(testApp, 'box_office');
   });
 
   beforeEach(async () => {
     clock.set(NOW);
-    probe.withShowtimes.clear();
     await testApp.knex.raw(
       'TRUNCATE theaters, audit_events, idempotency_keys RESTART IDENTITY CASCADE',
     );
@@ -443,9 +437,10 @@ describe('Admin theaters (integration)', () => {
       expect((await auditRows()).map((row) => row.action)).toContain('theater.deleted');
     });
 
-    it('refuses a draft that a registered blocker keeps (U7 "has showtimes")', async () => {
-      const id = await createTheater(testApp, admin.authorization);
-      probe.withShowtimes.add(id);
+    it('refuses a draft that has a showtime (U7 "has showtimes")', async () => {
+      const fixture = await createSchedulingFixture(testApp, admin);
+      const id = fixture.theaterId;
+      await scheduleShowtime(testApp, admin, fixture, '2026-10-17', '19:30');
       const refused = await testApp
         .http()
         .delete(`${THEATERS}/${id}`)

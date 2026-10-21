@@ -176,3 +176,24 @@ export interface CatalogMovieFixture {
   readonly featuredPosition?: number;
   readonly heroYoutubeId?: string;
 }
+
+/** A theater (12:00–01:00 every day, default prices), an active hall and a Now showing movie. */
+export interface SchedulingFixture {
+  readonly theaterId: number;
+  readonly hallId: number;
+  readonly movieId: number;
+  readonly movieTitle: string;
+  readonly runtimeMinutes: number;
+}
+
+/** What `createSchedulingFixture()` may change. */
+export interface SchedulingFixtureOptions {
+  /** Weekly hours, `everyDay('12:00', '01:00')` by default. */
+  readonly days?: readonly Record<string, unknown>[];
+  readonly runtimeMinutes?: number;
+  /** An existing theater to add the hall to, instead of a new one. */
+  readonly theaterId?: number;
+}
+
+/** A showtime as `POST /admin/showtimes` and `GET /admin/showtimes/{id}` answer it. */
+export type ShowtimeBody = { readonly id: number } & Readonly<Record<string, unknown>>;

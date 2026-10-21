@@ -25,6 +25,7 @@ import { MediaModule } from './modules/media/media.module';
 import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
+import { ShowtimesModule } from './modules/showtimes/showtimes.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TheatersModule } from './modules/theaters/theaters.module';
 
@@ -71,6 +72,7 @@ export class AppModule {
         CatalogModule,
         HallsModule,
         DiscoveryModule,
+        ShowtimesModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
