@@ -281,6 +281,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `ws` client on the listening app that waits for messages (`next()`, `closed()`), never for
   time. `test/support/seat-map-probe.module.ts` publishes a seat event in a transaction that
   rolls back.
+- `test/support/admin-bookings.ts` (U14): `paidOnline(testApp, showtimeId, seats)` (a new
+  customer's booking paid by card), `listAdminBookings()`, `refundBooking()`, `payOutRefund()`,
+  `previewEdit()` and `editBooking()` through the real admin routes.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -502,6 +505,37 @@ curl -s -X POST localhost:3000/api/v1/admin/scans -H "Authorization: Bearer $STA
   -H 'Content-Type: application/json' -d '{"theaterId":3,"code":"MQ1.MQ-7K3P9Q.1.…"}'
 ```
 
+## Admin bookings
+
+The admin Bookings page (U14, `docs/gh-15-admin-bookings/spec.md`). Both staff roles read and
+annotate; refunds, payouts and edits are admin only.
+
+- `GET /api/v1/admin/bookings` lists bookings newest first with `q` (a reference, or part of the
+  contact name, email or phone), `theaterId`, `movieId`, `status`, `channel`, `method`,
+  `dateFrom` and `dateTo` (cinema dates the booking was made on). `GET /admin/bookings/summary`
+  gives the four cards; `GET /admin/bookings/{ref}` the detail with every payment and refund, the
+  customer card and the activity log.
+- `GET` / `POST /api/v1/admin/bookings/{ref}/notes` are internal notes (no customer route ever
+  shows them); `POST /admin/bookings/{ref}/ticket-deliveries` resends the tickets by email and SMS.
+- `POST /api/v1/admin/bookings/{ref}/refunds` cancels and refunds in full, each charge on its own
+  rail: card and wallet through the simulated provider at once, cash and card terminal as a
+  `pending` refund that `POST /admin/refunds/{id}/payouts` records as handed back.
+- `POST /api/v1/admin/bookings/{ref}/edit-previews` and `/edits` move a booking to other seats or
+  another showtime of the same movie, or change its contact, with a `reason`. A lower total is
+  refunded automatically; a higher one needs `payment` (`cash` or `card_terminal`) in the same
+  request. The old QR code stops working.
+- `GET /api/v1/admin/showtimes/{id}/cancellation-preview` shows what cancelling a showtime would
+  refund and send; `PATCH /admin/showtimes/{id}` with `status: cancelled` then refunds every
+  booking, releases every hold and emails and texts every ticket holder.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/bookings?q=nadia&status=confirmed" -H "Authorization: Bearer $STAFF"
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/edit-previews -H "Authorization: Bearer $ADMIN" \
+  -H 'Content-Type: application/json' -d '{"seats":["B5","B6"],"reason":"customer_request"}'
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/refunds -H "Authorization: Bearer $ADMIN" \
+  -H "Idempotency-Key: $(uuidgen)"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -603,7 +637,8 @@ src/
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
                                          (credentials), staff, media, theaters, catalog,
                                          customers, halls, discovery, showtimes, seating (seat
-                                         claims and the /ws seat map), bookings (holds), seed
+                                         claims and the /ws seat map), bookings (holds,
+                                         checkout, box office, admin bookings), seed
                                          (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
