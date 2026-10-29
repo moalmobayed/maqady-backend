@@ -77,7 +77,6 @@ export class PaymentsReportResponseMapper {
             }),
       walletType: row.walletType,
       receiptReference: row.receiptReference,
-      providerReference: row.providerReference,
       collectedBy: toStaffRef(row.collectedBy),
       paidOutAt: row.paidOutAt === null ? null : formatCairoIso(row.paidOutAt),
       paidOutBy: toStaffRef(row.paidOutBy),

@@ -40,7 +40,6 @@ interface Row {
   booking: { reference: string; channel: string; contactName: string | null };
   theater: { id: number; name: string };
   receiptReference: string | null;
-  providerReference: string | null;
   collectedBy: { id: number; fullName: string } | null;
   paidOutBy: { id: number; fullName: string } | null;
   paidOutAt: string | null;
@@ -304,7 +303,8 @@ describe('Payments screen (integration)', () => {
             booking: { reference: partial.online, channel: 'online', contactName: 'Nadia Farouk' },
             theater: theaterA,
           });
-          expect(online.providerReference).toMatch(/^sim\.sim_card_visa\./);
+          // The provider's own id is never published (U11).
+          expect(online).not.toHaveProperty('providerReference');
           expect(rowOf(rows, partial.online!, 'refund')).toMatchObject({
             status: 'succeeded',
             purpose: 'cancellation',
@@ -321,7 +321,6 @@ describe('Payments screen (integration)', () => {
             refundedAmount: money(0),
             pendingRefundAmount: money(15000),
             collectedBy: { id: boxOffice.staffUserId, fullName: 'Hany Adel' },
-            providerReference: null,
             theater: theaterB,
           });
           expect(rowOf(rows, partial.cash!, 'refund')).toMatchObject({
@@ -348,7 +347,6 @@ describe('Payments screen (integration)', () => {
             status: 'succeeded',
             method: 'card_terminal',
             receiptReference: 'TRX-77',
-            providerReference: null,
           });
         },
       });

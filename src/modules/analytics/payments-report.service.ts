@@ -252,7 +252,6 @@ export function toTransaction(
   refs: ReadonlyMap<number, StaffRef>,
 ): Transaction {
   const isCharge = row.kind === 'charge';
-  const online = channelOfMethod(row.method) === 'online';
   return {
     id: row.id,
     kind: row.kind,
@@ -283,7 +282,6 @@ export function toTransaction(
         : null,
     walletType: row.wallet_type,
     receiptReference: isCharge && row.method === 'card_terminal' ? row.provider_reference : null,
-    providerReference: online ? row.provider_reference : null,
     collectedBy:
       row.collected_by_staff_id === null ? null : (refs.get(row.collected_by_staff_id) ?? null),
     paidOutAt: row.paid_out_at,

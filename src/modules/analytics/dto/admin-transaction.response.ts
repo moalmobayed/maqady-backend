@@ -217,15 +217,6 @@ export class AdminTransactionResponse {
   receiptReference!: string | null;
 
   @ApiProperty({
-    type: String,
-    nullable: true,
-    example: 'sim.sim_card_visa.1791910800000.3f2a9c1d4b5e6f70',
-    description:
-      "The payment provider's id of an online charge or refund; null at the counter, and while an online charge has no provider answer.",
-  })
-  providerReference!: string | null;
-
-  @ApiProperty({
     type: () => StaffRefResponse,
     nullable: true,
     description: 'Who took a counter charge; null otherwise.',

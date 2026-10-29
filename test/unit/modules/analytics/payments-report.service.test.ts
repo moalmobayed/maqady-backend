@@ -174,7 +174,6 @@ describe('PaymentsReportService', () => {
           refundedAmount: null,
           pendingRefundAmount: null,
           receiptReference: null,
-          providerReference: null,
           paidOutBy: { id: 1, fullName: 'Mona Saeed' },
           cinemaDate: '2026-10-10',
           actions: { markPaidOut: false },
@@ -197,11 +196,11 @@ describe('PaymentsReportService', () => {
         transactionRow({ id: 417, refunded_amount: 4000, pending_refund_amount: 2000 }),
       ]);
       const page = await service.transactions({}, {});
+      expect(page.items[1]).not.toHaveProperty('providerReference');
       expect(page.items[0]).toMatchObject({
         status: 'refunded',
         amount: money(15000),
         receiptReference: 'TRX-77',
-        providerReference: null,
         collectedBy: { id: 4, fullName: 'Hany Adel' },
         card: null,
       });
@@ -209,7 +208,6 @@ describe('PaymentsReportService', () => {
         status: 'succeeded',
         channel: 'online',
         receiptReference: null,
-        providerReference: 'sim.sim_card_visa.1.abc',
         card: { brand: 'visa', last4: '4242' },
         refundedAmount: money(4000),
         pendingRefundAmount: money(2000),

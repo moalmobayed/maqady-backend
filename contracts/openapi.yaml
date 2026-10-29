@@ -35320,11 +35320,6 @@ components:
           nullable: true
           example: null
           description: A card-terminal charge's receipt reference as staff typed it; null otherwise.
-        providerReference:
-          type: string
-          nullable: true
-          example: sim.sim_card_visa.1791910800000.3f2a9c1d4b5e6f70
-          description: The payment provider's id of an online charge or refund; null at the counter, and while an online charge has no provider answer.
         collectedBy:
           nullable: true
           description: Who took a counter charge; null otherwise.
@@ -35390,7 +35385,6 @@ components:
         - card
         - walletType
         - receiptReference
-        - providerReference
         - collectedBy
         - paidOutAt
         - paidOutBy

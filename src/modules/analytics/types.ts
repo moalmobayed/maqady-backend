@@ -176,7 +176,6 @@ export interface Transaction {
   readonly card: PaymentCard | null;
   readonly walletType: WalletType | null;
   readonly receiptReference: string | null;
-  readonly providerReference: string | null;
   readonly collectedBy: StaffRef | null;
   readonly paidOutAt: Date | null;
   readonly paidOutBy: StaffRef | null;

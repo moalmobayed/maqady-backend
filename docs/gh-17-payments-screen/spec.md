@@ -111,7 +111,7 @@ also answer `401` (`UNAUTHENTICATED`, `SESSION_EXPIRED`, `SESSION_REVOKED`; a cu
 `cancelled`, null), `ledgerStatus` (the stored status), `amount` (signed), `refundOfPaymentId`,
 `refundedAmount` and `pendingRefundAmount` (a charge's succeeded and pending refunds; null for a
 refund), `booking { reference, channel, contactName }`, `theater { id, name }`, `card`,
-`walletType`, `receiptReference`, `providerReference` (online rows), `collectedBy`, `paidOutAt`,
+`walletType`, `receiptReference`, `collectedBy`, `paidOutAt`,
 `paidOutBy`, `createdAt`, `completedAt`, `occurredAt`, `cinemaDate` (of `occurredAt`),
 `actions { markPaidOut }`.
 
