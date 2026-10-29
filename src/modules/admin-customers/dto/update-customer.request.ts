@@ -5,9 +5,9 @@ import {
   IsString,
   Matches,
   MaxLength,
-  MinLength,
-  NotContains,
+  ValidateBy,
   ValidateIf,
+  type ValidationArguments,
 } from 'class-validator';
 import {
   ACCEPTED_PHONE_PATTERN_SOURCE,
@@ -35,6 +35,31 @@ function nothingSent(body: UpdateCustomerRequest): boolean {
   );
 }
 
+/** Why a `fullName` is refused, or null when it is fine; one reason, so the form shows one line. */
+function fullNameProblem(value: unknown, body: UpdateCustomerRequest): string | null {
+  if (value === undefined) return nothingSent(body) ? NOTHING_TO_CHANGE : null;
+  if (typeof value !== 'string') return 'fullName must be a string';
+  if (value === '') return 'fullName must not be empty';
+  if (value.includes(NUL_CHARACTER)) return 'fullName must not contain a NUL character';
+  if (value.length > CUSTOMER_FULL_NAME_MAX_LENGTH) {
+    return `fullName must be at most ${CUSTOMER_FULL_NAME_MAX_LENGTH} characters`;
+  }
+  return null;
+}
+
+/** `fullName` when sent (already trimmed), and the "send something" rule, as one check. */
+function IsCustomerName(): PropertyDecorator {
+  return ValidateBy({
+    name: 'isCustomerName',
+    validator: {
+      validate: (value: unknown, args?: ValidationArguments) =>
+        fullNameProblem(value, args?.object as UpdateCustomerRequest) === null,
+      defaultMessage: (args?: ValidationArguments) =>
+        fullNameProblem(args?.value, args?.object as UpdateCustomerRequest) ?? NOTHING_TO_CHANGE,
+    },
+  });
+}
+
 /**
  * `PATCH /admin/customers/{id}` (PRD A7 "edit details", Block and Unblock): any of the account's
  * name, email and phone, and its status. At least one field; fields not sent stay as they are.
@@ -48,14 +73,8 @@ export class UpdateCustomerRequest {
     example: 'Layla Hassan',
     description: 'Full name; surrounding spaces are dropped. It can be changed, never emptied.',
   })
-  @ValidateIf((body: UpdateCustomerRequest) => body.fullName !== undefined || nothingSent(body))
   @TrimString()
-  @IsString({
-    message: (args) => (args.value === undefined ? NOTHING_TO_CHANGE : 'fullName must be a string'),
-  })
-  @MinLength(1, { message: 'fullName must not be empty' })
-  @MaxLength(CUSTOMER_FULL_NAME_MAX_LENGTH)
-  @NotContains(NUL_CHARACTER, { message: 'fullName must not contain a NUL character' })
+  @IsCustomerName()
   fullName?: string;
 
   @ApiPropertyOptional({

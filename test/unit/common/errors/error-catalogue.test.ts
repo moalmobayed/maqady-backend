@@ -63,6 +63,7 @@ const UNIT_CODES: Record<string, number> = {
   BOOKING_NOT_REFUNDABLE: 409,
   REFUND_NOT_PENDING: 409,
   NO_CONTACT_DETAILS: 409,
+  CUSTOMER_BLOCKED: 409,
 };
 
 describe('ERROR_CATALOGUE', () => {

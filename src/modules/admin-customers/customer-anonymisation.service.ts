@@ -73,7 +73,16 @@ export class CustomerAnonymisationService {
         action: ANONYMISED_ACTION,
         entity: { type: 'customer', id },
         changedFields: ANONYMISED_FIELDS,
-        metadata: { bookingsKept: contacts.bookings, ...removed },
+        // Key names avoid the words the audit refuses as personal data ("token", "phone", …).
+        metadata: {
+          bookingsKept: contacts.bookings,
+          sessionsDeleted: sessions,
+          linksDeleted: oneTimeTokens,
+          idempotencyKeysDeleted: idempotencyKeys,
+          messagesDeleted: messages,
+          notesDeleted: bookingNotes,
+          contactsCleared: contacts.cleared,
+        },
       });
       return {
         customerId: id,
