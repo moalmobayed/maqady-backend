@@ -38,7 +38,7 @@ export const NOT_BOOKABLE_REASONS = [
 ] as const;
 
 /** Why a hold was released, in the `booking.released` audit event. */
-export const RELEASE_REASONS = ['released', 'replaced'] as const;
+export const RELEASE_REASONS = ['released', 'replaced', 'showtime_cancelled'] as const;
 
 /**
  * A booking's payment status as the UI shows it (design §7.4; PRD "Statuses"): decided with the
@@ -52,17 +52,8 @@ export const PAYMENT_STATUS_DISPLAYS = [
   'refunded',
 ] as const;
 
-/**
- * What a route settles before it runs (`@SettleFirst()`): the booking `{ref}`, the showtime `{id}`,
- * or only the calling customer's bookings (`'customer'`, My Bookings, U12).
- */
-export const SETTLE_FIRST_KINDS = ['booking', 'showtime', 'customer'] as const;
-
-/**
- * Where `@SettleFirst()` reads the booking reference or showtime id: the path (`{ref}`, `{id}`),
- * or the JSON body's `showtimeId` (`POST /admin/counter-holds`, U13).
- */
-export const SETTLE_FIRST_SOURCES = ['params', 'body'] as const;
+/** What and where `@SettleFirst()` settles (in `common/settlement` since U14). */
+export { SETTLE_FIRST_KINDS, SETTLE_FIRST_SOURCES } from '../../common/settlement/enums';
 
 /** The booking statuses that have a ticket: a QR code, a PDF and a calendar file. */
 export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
@@ -127,3 +118,31 @@ export const SCAN_REASONS = [
 
 /** How a ticket was presented at the entrance: its QR code, or its reference typed by hand. */
 export const SCAN_VIA = ['qr', 'reference'] as const;
+
+// --- Admin bookings (U14) -------------------------------------------------------------------
+
+/** Why an admin edits a booking (PRD A6 "Edit booking", the design's four reasons; required). */
+export const EDIT_REASONS = [
+  'customer_request',
+  'seat_problem',
+  'showtime_changed',
+  'staff_error',
+] as const;
+
+/** What an edit does with the money: collect a higher total, refund a lower one, or neither. */
+export const EDIT_DIRECTIONS = ['collect', 'refund', 'none'] as const;
+
+/** Why a booking cannot be edited (`BOOKING_NOT_EDITABLE { reason }`). */
+export const NOT_EDITABLE_REASONS = ['not_confirmed', 'started', 'checked_in'] as const;
+
+/** The fields an edit changes, as `changedFields` and the `booking.edited` audit name them. */
+export const EDITED_FIELDS = [
+  'showtime',
+  'seats',
+  'contactName',
+  'contactEmail',
+  'contactPhone',
+] as const;
+
+/** How a staff resend sends the tickets: by email and, with a phone on file, by SMS. */
+export const STAFF_TICKET_CHANNELS = ['email', 'sms'] as const;

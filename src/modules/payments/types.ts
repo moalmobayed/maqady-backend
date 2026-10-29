@@ -250,3 +250,76 @@ export interface ChargeOutcome {
   readonly paymentId: number;
   readonly result: ChargeResult;
 }
+
+// --- Admin ledger, refunds per charge and payouts (U14) --------------------------------------
+
+/** Why a refund was made: the booking was cancelled, or an edit lowered its total (U14). */
+export type RefundPurpose = Extract<PaymentPurpose, 'cancellation' | 'edit_difference'>;
+
+/**
+ * A `payments` row with the counter and payout columns and, for a charge, how much of it has been
+ * refunded so far (the sum of the refunds naming it), as the admin screens read it (U14).
+ */
+export interface LedgerRow extends PaymentRow {
+  readonly collected_by_staff_id: number | null;
+  readonly paid_out_at: Date | null;
+  readonly paid_out_by_staff_id: number | null;
+  readonly refunded_amount: number;
+}
+
+/** A payment or refund with everything the admin booking detail and the Payments screen show. */
+export interface LedgerEntry extends Payment {
+  /** The staff member who took a counter charge; null otherwise. */
+  readonly collectedByStaffId: number | null;
+  /** When a counter refund was paid out, and by whom; null until then (and for every other row). */
+  readonly paidOutAt: Date | null;
+  readonly paidOutByStaffId: number | null;
+  /**
+   * A succeeded charge's remaining refundable amount (design §7.7: its amount minus the refunds
+   * that name it); null for any other row.
+   */
+  readonly refundable: Money | null;
+}
+
+/** One refund to make: this much of this succeeded charge, on the charge's own rail. */
+export interface RefundItem {
+  readonly charge: LedgerEntry;
+  readonly amount: Money;
+  /** The booking's reference, for the provider key `<reference>-r<n>`. */
+  readonly reference: string;
+}
+
+/** A refund row as `insertRefunds()` writes it: online (`succeeded`, with a key) or counter (`pending`). */
+export interface NewRefundRow {
+  readonly booking_id: number;
+  readonly kind: 'refund';
+  readonly purpose: RefundPurpose;
+  readonly method: PaymentMethod;
+  readonly status: 'succeeded' | 'pending';
+  readonly amount: number;
+  readonly currency: Currency;
+  readonly refund_of_payment_id: number;
+  readonly provider_idempotency_key: string | null;
+  readonly provider_reference: string | null;
+  readonly completed_at: Date | null;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+/** The money that moved in a period, as one row of sums (piastres) and counts. */
+export interface MoneyMovedRow {
+  readonly collected: number;
+  readonly declined: number;
+}
+
+/** The money that moved in a period (PRD "Collected": taken minus refunds paid out), and declines. */
+export interface MoneyMoved {
+  readonly collected: Money;
+  readonly declinedCount: number;
+}
+
+/** A half-open period of instants, `[from, to)`. */
+export interface InstantRange {
+  readonly from: Date;
+  readonly to: Date;
+}

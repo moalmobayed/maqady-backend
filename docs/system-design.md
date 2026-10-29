@@ -128,9 +128,9 @@ a repository, a service, a controller or gateway, and the module file.
 | `theaters` | `theaters`, `theater_phones`, `theater_facilities`, `theater_photos`, `theater_hours`, `theater_special_dates` | media, time |
 | `halls` | `halls`, `hall_rows`, `hall_seat_marks` | theaters. Showtimes and seating plug their rules into its `HallLifecycleRegistry`, so it imports neither (U5) |
 | `catalog` | `genres`, `movies`, `movie_genres`, `people`, `person_roles`, `movie_credits`, `movie_photos`, `movie_videos` | media |
-| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, seating (live claims behind `HALL_IN_USE`, U10), bookings (cancellation; the ticket holders of a move, registered by bookings with `RegisteredTicketHolders`, U11) |
+| `showtimes` | `showtimes` | catalog, halls, theaters, time, messaging, seating (live claims behind `HALL_IN_USE`, U10), bookings (the cancellation of a showtime's bookings, registered by bookings with `RegisteredShowtimeCancellation`, U14; the ticket holders of a move, registered with `RegisteredTicketHolders`, U11) |
 | `seating` | `seat_claims`, `hold_refusals`; the seat-map gateway and in-process event bus | — |
-| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging; it reads showtimes, halls, theaters, catalog, customers and media through their exported services (U10, `docs/gh-11-holds/spec.md`) |
+| `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging; it reads showtimes, halls, theaters, catalog, customers, staff and media through their exported services (U10, `docs/gh-11-holds/spec.md`). *Deviation (U14, `docs/gh-15-admin-bookings/spec.md`):* the admin list's `method` filter reads `payments` in one `EXISTS` of its own query, like its joins to `showtimes`, since a filtered, paged list cannot be assembled through a service call |
 | `payments` | `payments`; the payment-provider interface and the simulated provider. *Deviation (U11, `docs/gh-12-checkout/spec.md`):* `SettlementService`, confirmation and the tickets live in `bookings`, which writes the bookings, claims and messages they change | — |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
@@ -148,8 +148,12 @@ Rules:
   confirms their claims through `seating`. `bookings`
   orchestrates holds, payments and refunds.
 - The showtimes ↔ bookings cycle (cancelling a showtime refunds its bookings) is broken by
-  `bookings` exporting a `ShowtimeCancellationService` that `showtimes` calls. `bookings` reads
-  showtimes through its own SQL joins, not through the showtimes service.
+  `bookings` implementing a `ShowtimeCancellationService` that `showtimes` calls. `bookings` reads
+  showtimes through its own SQL joins, not through the showtimes service. *As built (U14):*
+  `showtimes` binds the token to `RegisteredShowtimeCancellation`, and bookings'
+  `BookingsShowtimeCancellation` registers there at boot (the registry pattern of
+  `RegisteredTicketHolders`), since `showtimes` cannot import `bookings`; cancelling with nothing
+  registered is `INTERNAL`, never a silent refund of nobody.
 
 ## 6. Data model
 
@@ -236,7 +240,7 @@ Rules:
 | `booking_seats` | Seat and price snapshot | PK (`booking_id`, `seat_label`); `row_label`, `seat_number`, `zone`, `price`, `is_wheelchair` |
 | `seat_claims` | Who holds each seat right now | **PK (`showtime_id`, `seat_label`)**; composite FK (`booking_id`, `showtime_id`) → `bookings`; `claimed_until` (NULL means sold; `<= :now` means free: an expired or released hold) |
 | `payments` | Charges and refunds | As built (U11): `currency`; `provider_idempotency_key` (`<reference>-c<n>` / `-r<n>`, UNIQUE, exactly for online methods); `completed_at` (exactly when final); CHECKs per kind, method and status for every column, the counter and payout ones included. `kind` (`charge`, `refund`); `purpose` (`sale`, `edit_difference`, `cancellation`); `method` (`card`, `wallet`, `cash`, `card_terminal`); `status` (charge: `processing`, `succeeded`, `declined`, `cancelled`; refund: `pending`, `succeeded`; CHECK per kind); `amount > 0`; `refund_of_payment_id` (a refund names the charge it returns); `provider_reference`; `card_brand`, `card_last4`, `wallet_type`; `settles_at`; `collected_by_staff_id`; `paid_out_at`, `paid_out_by_staff_id`. **UNIQUE (`booking_id`) WHERE `kind = 'charge' AND purpose = 'sale' AND status IN ('processing', 'succeeded')`.** |
-| `booking_notes` | Internal staff notes | `staff_user_id`, `body` (at most 1,000 characters) |
+| `booking_notes` | Internal staff notes | `booking_id`, `staff_user_id`, `body` (1 to 1,000 characters, never blank, CHECK), `created_at`; never read by a customer route; anonymisation deletes the notes on the customer's bookings (U14, `docs/gh-15-admin-bookings/spec.md`) |
 
 ```mermaid
 erDiagram
@@ -599,6 +603,28 @@ minus the refunds that already name it in `refund_of_payment_id`.
 - **Cancellation preview.** `GET /admin/showtimes/{id}/cancellation-preview` returns the PRD's
   impact figures: bookings and seats affected, the total refunded online and the total owed back
   at the counter, computed per charge as above.
+- **As built (U14, `docs/gh-15-admin-bookings/spec.md`).**
+  - Cancel & refund locks only the booking `FOR UPDATE`, then its claims (§7.1 steps 5–6; no
+    showtime lock, so it forms no cycle with an edit or a showtime cancellation). Only a booking
+    shown `confirmed` is refunded, else `BOOKING_NOT_REFUNDABLE { status }`; a mid-show refund
+    is allowed. A retry with the same key replays; a race waits on the booking lock and is
+    refused, so each charge is refunded once. Online refunds use the key `<ref>-r<n>`, where `n`
+    counts every refund of the booking, counter ones included. The refund email
+    (`booking.refunded`) goes to the contact email.
+  - A payout locks the refund's booking, then one conditional update moves the refund from
+    `pending` to `succeeded` with `completed_at`, `paid_out_at` and `paid_out_by_staff_id`
+    (`REFUND_NOT_PENDING { status }` otherwise). A counter refund counts as money moved (the
+    Collected card) when it is paid out.
+  - The showtime cancellation runs in the PATCH's transaction after U7's theater `FOR SHARE` and
+    showtime `FOR UPDATE`: the showtime's confirmed bookings and live holds `FOR UPDATE` in id
+    order, all their claims in seat order, the refunds in one insert, the holds ended and their
+    claims deleted, one `showtime.cancelled` email per booking with an email and one
+    `showtime.cancelled_sms` per booking with a phone (no separate refund email). A hold whose
+    payment is still processing is ended too; if the charge succeeds, settlement refunds it at
+    once because the showtime is cancelled (§7.5). The PATCH is `@SettleFirst('showtime')` (step
+    1; the decorator lives in `common/settlement` so showtimes need not import bookings), so a
+    slow payment whose result was already due is settled before the lock: confirmed, then refunded
+    and told like every other ticket holder. The preview lives in `bookings`.
 
 ### 7.8 Booking edits (admin only)
 
@@ -626,6 +652,27 @@ difference without saving. `POST /admin/bookings/{ref}/edits` applies it in one 
    After commit, publish the seat changes for both showtimes.
 
 Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT_EDITABLE`).
+
+**As built (U14, `docs/gh-15-admin-bookings/spec.md`).**
+
+- Editable means shown `confirmed`, its showtime not started and not checked in:
+  `BOOKING_NOT_EDITABLE { reason: not_confirmed | started | checked_in, status }` (U1's catalogue
+  already named the last two). The target must be a published showtime of the same movie (any
+  theater) and, when the showtime or seats change, bookable (`SHOWTIME_NOT_BOOKABLE { reason }`).
+  An edit that changes nothing is `VALIDATION_FAILED`.
+- `reason` is required: `customer_request`, `seat_problem`, `showtime_changed`, `staff_error`.
+  `payment` (`cash` or `card_terminal` with its receipt) is required exactly when the total goes
+  up, refused otherwise. Seats left out keep their labels on the target showtime.
+- One pure function (`planEdit()`) computes the seats, prices, total, difference and the
+  newest-first refund split for both the preview and the edit. The preview answers `200`, locks
+  nothing, writes nothing, skips the `payment` check, and lists `unavailableSeats` (target seats
+  someone else holds now).
+- Under the locks, a booking another edit moved meanwhile is `CONFLICT { reason:
+  booking_changed }`. Claims of the current seats and of the target seats are locked in one
+  ordered statement before the delete and the upsert.
+- `qr_version` goes up on every edit, contact-only included; `notify` queues the tickets email and
+  SMS. `booking.edited` records the changed field names, the reason, both showtime ids and the
+  signed difference.
 
 ### 7.9 References, tickets and scanning
 
@@ -1114,7 +1161,7 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 | `GET /admin/theaters/{id}/halls` (the Halls tab) · `GET`, `PATCH`, `DELETE /admin/halls/{id}` (`PATCH` covers activate and retire) · `GET`, `PUT /admin/halls/{id}/layout` | Admin | |
 | `GET /admin/showtimes?theaterId&date` · `GET /admin/showtimes/{id}` (manage panel) · `GET /admin/showtimes/{id}/cancellation-preview` · `POST /admin/showtime-checks` (dry run) | Admin | |
 | `POST /admin/showtimes` (batch) · `PATCH /admin/showtimes/{id}` (move, prices, cancel) | Admin | S |
-| `GET /admin/bookings` · `GET /admin/bookings/summary` (the four cards) · `GET /admin/bookings/{ref}` · `GET /admin/bookings/{ref}/ticket.pdf` | Staff | |
+| `GET /admin/bookings` · `GET /admin/bookings/summary` (the four cards) · `GET /admin/bookings/{ref}` · `GET /admin/bookings/{ref}/notes` (U14) · `GET /admin/bookings/{ref}/ticket.pdf` | Staff | |
 | `POST /admin/counter-holds` · `POST /admin/bookings/{ref}/counter-payments` · `POST /admin/bookings/{ref}/ticket-deliveries` · `POST /admin/bookings/{ref}/notes` | Staff | S |
 | `DELETE /admin/counter-holds/{ref}` (own hold) · `POST /admin/scans` | Staff | |
 | `POST /admin/bookings/{ref}/edit-previews` | Admin | |
@@ -1126,6 +1173,23 @@ E.164 phone or an Egyptian local mobile (`01012345678`), stored as E.164.
 | `POST /admin/refunds/{id}/payouts` | Admin | S |
 | `GET /admin/overview` · `GET /admin/activity` · `GET /admin/messages` · `GET /admin/messages/{id}` · `GET /admin/exports/{overview,bookings,customers,payments}.csv` | Admin | |
 | `GET /admin/alerts` · `POST /admin/alert-reads` · `GET /admin/search` (results filtered by role) | Staff | |
+
+Admin bookings (U14, `docs/gh-15-admin-bookings/spec.md`): `GET /admin/bookings` is newest first
+(`created_at DESC, id DESC`), cursor-paged with `total`, after `settleAllDue()`. `q` (2–100
+characters) matches a reference exactly in any case, else a case-insensitive substring of the
+booking's contact name, email or phone (a local mobile `01012345678` also matches `+201012345678`),
+served by trigram indexes. Filters: `theaterId`, `movieId`, `status` (the six shown statuses, by
+`bookingStatusPredicate()`), `channel`, `method` (a sale charge of that method), `dateFrom` /
+`dateTo` (cinema dates of the booking's creation, inclusive). The summary's four cards are for the
+current cinema day (06:00–06:00 Cairo time): paid bookings made today, Collected today (succeeded
+charges minus succeeded refunds by `completed_at`), declined charges today, and the bookings
+refunded in the 7 days before now with their cancellation refunds. The detail adds the contact, the
+customer card, the seller, the check-in, every payment and refund (`AdminPayment`, with its
+remaining `refundable`), `actions` and the first 100 audit events with their actors; notes are a
+paginated route of their own and no customer route reads them. The staff resend
+(`POST /admin/bookings/{ref}/ticket-deliveries`, strict) queues the tickets email and SMS to the
+booking's contact (`NO_CONTACT_DETAILS` with neither). `POST /admin/bookings/{ref}/edit-previews`
+answers `200`.
 
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
@@ -1249,6 +1313,11 @@ generated contract (§19).
     booking reference or customer name is left to the units that own those tables.
   - It is served by its own `MessageLogModule`, imported with the admin feature modules, so the
     global `MessagingModule` stays free of routes.
+- **Admin bookings (U14).** `booking.refunded` (email, cancel & refund: the amount, the online part
+  back to the card or wallet, the counter part to collect), `showtime.cancelled` (email) and
+  `showtime.cancelled_sms` (SMS) for every booking a showtime cancellation refunds, queued with
+  one `queueMany()`; a staff resend reuses `booking.tickets` and `booking.tickets_sms`. None has
+  a secret parameter.
 - **Anonymisation.** Deleting a customer deletes their messages.
 
 ### 13.2 Search
@@ -1456,6 +1525,9 @@ Codes added by later units (`src/common/errors/error-catalogue.ts` holds the ful
 | `SHOWTIMES_NOT_CREATED` | 409 | U7: a batch create that created nothing; `details.results` gives every date's result |
 | `SHOWTIME_NOT_EDITABLE` | 409 | U7: moving or re-pricing a started showtime, cancelling an ended one, changing a cancelled one; `details.reason` |
 | `TICKET_NOT_AVAILABLE` | 409 | U11: a ticket download for a booking that is not confirmed or completed; `details.status` |
+| `BOOKING_NOT_REFUNDABLE` | 409 | U14: cancel & refund of a booking that is not confirmed now; `details.status` |
+| `REFUND_NOT_PENDING` | 409 | U14: a payout of a refund that is not a pending counter refund; `details.status` |
+| `NO_CONTACT_DETAILS` | 409 | U14: a staff resend for a booking with neither an email nor a phone |
 
 ### 14.4 Logging and observability
 

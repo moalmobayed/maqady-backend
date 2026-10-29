@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Knex } from 'knex';
 import { TransactionContext } from '../database/transaction-context';
 import type { PageRequest } from '../pagination/types';
-import type { AuditEventViewRow, BookingEventsFilter } from './types';
+import type { AuditEventViewRow, BookingActivityRow, BookingEventsFilter } from './types';
 
 const VIEW_COLUMNS = ['id', 'occurred_at', 'action'] as const;
 
@@ -44,6 +44,29 @@ export class AuditReadRepository {
   async countBookingEvents(filter: BookingEventsFilter): Promise<number> {
     const row = await this.filtered(filter).count<{ count: number }[]>({ count: 'id' }).first();
     return row?.count ?? 0;
+  }
+
+  /**
+   * The first `limit` events of a booking, every action, oldest first (U14: the admin booking
+   * detail's activity log), through `idx_audit_events_booking_id`.
+   */
+  async bookingActivity(bookingId: number, limit: number): Promise<BookingActivityRow[]> {
+    return this.events()
+      .select<BookingActivityRow[]>(
+        'id',
+        'occurred_at',
+        'action',
+        'actor_kind',
+        'actor_staff_user_id',
+        'changed_fields',
+        'metadata',
+      )
+      .where({ booking_id: bookingId })
+      .orderBy([
+        { column: 'occurred_at', order: 'asc' },
+        { column: 'id', order: 'asc' },
+      ])
+      .limit(limit);
   }
 
   private filtered(filter: BookingEventsFilter): Knex.QueryBuilder {

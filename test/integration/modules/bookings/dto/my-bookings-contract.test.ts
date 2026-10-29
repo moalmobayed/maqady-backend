@@ -52,8 +52,11 @@ describe('My bookings in the OpenAPI document and the router', () => {
   });
 
   it('serves the 3 routes to signed-in customers only', () => {
-    const routes = listHttpRoutes(testApp).filter((route) =>
-      /\/(me\/bookings|history|ticket-deliveries)$/.test(route.path),
+    // The staff resend (U14) shares the last segment; it is an admin route, not one of these.
+    const routes = listHttpRoutes(testApp).filter(
+      (route) =>
+        !route.path.startsWith('/api/v1/admin/') &&
+        /\/(me\/bookings|history|ticket-deliveries)$/.test(route.path),
     );
     expect(routes.map((route) => [route.method, route.path, route.access]).sort()).toEqual(
       [

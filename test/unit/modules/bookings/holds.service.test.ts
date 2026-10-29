@@ -196,6 +196,13 @@ describe('HoldsService', () => {
       countConfirmedOfCustomer: logged('count confirmed', 0),
       setCounterCustomer: logged('set counter customer', undefined),
       checkIn: logged('check in', undefined),
+      pageForAdmin: logged('page for admin', []),
+      countForAdmin: logged('count for admin', 0),
+      countPaidCreatedBetween: logged('count paid', 0),
+      refundedIdsBetween: logged('refunded ids', []),
+      confirmedOrLiveHeldIdsOf: logged('showtime bookings', []),
+      applyEdit: logged('apply edit', undefined),
+      replaceSeats: logged('replace seats', undefined),
     };
     showtimes = {
       lockedContext: logged('lock showtime', CONTEXT),

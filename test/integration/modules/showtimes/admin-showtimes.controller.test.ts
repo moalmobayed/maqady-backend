@@ -1212,13 +1212,15 @@ describe('Admin showtimes (integration)', () => {
   });
 
   describe('access', () => {
-    it('serves the five admin showtime routes to admins only', async () => {
+    it('serves the six admin showtime routes to admins only', async () => {
       const routes = listHttpRoutes(testApp).filter((route) =>
         /^\/api\/v1\/admin\/showtime/.test(route.path),
       );
       expect(routes.map((route) => `${route.method} ${route.path}`).sort()).toEqual([
         'GET /api/v1/admin/showtimes',
         'GET /api/v1/admin/showtimes/:id',
+        // U14: the impact of a cancellation, served by bookings.
+        'GET /api/v1/admin/showtimes/:id/cancellation-preview',
         'PATCH /api/v1/admin/showtimes/:id',
         'POST /api/v1/admin/showtime-checks',
         'POST /api/v1/admin/showtimes',

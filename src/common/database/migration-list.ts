@@ -41,6 +41,8 @@ import * as m0120_01 from '../../migrations/0120_01_create_payments';
 import * as m0130_01 from '../../migrations/0130_01_add_audit_events_entity_index';
 import * as m0140_01 from '../../migrations/0140_01_add_payments_receipt_reference_check';
 import * as m0140_02 from '../../migrations/0140_02_add_bookings_checked_in_check';
+import * as m0150_01 from '../../migrations/0150_01_create_booking_notes';
+import * as m0150_02 from '../../migrations/0150_02_add_admin_booking_indexes';
 
 /**
  * Every migration in `src/migrations/`, in run order. Imported statically so a bundler or file
@@ -90,4 +92,6 @@ export const MIGRATIONS: readonly ListedMigration[] = [
   { name: '0130_01_add_audit_events_entity_index', file: m0130_01 },
   { name: '0140_01_add_payments_receipt_reference_check', file: m0140_01 },
   { name: '0140_02_add_bookings_checked_in_check', file: m0140_02 },
+  { name: '0150_01_create_booking_notes', file: m0150_01 },
+  { name: '0150_02_add_admin_booking_indexes', file: m0150_02 },
 ];

@@ -7,7 +7,7 @@ import { TheatersModule } from '../theaters/theaters.module';
 import { AdminShowtimeChecksController } from './admin-showtime-checks.controller';
 import { AdminShowtimesController } from './admin-showtimes.controller';
 import {
-  NoBookingsShowtimeCancellation,
+  RegisteredShowtimeCancellation,
   ShowtimeCancellationService,
 } from './showtime-cancellation.service';
 import { ShowtimeLifecycleHooks } from './showtime-lifecycle.hooks';
@@ -26,10 +26,11 @@ import { ShowtimesService } from './showtimes.service';
  * rules of halls, theaters and movies, and for later units
  *
  * - `ShowtimeReadService`: showtimes by id, by movie, by theater and date (U8, U10, U14);
- * - the booking seams `ShowtimeCancellationService` (U14), bound here to its no-bookings
- *   default, `ShowtimeTicketHolderService`, bound to `RegisteredTicketHolders` where bookings
- *   registers its source (U11), and `ShowtimeSeatClaimService`, bound to seating's live claims
- *   (U10). Later units replace the bindings here, in this module's
+ * - the booking seams `ShowtimeCancellationService`, bound to `RegisteredShowtimeCancellation`
+ *   where bookings registers the real cancellation (U14), `ShowtimeTicketHolderService`, bound to
+ *   `RegisteredTicketHolders` where bookings registers its source (U11), and
+ *   `ShowtimeSeatClaimService`, bound to seating's live claims (U10). Later units replace the
+ *   bindings here, in this module's
  *   `providers` (`useExisting` the implementation their own module exports, that module imported
  *   here): this module's own provider wins over an imported one, so a binding made only in their
  *   module has no effect.
@@ -43,7 +44,9 @@ import { ShowtimesService } from './showtimes.service';
     ShowtimeReadService,
     ShowtimesService,
     ShowtimeLifecycleHooks,
-    { provide: ShowtimeCancellationService, useClass: NoBookingsShowtimeCancellation },
+    // U14: the real cancellation (refunds, released holds, notices), registered by bookings.
+    RegisteredShowtimeCancellation,
+    { provide: ShowtimeCancellationService, useExisting: RegisteredShowtimeCancellation },
     // U11: the confirmed bookings' contacts, from the source bookings registers at boot.
     RegisteredTicketHolders,
     { provide: ShowtimeTicketHolderService, useExisting: RegisteredTicketHolders },
@@ -53,6 +56,7 @@ import { ShowtimesService } from './showtimes.service';
   exports: [
     ShowtimeReadService,
     ShowtimeCancellationService,
+    RegisteredShowtimeCancellation,
     ShowtimeTicketHolderService,
     RegisteredTicketHolders,
     ShowtimeSeatClaimService,

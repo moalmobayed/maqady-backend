@@ -74,3 +74,28 @@ export interface AuditEventPage {
   readonly rows: readonly AuditEventView[];
   readonly total: number;
 }
+
+/**
+ * One event of a booking's activity log as staff read it (U14): what happened, when, who did it
+ * (the actor's kind and, for staff, their id), which fields changed and the non-personal metadata.
+ */
+export interface BookingActivityEvent {
+  readonly id: number;
+  readonly occurredAt: Date;
+  readonly action: string;
+  readonly actorKind: ActorKind;
+  readonly actorStaffUserId: number | null;
+  readonly changedFields: readonly string[];
+  readonly metadata: Readonly<Record<string, AuditMetadataValue>>;
+}
+
+/** An `audit_events` row as the booking activity read takes it. */
+export interface BookingActivityRow {
+  readonly id: number;
+  readonly occurred_at: Date;
+  readonly action: string;
+  readonly actor_kind: ActorKind;
+  readonly actor_staff_user_id: number | null;
+  readonly changed_fields: string[];
+  readonly metadata: Readonly<Record<string, AuditMetadataValue>> | null;
+}

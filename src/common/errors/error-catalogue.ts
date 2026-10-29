@@ -160,7 +160,26 @@ export const ERROR_CATALOGUE = {
   BOOKING_NOT_EDITABLE: {
     status: 409,
     message: 'This booking can no longer be changed.',
-    description: 'The booking is refunded, checked in, or its showtime has started.',
+    description:
+      'Only a confirmed booking whose showtime has not started, and that nobody has checked in yet, can be edited (U14). `details.reason` is `not_confirmed` (held, failed, abandoned, completed or refunded; `details.status` says which), `started` or `checked_in`.',
+  },
+  BOOKING_NOT_REFUNDABLE: {
+    status: 409,
+    message: 'This booking cannot be cancelled and refunded.',
+    description:
+      'Only a confirmed booking whose showtime has not ended is cancelled and refunded (U14). `details.status` is the booking status now: `held`, `failed`, `abandoned`, `completed` or `refunded` (already refunded: nothing more to do).',
+  },
+  REFUND_NOT_PENDING: {
+    status: 409,
+    message: 'This refund is not waiting to be paid out.',
+    description:
+      'Only a pending counter refund (cash or card terminal) is recorded as paid out (U14). `details.status` is `succeeded`: an online refund, or a counter refund already paid out.',
+  },
+  NO_CONTACT_DETAILS: {
+    status: 409,
+    message: 'This booking has no email or phone to send the tickets to.',
+    description:
+      "A walk-in sale (or a booking whose contact has neither an email nor a phone) has nowhere to send the tickets (U14). Download the PDF instead (`GET /admin/bookings/{ref}/ticket.pdf`), or edit the booking's contact first.",
   },
   TICKET_NOT_AVAILABLE: {
     status: 409,

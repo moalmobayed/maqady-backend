@@ -7,10 +7,15 @@ import type {
   ChargeResultColumns,
   DueCursor,
   FinishedChargeRow,
+  InstantRange,
+  LedgerRow,
+  MoneyMovedRow,
   NewCounterChargeRow,
   NewPaymentRow,
+  NewRefundRow,
   PaymentKind,
   PaymentRow,
+  RefundPurpose,
 } from './types';
 
 const PAYMENT_COLUMNS = [
@@ -35,6 +40,18 @@ const PAYMENT_COLUMNS = [
 ] as const;
 
 const COLUMN_LIST = PAYMENT_COLUMNS.join(', ');
+
+/** The ledger's columns (U14): every payment column, the counter and payout ones included. */
+const LEDGER_COLUMNS = [
+  ...PAYMENT_COLUMNS,
+  'collected_by_staff_id',
+  'paid_out_at',
+  'paid_out_by_staff_id',
+] as const;
+
+/** A charge's refunds so far, through `idx_payments_refund_of_payment_id`; 0 for a refund row. */
+const REFUNDED_AMOUNT_SQL = `COALESCE((SELECT SUM(r.amount) FROM payments AS r
+  WHERE r.refund_of_payment_id = p.id), 0)::int AS refunded_amount`;
 
 /**
  * `payments` (design §6.2). Every method runs on the current executor, so it joins the request
@@ -165,6 +182,104 @@ export class PaymentsRepository {
       if (!match) throw new AppError('INTERNAL', 'A payment insert returned no row.');
       return match;
     });
+  }
+
+  /**
+   * Every payment and refund of these bookings, each charge with the sum of its refunds so far,
+   * by booking, then oldest first (`idx_payments_booking_id_created_at`). Under the booking's
+   * `FOR UPDATE` lock the remaining amounts stay true until the transaction ends.
+   */
+  async ledgerOf(bookingIds: readonly number[]): Promise<LedgerRow[]> {
+    if (bookingIds.length === 0) return [];
+    const result = await this.db.executor().raw<{ rows: LedgerRow[] }>(
+      `SELECT ${LEDGER_COLUMNS.map((column) => `p.${column}`).join(', ')}, ${REFUNDED_AMOUNT_SQL}
+       FROM payments AS p
+       WHERE p.booking_id = ANY(?::bigint[])
+       ORDER BY p.booking_id, p.created_at, p.id`,
+      [[...new Set(bookingIds)]],
+    );
+    return result.rows;
+  }
+
+  /** One payment row with the ledger columns, or undefined. */
+  async findLedgerEntry(id: number): Promise<LedgerRow | undefined> {
+    const result = await this.db.executor().raw<{ rows: LedgerRow[] }>(
+      `SELECT ${LEDGER_COLUMNS.map((column) => `p.${column}`).join(', ')}, ${REFUNDED_AMOUNT_SQL}
+       FROM payments AS p WHERE p.id = ?`,
+      [id],
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Refunds in one multi-row insert (U14), returned in input order. A batch refunds each charge
+   * at most once, so `refund_of_payment_id` names each returned row.
+   */
+  async insertRefunds(rows: readonly NewRefundRow[]): Promise<LedgerRow[]> {
+    if (rows.length === 0) return [];
+    const inserted = await this.payments()
+      .insert([...rows])
+      .returning<Omit<LedgerRow, 'refunded_amount'>[]>(LEDGER_COLUMNS);
+    return rows.map((row) => {
+      const match = inserted.find(
+        (candidate) => candidate.refund_of_payment_id === row.refund_of_payment_id,
+      );
+      if (!match) throw new AppError('INTERNAL', 'A refund insert returned no row.');
+      return { ...match, refunded_amount: 0 };
+    });
+  }
+
+  /**
+   * Pays out a pending counter refund (design §7.7): `succeeded` now, by this staff member. Only a
+   * refund still `pending` changes; returns it, or undefined when nothing changed.
+   */
+  async markPaidOut(id: number, staffUserId: number, now: Date): Promise<LedgerRow | undefined> {
+    const [updated] = await this.payments()
+      .where({ id, kind: 'refund', status: 'pending' })
+      .update({
+        status: 'succeeded',
+        completed_at: now,
+        paid_out_at: now,
+        paid_out_by_staff_id: staffUserId,
+        updated_at: now,
+      })
+      .returning<Omit<LedgerRow, 'refunded_amount'>[]>(LEDGER_COLUMNS);
+    return updated ? { ...updated, refunded_amount: 0 } : undefined;
+  }
+
+  /**
+   * The money that moved in `[from, to)` (PRD "Collected"): succeeded charges minus succeeded
+   * refunds by `completed_at` (a counter refund once paid out), and the declined charges, in one
+   * query through `idx_payments_completed_at`. Every row is EGP (`chk_payments_currency`).
+   */
+  async moneyMovedBetween(range: InstantRange): Promise<MoneyMovedRow> {
+    const row = await this.payments()
+      .select<MoneyMovedRow[]>(
+        this.db
+          .executor()
+          .raw(
+            `COALESCE(SUM(CASE WHEN status <> 'succeeded' THEN 0 WHEN kind = 'charge' THEN amount ELSE -amount END), 0)::int AS collected`,
+          ),
+        this.db
+          .executor()
+          .raw(`COUNT(*) FILTER (WHERE kind = 'charge' AND status = 'declined')::int AS declined`),
+      )
+      .where('completed_at', '>=', range.from)
+      .andWhere('completed_at', '<', range.to)
+      .whereIn('status', ['succeeded', 'declined'])
+      .first();
+    return { collected: row?.collected ?? 0, declined: row?.declined ?? 0 };
+  }
+
+  /** The sum of these bookings' refunds of one purpose, in any status (piastres). */
+  async refundTotalOf(bookingIds: readonly number[], purpose: RefundPurpose): Promise<number> {
+    if (bookingIds.length === 0) return 0;
+    const row = await this.payments()
+      .sum<{ total: number | null }[]>({ total: 'amount' })
+      .whereIn('booking_id', [...new Set(bookingIds)])
+      .where({ kind: 'refund', purpose })
+      .first();
+    return Number(row?.total ?? 0);
   }
 
   private payments(): Knex.QueryBuilder {
