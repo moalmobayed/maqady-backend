@@ -81,6 +81,11 @@ describe('CustomerAuthService', () => {
     oneTimeTokens = {
       issue: jest.fn().mockResolvedValue({ id: 5, token: LINK_TOKEN, expiresAt: NOW }),
       consume: jest.fn().mockResolvedValue({ id: 5, owner: { kind: 'customer', id: 7 } }),
+      findLive: jest.fn().mockResolvedValue({
+        id: 5,
+        purpose: 'customer_password_reset',
+        owner: { kind: 'customer', id: 7 },
+      }),
     } as unknown as jest.Mocked<OneTimeTokenService>;
     accessTokens = {
       sign: jest.fn().mockReturnValue('a.b.c'),
@@ -255,7 +260,13 @@ describe('CustomerAuthService', () => {
   });
 
   it('verifies the email of the link’s owner', async () => {
+    oneTimeTokens.findLive.mockResolvedValueOnce({
+      id: 5,
+      purpose: 'verify_email',
+      owner: { kind: 'customer', id: 7 },
+    });
     await service.verifyEmail(LINK_TOKEN);
+    expect(customers.findByIdForUpdate).toHaveBeenCalledWith(7);
     expect(oneTimeTokens.consume).toHaveBeenCalledWith({
       purpose: 'verify_email',
       token: LINK_TOKEN,
@@ -326,6 +337,27 @@ describe('CustomerAuthService', () => {
         'password_changed',
       );
       expect(sessions.open).not.toHaveBeenCalled();
+    });
+
+    it('locks the customer before using the link, as every account change does (U15 review)', async () => {
+      await service.resetPassword(input);
+      expect(oneTimeTokens.findLive).toHaveBeenCalledWith(LINK_TOKEN);
+      expect(customers.findByIdForUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+        oneTimeTokens.consume.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('answers INVALID_TOKEN for an unknown link or one of another purpose, locking nothing', async () => {
+      oneTimeTokens.findLive.mockResolvedValueOnce(null);
+      await expect(service.resetPassword(input)).rejects.toMatchObject({ code: 'INVALID_TOKEN' });
+      oneTimeTokens.findLive.mockResolvedValueOnce({
+        id: 5,
+        purpose: 'verify_email',
+        owner: { kind: 'customer', id: 7 },
+      });
+      await expect(service.resetPassword(input)).rejects.toMatchObject({ code: 'INVALID_TOKEN' });
+      expect(customers.findByIdForUpdate).not.toHaveBeenCalled();
+      expect(oneTimeTokens.consume).not.toHaveBeenCalled();
     });
 
     it('answers ACCOUNT_BLOCKED for a blocked customer and writes nothing', async () => {

@@ -1,4 +1,8 @@
 import type { Response } from 'supertest';
+import { TransactionRepository } from '../../../../src/common/database/transaction.repository';
+import { OneTimeTokenService } from '../../../../src/modules/auth/one-time-token.service';
+import { CustomerAuthService } from '../../../../src/modules/customers/customer-auth.service';
+import { CustomerService } from '../../../../src/modules/customers/customer.service';
 import { OutboxDrainService } from '../../../../src/modules/messaging/outbox-drain.service';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
 import {
@@ -17,6 +21,7 @@ import {
   registerCustomer,
   signInCustomer,
 } from '../../../support/customer-auth';
+import { waitForLockWaiters } from '../../../support/database';
 import { bookableShowtime } from '../../../support/holds';
 import { RecordingEmailSender } from '../../../support/messaging/recording-email-sender';
 import { staffSession } from '../../../support/staff-auth';
@@ -413,6 +418,48 @@ describe('Customer anonymisation (integration)', () => {
       .count<{ n: number }[]>({ n: '*' })
       .where({ recipient: customer.email });
     expect(recipients).toEqual([{ n: 0 }]);
+  });
+
+  it('makes a link used during the deletion wait for it, never deadlock with it', async () => {
+    const customer = await registerCustomer(testApp);
+    const tokens = testApp.app.get(OneTimeTokenService);
+    const auth = testApp.app.get(CustomerAuthService);
+    const transactions = testApp.app.get(TransactionRepository);
+    const owner = { kind: 'customer', id: customer.customerId } as const;
+    const reset = await tokens.issue({
+      purpose: 'customer_password_reset',
+      owner,
+      lifetimeSeconds: 3600,
+    });
+    const verify = await tokens.issue({ purpose: 'verify_email', owner, lifetimeSeconds: 86_400 });
+
+    // A change in the anonymisation's (and the admin email edit's) order: the customer row, then
+    // their links. Each link use runs in a transaction of its own, without the request's retry.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const rowLocked = new Promise<void>((resolve) => (locked = resolve));
+    const change = transactions.run(async () => {
+      await testApp.app.get(CustomerService).findByIdForUpdate(customer.customerId);
+      locked();
+      await gate;
+      return tokens.deleteAllFor(owner);
+    });
+    await rowLocked;
+    const uses = [
+      transactions.run(() => auth.resetPassword({ token: reset.token, password: 'NewCinema2026' })),
+      transactions.run(() => auth.verifyEmail(verify.token)),
+    ].map((use) =>
+      use.then(
+        () => 'used',
+        (error: { code?: string }) => error.code,
+      ),
+    );
+    await waitForLockWaiters(testApp.knex, 2);
+    release();
+
+    expect(await change).toBe(2);
+    expect(await Promise.all(uses)).toEqual(['INVALID_TOKEN', 'INVALID_TOKEN']);
   });
 
   it('anonymises a customer who never booked', async () => {

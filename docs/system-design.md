@@ -1015,6 +1015,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   (U9). The customer route locks the customer row and re-checks its email before issuing the
   link, so an admin email change or anonymisation racing it either waits for the link and deletes
   it, or finishes first and nothing is sent to the address it replaced (U15 review).
+- Using a customer link (verification, password reset) reads it without a lock, locks the
+  customer, then consumes it, as the staff setup does (§10.1): every account change locks the
+  customer before their links, so the opposite order deadlocked with them (U15 review).
 - A customer password reset also marks the email verified (the link proved the mailbox), revokes
   every session and opens none: the customer signs in with the new password (U9).
 - "Resend the verification link" answers `202` with no body, and sends nothing to a customer
