@@ -284,6 +284,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/admin-bookings.ts` (U14): `paidOnline(testApp, showtimeId, seats)` (a new
   customer's booking paid by card), `listAdminBookings()`, `refundBooking()`, `payOutRefund()`,
   `previewEdit()` and `editBooking()` through the real admin routes.
+- `test/support/payments-screen.ts` (U16): `listTransactions()` and `paymentsSummary()` through
+  the real admin Payments routes.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -536,6 +538,27 @@ curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/refunds -H "Autho
   -H "Idempotency-Key: $(uuidgen)"
 ```
 
+## Payments screen
+
+The admin Payments page (U16, `docs/gh-17-payments-screen/spec.md`), admins only, in the read-only
+`analytics` module. Both routes settle due slow payments first.
+
+- `GET /api/v1/admin/payments` lists every charge and refund newest first by when the money moved,
+  with the status the screen shows (`succeeded`, `pending`, `failed` with its reason, `refunded`
+  for a charge refunded in full), refunds with a negative amount, and the filters `kind`,
+  `method`, `channel`, `status`, `theaterId`, `dateFrom` and `dateTo` (cinema dates). A pending
+  counter refund carries `actions.markPaidOut`: pay it out with `POST /admin/refunds/{id}/payouts`.
+- `GET /api/v1/admin/payments/summary?dateFrom=&dateTo=` (by default the last 7 cinema days) gives
+  the four cards (collected online, collected at counters, refunds and their share of the money
+  taken, failed today), totals by channel and method, and the reconciliation: each theater's
+  online, cash, terminal, refunds and net; the simulated provider's view of every final online
+  charge against the ledger's; and every booking or payment that does not add up.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/payments?status=pending&kind=refund" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/payments/summary?dateFrom=2026-10-10&dateTo=2026-10-16" -H "Authorization: Bearer $ADMIN"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -638,8 +661,8 @@ src/
                                          (credentials), staff, media, theaters, catalog,
                                          customers, halls, discovery, showtimes, seating (seat
                                          claims and the /ws seat map), bookings (holds,
-                                         checkout, box office, admin bookings), seed
-                                         (the development seed)
+                                         checkout, box office, admin bookings), analytics
+                                         (the Payments screen), seed (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

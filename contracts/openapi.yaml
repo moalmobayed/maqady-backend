@@ -26584,6 +26584,487 @@ paths:
         - 'Admin: showtimes'
       security:
         - staff: []
+  /admin/payments:
+    get:
+      description: |-
+        Admins only (a box office token is `FORBIDDEN`): the Payments table (PRD A8), one row per charge or refund, newest first by when the money moved (or, while it has not, when the row was written), cursor-paged with `total` under the same filters. Due slow payments are settled first, so nothing shows a stale `pending`.
+
+        - `status` is what the screen shows: a charge is `pending` while processing, `succeeded`, `refunded` once its succeeded refunds reach its amount, or `failed` (`failureReason`: `declined`, or `cancelled` for a closed wallet); a refund is `pending` while a counter refund waits to be paid out, else `succeeded`. `ledgerStatus` is the stored status behind it.
+        - A refund's `amount` is negative. A charge carries its refunds so far (`refundedAmount`) and those still waiting at the counter (`pendingRefundAmount`).
+        - Filters combine: `kind`, `method`, `channel`, `status`, `theaterId`, `dateFrom` / `dateTo` (cinema dates of `occurredAt`, inclusive; the summary's period gives the same rows its KPIs count).
+        - Drawer: open the booking with `GET /admin/bookings/{ref}`; when `actions.markPaidOut`, pay the refund out with `POST /admin/refunds/{id}/payouts`.
+      operationId: listTransactions
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: kind
+          required: false
+          in: query
+          description: Only charges (money taken) or only refunds (money given back).
+          schema:
+            $ref: '#/components/schemas/PaymentKind'
+        - name: method
+          required: false
+          in: query
+          description: 'Only rows on this rail: `card`, `wallet` (online), `cash` or `card_terminal` (at the counter). A refund is on its charge’s rail.'
+          schema:
+            $ref: '#/components/schemas/PaymentMethod'
+        - name: channel
+          required: false
+          in: query
+          description: '`online` (card and wallet) or `counter` (cash and card terminal).'
+          schema:
+            $ref: '#/components/schemas/PaymentChannel'
+        - name: status
+          required: false
+          in: query
+          description: 'Only rows shown with this status: `succeeded`, `pending` (a payment in progress, or a counter refund waiting to be paid out), `failed` (declined, or a closed wallet) or `refunded` (a charge whose succeeded refunds reach its amount).'
+          schema:
+            $ref: '#/components/schemas/TransactionStatus'
+        - name: theaterId
+          required: false
+          in: query
+          description: Only rows of bookings for showtimes at this theater.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: dateFrom
+          required: false
+          in: query
+          description: Rows whose money moved (or, while processing or pending, that were written) on or after this cinema date (`YYYY-MM-DD`; a cinema day runs from 06:00 to 06:00 Cairo time). With `dateTo` for the period the summary shows.
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-10'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Rows on or before this cinema date (inclusive: until 06:00 the next morning). Not before `dateFrom`.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+      responses:
+        '200':
+          description: One page of transactions
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionResponsePage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: List transactions
+      tags:
+        - 'Admin: payments'
+      security:
+        - staff: []
+  /admin/payments/summary:
+    get:
+      description: |-
+        Admins only: the cards and the reconciliation above the Payments table (PRD A8) for a period of cinema days (06:00 to 06:00 Cairo time), by default the last 7 (today and the 6 before). Every figure is money moved, counted on the day it moved: succeeded charges (`gross`), succeeded refunds (`refunds`; a counter refund once paid out) and `net` (Collected). Due slow payments are settled first.
+
+        - `kpis`: Collected online, Collected at counters, Refunds with `refundRate` (refunds ÷ money taken), Failed today (charges declined or closed at the wallet on today's cinema day).
+        - `totals`, `byChannel`, `byMethod`: the same money by rail; `failed` counts the period's failed charges.
+        - `reconciliation.byTheater`: Online, Cash, Terminal, Refunds and Net per theater; `totals` equals the KPI totals.
+        - `reconciliation.provider`: every final online charge of the period retrieved from the payment provider, its succeeded total against the ledger's.
+        - `reconciliation.mismatches`: records that do not add up (a booking whose charges minus refunds differ from what it should hold, a charge refunded beyond its amount, a status the provider disagrees with or does not know, an online row with no provider reference); `consistent` is true when there are none.
+        - `dateTo` before `dateFrom`, or a period over 366 days: `VALIDATION_FAILED`.
+      operationId: getPaymentsSummary
+      parameters:
+        - name: dateFrom
+          required: false
+          in: query
+          description: 'The first cinema date of the period (`YYYY-MM-DD`, from 06:00 Cairo time). Omitted: 6 days before `dateTo`, so the default period is the last 7 cinema days.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-10'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'The last cinema date of the period, inclusive (until 06:00 the next morning). Omitted: today. Not before `dateFrom`; at most 366 days in all.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+      responses:
+        '200':
+          description: The KPIs and the reconciliation
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPaymentsSummary'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: KPIs and reconciliation of a period
+      tags:
+        - 'Admin: payments'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -26622,6 +27103,8 @@ tags:
     description: Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset
   - name: 'Admin: bookings'
     description: 'The Bookings page: search and filters, the summary cards, a booking''s detail, internal notes, resending tickets (both roles); cancel and refund, payouts and edits (admins only)'
+  - name: 'Admin: payments'
+    description: 'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)'
   - name: Profile
     description: 'The signed-in customer: details and password'
   - name: My bookings
@@ -34687,6 +35170,741 @@ components:
         - liveHoldCount
         - emailCount
         - smsCount
+    PaymentChannel:
+      type: string
+      enum:
+        - online
+        - counter
+    TransactionStatus:
+      type: string
+      enum:
+        - succeeded
+        - pending
+        - failed
+        - refunded
+    TransactionFailureReason:
+      type: string
+      enum:
+        - declined
+        - cancelled
+      description: 'Why a charge is `failed`: `declined` by the provider, or `cancelled` (the customer closed the wallet). Null otherwise.'
+    TransactionBooking:
+      type: object
+      properties:
+        reference:
+          type: string
+          nullable: false
+          example: MQ-7K3P9Q
+          description: 'The booking reference: open it with `GET /admin/bookings/{ref}`.'
+        channel:
+          nullable: false
+          example: online
+          description: 'Where the booking was made: `online` or at the `counter`.'
+          allOf:
+            - $ref: '#/components/schemas/BookingChannel'
+        contactName:
+          type: string
+          nullable: true
+          example: Nadia Farouk
+          description: The booking's contact name (the customer's, or typed at the counter); null for a walk-in or an anonymised customer.
+      required:
+        - reference
+        - channel
+        - contactName
+    TransactionActions:
+      type: object
+      properties:
+        markPaidOut:
+          type: boolean
+          nullable: false
+          example: false
+          description: 'True for a counter refund waiting at the counter: "Mark refund paid out" calls `POST /admin/refunds/{id}/payouts` with this `id`.'
+      required:
+        - markPaidOut
+    AdminTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 418
+          description: Payment id (a charge or a refund).
+        kind:
+          nullable: false
+          example: charge
+          description: '`charge`: money taken. `refund`: money given back, naming its charge.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentKind'
+        purpose:
+          nullable: false
+          example: sale
+          description: A charge is a `sale` (online or at the counter) or the `edit_difference` of a higher total; a refund is a `cancellation` or the `edit_difference` of a lower total.
+          allOf:
+            - $ref: '#/components/schemas/PaymentPurpose'
+        method:
+          nullable: false
+          example: card
+          description: 'The rail: `card` or `wallet` online, `cash` or `card_terminal` at the counter. A refund is on its charge’s rail.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentMethod'
+        channel:
+          nullable: false
+          example: online
+          description: '`online` (card, wallet) or `counter` (cash, card terminal).'
+          allOf:
+            - $ref: '#/components/schemas/PaymentChannel'
+        status:
+          nullable: false
+          example: succeeded
+          description: 'As the screen shows it. A charge: `pending` while processing, `succeeded`, `refunded` once its succeeded refunds reach its amount (a counter refund counts once paid out), `failed` (see `failureReason`). A refund: `pending` while a counter refund waits to be paid out, else `succeeded`.'
+          allOf:
+            - $ref: '#/components/schemas/TransactionStatus'
+        failureReason:
+          nullable: true
+          example: null
+          description: 'Why a charge is `failed`: `declined` by the provider, or `cancelled` (the customer closed the wallet). Null otherwise.'
+          allOf:
+            - $ref: '#/components/schemas/TransactionFailureReason'
+        ledgerStatus:
+          nullable: false
+          example: succeeded
+          description: 'The stored status behind `status`: a charge `processing`, `succeeded`, `declined` or `cancelled`; a refund `pending` or `succeeded`.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentStatus'
+        amount:
+          nullable: false
+          description: 'Signed: a charge positive, a refund negative (money going back).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refundOfPaymentId:
+          type: integer
+          nullable: true
+          example: null
+          description: A refund's charge (`id` of another row); null for a charge.
+        refundedAmount:
+          nullable: true
+          description: A charge's succeeded refunds so far (positive); null for a refund.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        pendingRefundAmount:
+          nullable: true
+          description: A charge's counter refunds still waiting to be paid out (positive); null for a refund.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        booking:
+          nullable: false
+          description: The booking it belongs to.
+          allOf:
+            - $ref: '#/components/schemas/TransactionBooking'
+        theater:
+          nullable: false
+          description: The theater of the booking's showtime (the reconciliation's theater).
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        card:
+          nullable: true
+          description: The card of a card charge; null otherwise.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/PaymentCard'
+        walletType:
+          nullable: true
+          example: null
+          description: The wallet of a wallet charge; null otherwise.
+          allOf:
+            - $ref: '#/components/schemas/WalletType'
+        receiptReference:
+          type: string
+          nullable: true
+          example: null
+          description: A card-terminal charge's receipt reference as staff typed it; null otherwise.
+        collectedBy:
+          nullable: true
+          description: Who took a counter charge; null otherwise.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/StaffRef'
+        paidOutAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: When a counter refund was paid out (Cairo time); null otherwise.
+        paidOutBy:
+          nullable: true
+          description: Who paid a counter refund out; null otherwise.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/StaffRef'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:02:10+03:00'
+          description: When the row was written (Cairo time).
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:02:10+03:00'
+          description: 'When the money moved: a charge''s final result, an online refund, a counter refund''s payout. Null while processing or pending.'
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:02:10+03:00'
+          description: '`completedAt`, or `createdAt` while nothing has moved yet: the list is newest first by it, and the date filters read its cinema date.'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date of `occurredAt` (a cinema day runs from 06:00 to 06:00).
+        actions:
+          nullable: false
+          description: What the drawer may do now.
+          allOf:
+            - $ref: '#/components/schemas/TransactionActions'
+      required:
+        - id
+        - kind
+        - purpose
+        - method
+        - channel
+        - status
+        - failureReason
+        - ledgerStatus
+        - amount
+        - refundOfPaymentId
+        - refundedAmount
+        - pendingRefundAmount
+        - booking
+        - theater
+        - card
+        - walletType
+        - receiptReference
+        - collectedBy
+        - paidOutAt
+        - paidOutBy
+        - createdAt
+        - completedAt
+        - occurredAt
+        - cinemaDate
+        - actions
+    AdminTransactionResponsePage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, in list order. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminTransaction'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 42
+          description: How many items the whole list has, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
+    PaymentPeriod:
+      type: object
+      properties:
+        dateFrom:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-10'
+          description: The first cinema date.
+        dateTo:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The last cinema date, inclusive.
+        from:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T06:00:00+03:00'
+          description: 'The period starts here: 06:00 Cairo time on `dateFrom`.'
+        to:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-17T06:00:00+03:00'
+          description: 'The period ends here, exclusive: 06:00 Cairo time the morning after `dateTo`.'
+      required:
+        - dateFrom
+        - dateTo
+        - from
+        - to
+    PaymentKpis:
+      type: object
+      properties:
+        collectedOnline:
+          nullable: false
+          description: '"Collected online": card and wallet charges minus their refunds, by the day the money moved.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        collectedAtCounters:
+          nullable: false
+          description: '"Collected at counters": cash and card-terminal charges minus the counter refunds paid out.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refunds:
+          nullable: false
+          description: '"Refunds": every succeeded refund in the period (online at once; a counter refund once paid out).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refundRate:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.125
+          description: 'Refunds as a share of the money taken in the period (`refunds ÷ totals.gross`), 4 decimals: 0.125 is 12.5%. Null when nothing was taken.'
+        failedToday:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 3
+          description: '"Failed today": online charges declined, or closed by the customer at the wallet, on today''s cinema day, whatever the period.'
+      required:
+        - collectedOnline
+        - collectedAtCounters
+        - refunds
+        - refundRate
+        - failedToday
+    PaymentTotals:
+      type: object
+      properties:
+        gross:
+          nullable: false
+          description: 'Money taken: the succeeded charges.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        chargeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 42
+          description: How many succeeded charges.
+        refunds:
+          nullable: false
+          description: 'Money given back: the succeeded refunds (positive).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refundCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: How many succeeded refunds.
+        net:
+          nullable: false
+          description: 'Collected: `gross` minus `refunds`. Negative when more went back than came in.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - gross
+        - chargeCount
+        - refunds
+        - refundCount
+        - net
+    ChannelTotals:
+      type: object
+      properties:
+        gross:
+          nullable: false
+          description: 'Money taken: the succeeded charges.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        chargeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 42
+          description: How many succeeded charges.
+        refunds:
+          nullable: false
+          description: 'Money given back: the succeeded refunds (positive).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refundCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: How many succeeded refunds.
+        net:
+          nullable: false
+          description: 'Collected: `gross` minus `refunds`. Negative when more went back than came in.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        channel:
+          nullable: false
+          example: online
+          description: '`online` (card, wallet) or `counter` (cash, card terminal).'
+          allOf:
+            - $ref: '#/components/schemas/PaymentChannel'
+      required:
+        - gross
+        - chargeCount
+        - refunds
+        - refundCount
+        - net
+        - channel
+    MethodTotals:
+      type: object
+      properties:
+        gross:
+          nullable: false
+          description: 'Money taken: the succeeded charges.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        chargeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 42
+          description: How many succeeded charges.
+        refunds:
+          nullable: false
+          description: 'Money given back: the succeeded refunds (positive).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refundCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: How many succeeded refunds.
+        net:
+          nullable: false
+          description: 'Collected: `gross` minus `refunds`. Negative when more went back than came in.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        method:
+          nullable: false
+          example: cash
+          description: 'The rail: `card`, `wallet`, `cash` or `card_terminal`.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentMethod'
+      required:
+        - gross
+        - chargeCount
+        - refunds
+        - refundCount
+        - net
+        - method
+    FailedPaymentCounts:
+      type: object
+      properties:
+        count:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 5
+          description: 'Every failed charge: `declinedCount + cancelledCount`.'
+        declinedCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: Declined by the provider.
+        cancelledCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 1
+          description: Wallets the customer closed (not a decline).
+      required:
+        - count
+        - declinedCount
+        - cancelledCount
+    TheaterReconciliation:
+      type: object
+      properties:
+        online:
+          nullable: false
+          description: Card and wallet charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        cash:
+          nullable: false
+          description: Cash charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        cardTerminal:
+          nullable: false
+          description: Card-terminal charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refunds:
+          nullable: false
+          description: Succeeded refunds on every rail (positive).
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        net:
+          nullable: false
+          description: '`online + cash + cardTerminal − refunds`.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        theater:
+          nullable: false
+          description: The theater (of each booking's showtime).
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+      required:
+        - online
+        - cash
+        - cardTerminal
+        - refunds
+        - net
+        - theater
+    ReconciliationAmounts:
+      type: object
+      properties:
+        online:
+          nullable: false
+          description: Card and wallet charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        cash:
+          nullable: false
+          description: Cash charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        cardTerminal:
+          nullable: false
+          description: Card-terminal charges taken.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        refunds:
+          nullable: false
+          description: Succeeded refunds on every rail (positive).
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        net:
+          nullable: false
+          description: '`online + cash + cardTerminal − refunds`.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - online
+        - cash
+        - cardTerminal
+        - refunds
+        - net
+    ProviderCheck:
+      type: object
+      properties:
+        checkedCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 38
+          description: Online charges final in the ledger (succeeded, declined, cancelled) whose money moved in the period, each retrieved from the provider.
+        ledgerSucceeded:
+          nullable: false
+          description: The ones the ledger has as succeeded.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        providerSucceeded:
+          nullable: false
+          description: The ones the provider reports succeeded.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        matched:
+          type: boolean
+          nullable: false
+          example: true
+          description: True when the provider agrees with every status and every online row has a provider reference.
+      required:
+        - checkedCount
+        - ledgerSucceeded
+        - providerSucceeded
+        - matched
+    ReconciliationCheck:
+      type: string
+      enum:
+        - booking_balance
+        - over_refunded
+        - provider_status
+        - provider_unknown
+        - missing_provider_reference
+      description: 'Which check failed: `booking_balance` (a booking''s succeeded charges minus refunds differ from its total while confirmed, or from nothing while held or refunded), `over_refunded` (a charge refunded beyond its amount), `provider_status` (the provider reports another status), `provider_unknown` (the provider does not know the reference), `missing_provider_reference` (an online row with none).'
+    ReconciliationMismatch:
+      type: object
+      properties:
+        check:
+          nullable: false
+          example: booking_balance
+          description: 'Which check failed: `booking_balance` (a booking''s succeeded charges minus refunds differ from its total while confirmed, or from nothing while held or refunded), `over_refunded` (a charge refunded beyond its amount), `provider_status` (the provider reports another status), `provider_unknown` (the provider does not know the reference), `missing_provider_reference` (an online row with none).'
+          allOf:
+            - $ref: '#/components/schemas/ReconciliationCheck'
+        bookingReference:
+          type: string
+          nullable: false
+          example: MQ-7K3P9Q
+          description: The booking to open.
+        paymentId:
+          type: integer
+          nullable: true
+          example: null
+          description: The payment the check is about; null for `booking_balance`.
+        expectedAmount:
+          nullable: true
+          description: 'What should be there: the booking''s balance, or the charge''s amount (`over_refunded`); null for the provider checks.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        actualAmount:
+          nullable: true
+          description: 'What the ledger adds up to: the booking''s charges minus refunds, or the charge''s refunds; null for the provider checks.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        ledgerStatus:
+          nullable: true
+          example: null
+          description: The ledger's status of the payment (provider checks); null otherwise.
+          allOf:
+            - $ref: '#/components/schemas/PaymentStatus'
+        providerStatus:
+          nullable: true
+          example: null
+          description: The provider's status (`provider_status`); null otherwise.
+          allOf:
+            - $ref: '#/components/schemas/PaymentResultStatus'
+        message:
+          type: string
+          nullable: false
+          example: Booking MQ-7K3P9Q is confirmed and should hold EGP 380, but its succeeded charges minus refunds come to EGP 0.
+          description: What is wrong, in English, with no personal data.
+      required:
+        - check
+        - bookingReference
+        - paymentId
+        - expectedAmount
+        - actualAmount
+        - ledgerStatus
+        - providerStatus
+        - message
+    PaymentsReconciliation:
+      type: object
+      properties:
+        byTheater:
+          nullable: false
+          description: One row per theater that moved money in the period, by theater name.
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterReconciliation'
+        totals:
+          nullable: false
+          description: The sum of `byTheater`; equal to the KPI totals.
+          allOf:
+            - $ref: '#/components/schemas/ReconciliationAmounts'
+        provider:
+          nullable: false
+          description: The provider's totals against the ledger's.
+          allOf:
+            - $ref: '#/components/schemas/ProviderCheck'
+        mismatches:
+          nullable: false
+          description: Every record that does not add up (at most 100; see `truncated`). Empty when all is well.
+          type: array
+          items:
+            $ref: '#/components/schemas/ReconciliationMismatch'
+        truncated:
+          type: boolean
+          nullable: false
+          example: false
+          description: True when more than 100 mismatches were found and only the first 100 are listed.
+        consistent:
+          type: boolean
+          nullable: false
+          example: true
+          description: True when no mismatch was found.
+      required:
+        - byTheater
+        - totals
+        - provider
+        - mismatches
+        - truncated
+        - consistent
+    AdminPaymentsSummary:
+      type: object
+      properties:
+        period:
+          nullable: false
+          description: The period.
+          allOf:
+            - $ref: '#/components/schemas/PaymentPeriod'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: Today's cinema date (the day of `kpis.failedToday`).
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:15:00+03:00'
+          description: When the figures were computed (Cairo time).
+        kpis:
+          nullable: false
+          description: The four cards.
+          allOf:
+            - $ref: '#/components/schemas/PaymentKpis'
+        totals:
+          nullable: false
+          description: Money moved in the period, every rail.
+          allOf:
+            - $ref: '#/components/schemas/PaymentTotals'
+        byChannel:
+          nullable: false
+          description: '`online`, then `counter`, always both.'
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelTotals'
+        byMethod:
+          nullable: false
+          description: '`card`, `wallet`, `cash`, `card_terminal`, always all four.'
+          type: array
+          items:
+            $ref: '#/components/schemas/MethodTotals'
+        failed:
+          nullable: false
+          description: Charges that failed in the period.
+          allOf:
+            - $ref: '#/components/schemas/FailedPaymentCounts'
+        reconciliation:
+          nullable: false
+          description: Reconciliation by theater, the provider check and the mismatches.
+          allOf:
+            - $ref: '#/components/schemas/PaymentsReconciliation'
+      required:
+        - period
+        - cinemaDate
+        - serverTime
+        - kpis
+        - totals
+        - byChannel
+        - byMethod
+        - failed
+        - reconciliation
     ErrorResponse:
       type: object
       properties:
