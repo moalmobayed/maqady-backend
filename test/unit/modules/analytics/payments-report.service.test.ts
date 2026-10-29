@@ -371,7 +371,7 @@ describe('PaymentsReportService', () => {
       const { reconciliation } = await service.summary({});
 
       // Refunds are never retrieved; rows with no reference are never retrieved.
-      expect(provider.retrieve.mock.calls.map(([request]) => request)).toEqual([
+      expect((provider.retrieve.mock.calls as [unknown][]).map(([request]) => request)).toEqual([
         { providerReference: 'sim.sim_card_visa.1.abc' },
         { providerReference: 'sim.sim_card_slow_declined.1.abc' },
         { providerReference: 'sim.sim_card_declined.1.abc' },

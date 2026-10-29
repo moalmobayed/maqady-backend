@@ -50,6 +50,12 @@ interface Row {
   actions: { markPaidOut: boolean };
 }
 
+/** The parts of a summary the cinema-day test reads. */
+interface DaySummary {
+  totals: { gross: unknown; refunds: unknown };
+  reconciliation: { byTheater: unknown[] };
+}
+
 interface Seeded {
   online: string;
   wallet: string;
@@ -349,12 +355,12 @@ describe('Payments screen (integration)', () => {
 
       const rows = await allRows();
       expect(rows).toHaveLength(11);
-      expect(rowOf(rows, seeded.cash!)).toMatchObject({
+      expect(rowOf(rows, seeded.cash)).toMatchObject({
         status: 'refunded',
         refundedAmount: money(15000),
         pendingRefundAmount: money(0),
       });
-      expect(rowOf(rows, seeded.cash!, 'refund')).toMatchObject({
+      expect(rowOf(rows, seeded.cash, 'refund')).toMatchObject({
         status: 'succeeded',
         ledgerStatus: 'succeeded',
         paidOutAt: '2026-10-11T05:59:00+03:00',
@@ -598,7 +604,7 @@ describe('Payments screen (integration)', () => {
       expect(body.failed).toEqual({ count: 2, declinedCount: 1, cancelledCount: 1 });
 
       // The reconciliation by theater adds up to the KPI totals.
-      const byName = (rows: { theater: { name: string } }[]) =>
+      const byName = <T extends { theater: { name: string } }>(rows: T[]): T[] =>
         [...rows].sort((a, b) => a.theater.name.localeCompare(b.theater.name));
       expect(body.reconciliation.byTheater).toEqual(
         byName([
@@ -631,9 +637,9 @@ describe('Payments screen (integration)', () => {
 
     it('counts money on the cinema day it moved: 05:59 is the night before, 06:00 the new day', async () => {
       await seedMix();
-      const day = async (date: string) =>
+      const day = async (date: string): Promise<DaySummary> =>
         (await paymentsSummary(testApp, admin.authorization, { dateFrom: date, dateTo: date }))
-          .body;
+          .body as DaySummary;
       const eleventh = await day('2026-10-11');
       expect(eleventh.totals).toEqual({
         gross: money(15000),
@@ -700,13 +706,14 @@ describe('Payments screen (integration)', () => {
           })
         ).status,
       ).toBe(200);
-      for (const query of [
+      const refused: Record<string, string>[] = [
         { dateFrom: '2026-10-12', dateTo: '2026-10-11' },
         { dateFrom: '2025-10-16', dateTo: '2026-10-17' },
         { dateFrom: '2026-13-01' },
         { dateTo: 'yesterday' },
         { other: '1' },
-      ]) {
+      ];
+      for (const query of refused) {
         expectError(
           await paymentsSummary(testApp, admin.authorization, query),
           400,
