@@ -329,3 +329,18 @@ export interface StoredPayment {
   readonly settles_at: Date | null;
   readonly completed_at: Date | null;
 }
+
+/** What `paidOnline()` may change (U14): the customer's name and phone, and the payment. */
+export interface PaidOnlineOptions extends CustomerHoldOptions {
+  /** Visa unless given. */
+  readonly payment?: PaymentBody;
+}
+
+/** A new customer's booking paid online (U14's `paidOnline()`). */
+export interface PaidOnlineFixture {
+  readonly reference: string;
+  readonly bookingId: number;
+  readonly customerId: number;
+  /** The customer's `Bearer` token. */
+  readonly authorization: string;
+}
