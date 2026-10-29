@@ -38,7 +38,7 @@ export const NOT_BOOKABLE_REASONS = [
 ] as const;
 
 /** Why a hold was released, in the `booking.released` audit event. */
-export const RELEASE_REASONS = ['released', 'replaced'] as const;
+export const RELEASE_REASONS = ['released', 'replaced', 'showtime_cancelled'] as const;
 
 /**
  * A booking's payment status as the UI shows it (design §7.4; PRD "Statuses"): decided with the
@@ -127,3 +127,31 @@ export const SCAN_REASONS = [
 
 /** How a ticket was presented at the entrance: its QR code, or its reference typed by hand. */
 export const SCAN_VIA = ['qr', 'reference'] as const;
+
+// --- Admin bookings (U14) -------------------------------------------------------------------
+
+/** Why an admin edits a booking (PRD A6 "Edit booking", the design's four reasons; required). */
+export const EDIT_REASONS = [
+  'customer_request',
+  'seat_problem',
+  'showtime_changed',
+  'staff_error',
+] as const;
+
+/** What an edit does with the money: collect a higher total, refund a lower one, or neither. */
+export const EDIT_DIRECTIONS = ['collect', 'refund', 'none'] as const;
+
+/** Why a booking cannot be edited (`BOOKING_NOT_EDITABLE { reason }`). */
+export const NOT_EDITABLE_REASONS = ['not_confirmed', 'started', 'checked_in'] as const;
+
+/** The fields an edit changes, as `changedFields` and the `booking.edited` audit name them. */
+export const EDITED_FIELDS = [
+  'showtime',
+  'seats',
+  'contactName',
+  'contactEmail',
+  'contactPhone',
+] as const;
+
+/** How a staff resend sends the tickets: by email and, with a phone on file, by SMS. */
+export const STAFF_TICKET_CHANNELS = ['email', 'sms'] as const;

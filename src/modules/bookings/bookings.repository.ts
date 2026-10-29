@@ -3,14 +3,18 @@ import type { Knex } from 'knex';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
 import type { PageRequest } from '../../common/pagination/types';
+import type { InstantRange } from '../payments/types';
+import { adminBookingConditions } from './admin-bookings.sql';
 import { bookingStatusPredicate } from './booking-status.sql';
 import { tabPredicate } from './my-bookings.sql';
 import type {
+  AdminBookingFilter,
   BookingOwnerColumns,
   BookingRow,
   BookingSeatRow,
   CheckInTarget,
   CounterCustomerColumns,
+  EditedBookingColumns,
   MyBookingRow,
   MyBookingsTab,
   NewBookingRow,
@@ -341,6 +345,110 @@ export class BookingsRepository {
       .count<{ count: number }[]>({ count: 'id' })
       .first();
     return row?.count ?? 0;
+  }
+
+  // --- Admin bookings (U14) -----------------------------------------------------------------
+
+  /**
+   * One page of the admin bookings list at `now` (PRD A6), `limit + 1` rows, newest first
+   * (`created_at DESC, id DESC`, `idx_bookings_created_at`), joined to the showtime for the
+   * theater and movie filters and the clock-derived status. The cursor's sort key is the
+   * booking's `created_at` as an ISO instant, bound as a `Date`.
+   */
+  async pageForAdmin(
+    filter: AdminBookingFilter,
+    now: Date,
+    page: PageRequest,
+  ): Promise<BookingRow[]> {
+    const query = this.adminBookings(filter, now)
+      .select<BookingRow[]>(BOOKING_COLUMNS.map((column) => `b.${column}`))
+      .orderBy([
+        { column: 'b.created_at', order: 'desc' },
+        { column: 'b.id', order: 'desc' },
+      ])
+      .limit(page.limit + 1);
+    if (page.after) {
+      query.andWhereRaw('(b.created_at, b.id) < (?, ?)', [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
+    }
+    return query;
+  }
+
+  /** How many bookings the admin list has with these filters at `now`. */
+  async countForAdmin(filter: AdminBookingFilter, now: Date): Promise<number> {
+    const row = await this.adminBookings(filter, now)
+      .count<{ count: number }[]>({ count: 'b.id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  /**
+   * The Today card (PRD A6): bookings made in `[from, to)` that were paid, stored `confirmed` or
+   * `refunded` (`idx_bookings_created_at`).
+   */
+  async countPaidCreatedBetween(range: InstantRange): Promise<number> {
+    const row = await this.bookings()
+      .where('created_at', '>=', range.from)
+      .andWhere('created_at', '<', range.to)
+      .whereIn('status', ['confirmed', 'refunded'])
+      .count<{ count: number }[]>({ count: 'id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  /** The bookings refunded in `(from, to]`, in id order (the Refunded card, `idx_bookings_refunded_at`). */
+  async refundedIdsBetween(range: InstantRange): Promise<number[]> {
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where('refunded_at', '>', range.from)
+      .andWhere('refunded_at', '<=', range.to)
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The ids of a showtime's confirmed bookings and live holds at `now`, in id order: what
+   * cancelling the showtime refunds or releases (design §7.7, `idx_bookings_showtime_id_status`).
+   */
+  async confirmedOrLiveHeldIdsOf(showtimeId: number, now: Date): Promise<number[]> {
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where({ showtime_id: showtimeId })
+      .andWhereRaw("(status = 'confirmed' OR (status = 'held' AND hold_expires_at > ?))", [now])
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Applies an edit to a confirmed booking (design §7.8 steps 3 and 7): its showtime, seat count,
+   * total and contact, and the next QR version, which voids every older QR code. Call it after
+   * deleting its claims (the composite foreign key), with the booking locked.
+   */
+  async applyEdit(id: number, columns: EditedBookingColumns): Promise<BookingRow> {
+    const [updated] = await this.bookings()
+      .where({ id, status: 'confirmed' })
+      .update({ ...columns, qr_version: this.db.executor().raw('qr_version + 1') })
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The booking to edit is no longer confirmed.');
+    return updated;
+  }
+
+  /** Replaces a booking's seat snapshot (design §7.8 step 5): one delete, one multi-row insert. */
+  async replaceSeats(bookingId: number, rows: readonly BookingSeatRow[]): Promise<void> {
+    await this.db.executor()('booking_seats').where({ booking_id: bookingId }).delete();
+    await this.insertSeats(rows);
+  }
+
+  private adminBookings(filter: AdminBookingFilter, now: Date): Knex.QueryBuilder {
+    const query = this.db
+      .executor()({ b: 'bookings' })
+      .join({ s: 'showtimes' }, 's.id', 'b.showtime_id');
+    for (const condition of adminBookingConditions(filter, now)) {
+      query.andWhereRaw(condition.sql, [...condition.bindings]);
+    }
+    return query;
   }
 
   private customerBookings(customerId: number): Knex.QueryBuilder {

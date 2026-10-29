@@ -1,19 +1,21 @@
-import type { AuditActor } from '../../common/audit/types';
+import type { ActorKind, AuditActor, AuditMetadataValue } from '../../common/audit/types';
 import type { Currency, Money } from '../../common/money/types';
 import type { Page } from '../../common/pagination/types';
 import type { CalendarDate } from '../../common/time/types';
 import type { AgeRating, MovieStatus } from '../catalog/types';
-import type { Customer } from '../customers/types';
-import type { HallLayout, HallStatus, Zone } from '../halls/types';
+import type { Customer, CustomerStatus } from '../customers/types';
+import type { HallLayout, HallSeat, HallStatus, Zone } from '../halls/types';
 import type { StoredImage } from '../media/types';
 import type {
   CounterPaymentMethod,
+  LedgerEntry,
   OnlinePaymentMethod,
   Payment,
+  PaymentMethod,
   PaymentStatus,
   SimulatedPaymentToken,
 } from '../payments/types';
-import type { ReleasedClaims, SeatSnapshot } from '../seating/types';
+import type { ReleasedClaims, SeatSnapshot, ShowtimeSeats } from '../seating/types';
 import type { ShowtimeStatus, ShowtimeView } from '../showtimes/types';
 import type { StaffMember } from '../staff/types';
 import type { TheaterStatus, ZonePrices } from '../theaters/types';
@@ -24,9 +26,13 @@ import type {
   BOOKING_HISTORY_KINDS,
   BOOKING_STATUSES,
   COUNTER_CUSTOMER_KINDS,
+  EDIT_DIRECTIONS,
+  EDIT_REASONS,
+  EDITED_FIELDS,
   HOLD_OWNERS,
   MY_BOOKINGS_TABS,
   NOT_BOOKABLE_REASONS,
+  NOT_EDITABLE_REASONS,
   PAYMENT_STATUS_DISPLAYS,
   RELEASE_REASONS,
   SCAN_REASONS,
@@ -34,6 +40,7 @@ import type {
   SCAN_VIA,
   SETTLE_FIRST_KINDS,
   SETTLE_FIRST_SOURCES,
+  STAFF_TICKET_CHANNELS,
   TICKET_DELIVERY_CHANNELS,
   TICKET_STATUSES,
 } from './enums';
@@ -73,6 +80,16 @@ export type MyBookingsTab = (typeof MY_BOOKINGS_TABS)[number];
 export type BookingHistoryKind = (typeof BOOKING_HISTORY_KINDS)[number];
 
 export type TicketDeliveryChannel = (typeof TICKET_DELIVERY_CHANNELS)[number];
+
+export type EditReason = (typeof EDIT_REASONS)[number];
+
+export type EditDirection = (typeof EDIT_DIRECTIONS)[number];
+
+export type NotEditableReason = (typeof NOT_EDITABLE_REASONS)[number];
+
+export type EditedField = (typeof EDITED_FIELDS)[number];
+
+export type StaffTicketChannel = (typeof STAFF_TICKET_CHANNELS)[number];
 
 // --- Rows -----------------------------------------------------------------------------------
 
@@ -722,4 +739,323 @@ export interface ScanOutcome {
 export interface SettleFirstOptions {
   readonly kind: SettleFirstKind;
   readonly source: SettleFirstSource;
+}
+
+// --- Admin bookings (U14) -------------------------------------------------------------------
+
+/** `GET /admin/bookings`, as validated (PRD A6 search and filters). */
+export interface AdminBookingFilter {
+  /** 2 to 100 characters, trimmed: a reference, or part of a contact name, email or phone. */
+  readonly q?: string;
+  readonly theaterId?: number;
+  readonly movieId?: number;
+  readonly status?: BookingDisplayStatus;
+  readonly channel?: BookingChannel;
+  /** A sale charge of this method exists. */
+  readonly method?: PaymentMethod;
+  /** The booking was made from 06:00 Cairo time on this cinema date… */
+  readonly dateFrom?: CalendarDate;
+  /** …until 06:00 after this one (inclusive cinema dates). */
+  readonly dateTo?: CalendarDate;
+}
+
+/** What an admin search looks for: one reference exactly, or a substring of the contact fields. */
+export type AdminBookingSearch =
+  | { readonly kind: 'reference'; readonly reference: string }
+  | {
+      readonly kind: 'contact';
+      /** The `ILIKE` pattern, `%`, `_` and `\\` escaped. */
+      readonly pattern: string;
+      /** The E.164 form of an Egyptian mobile typed locally (`01012345678`), also searched. */
+      readonly phonePattern: string | null;
+    };
+
+/** One SQL condition of the admin list, on `bookings b` joined to `showtimes s`. */
+export interface AdminSqlCondition {
+  readonly sql: string;
+  readonly bindings: readonly (string | number | Date)[];
+}
+
+/** A staff member as the admin screens name them. */
+export interface StaffRef {
+  readonly id: number;
+  readonly fullName: string;
+}
+
+/** The customer card of the admin booking detail (PRD A6): null fields once anonymised. */
+export interface AdminCustomerCard {
+  readonly id: number;
+  readonly fullName: string | null;
+  readonly email: string | null;
+  readonly phone: string | null;
+  readonly status: CustomerStatus;
+  readonly anonymised: boolean;
+}
+
+/** A payment or refund as the admin detail shows it, with the staff it names. */
+export interface AdminLedgerEntry {
+  readonly entry: LedgerEntry;
+  readonly collectedBy: StaffRef | null;
+  readonly paidOutBy: StaffRef | null;
+}
+
+/** One event of a booking's activity log as staff read it (PRD A6 "Activity log"). */
+export interface AdminActivityEvent {
+  readonly action: string;
+  readonly occurredAt: Date;
+  readonly actorKind: ActorKind;
+  /** The staff member who acted; null for a customer or the system. */
+  readonly staff: StaffRef | null;
+  readonly changedFields: readonly string[];
+  readonly metadata: Readonly<Record<string, AuditMetadataValue>>;
+}
+
+/** What an admin may do with a booking now. */
+export interface AdminBookingActions {
+  readonly refund: boolean;
+  readonly edit: boolean;
+  readonly resendTickets: boolean;
+}
+
+/** `GET /admin/bookings/{ref}`: the booking and everything the admin detail shows. */
+export interface AdminBookingDetail {
+  readonly booking: Booking;
+  readonly contact: BookingContact;
+  readonly customer: AdminCustomerCard | null;
+  /** The box office member who made a counter booking; null online. */
+  readonly soldBy: StaffRef | null;
+  readonly checkedInAt: Date | null;
+  readonly checkedInBy: StaffRef | null;
+  readonly ledger: readonly AdminLedgerEntry[];
+  /** What a cancel and refund would give back now: the succeeded charges' remaining amounts. */
+  readonly refundable: Money;
+  readonly actions: AdminBookingActions;
+  readonly activity: readonly AdminActivityEvent[];
+}
+
+/** The four cards of the admin bookings page (PRD A6), at `serverTime`. */
+export interface AdminBookingSummary {
+  readonly cinemaDate: CalendarDate;
+  readonly serverTime: Date;
+  /** Bookings made today that were paid (stored `confirmed` or `refunded`). */
+  readonly todayBookings: number;
+  /** Money taken today minus refunds paid out today. */
+  readonly collectedToday: Money;
+  /** Online payments declined today. */
+  readonly failedPaymentsToday: number;
+  /** Bookings refunded in the last 7 days and the money their cancellations gave back. */
+  readonly refundedLast7Days: { readonly bookingCount: number; readonly amount: Money };
+}
+
+/** A `booking_notes` row (design §6.2). */
+export interface BookingNoteRow {
+  readonly id: number;
+  readonly booking_id: number;
+  readonly staff_user_id: number;
+  readonly body: string;
+  readonly created_at: Date;
+}
+
+/** A new note row. */
+export type NewBookingNoteRow = Omit<BookingNoteRow, 'id'>;
+
+/** An internal note as staff read it, with its author. */
+export interface BookingNote {
+  readonly id: number;
+  readonly body: string;
+  readonly author: StaffRef | null;
+  readonly createdAt: Date;
+}
+
+/** What a staff resend queued: the channels and when. */
+export interface StaffTicketDelivery {
+  readonly channels: readonly StaffTicketChannel[];
+  readonly queuedAt: Date;
+}
+
+/** Who and what a refund of locked bookings is for (cancel and refund, a showtime cancellation). */
+export interface RefundContext {
+  readonly actor: AuditActor;
+  readonly now: Date;
+  /** Why, as the `booking.refunded` audit event names it. */
+  readonly reason: 'admin_cancel' | 'showtime_cancelled';
+  /** Queue the "cancelled and refunded" email (cancel and refund); a showtime sends its own. */
+  readonly notify: boolean;
+}
+
+/** One booking a refund changed: its row as locked, its refunds and the seats it freed. */
+export interface RefundedBooking {
+  readonly row: BookingRow;
+  readonly refunds: readonly LedgerEntry[];
+}
+
+/** What cancel and refund answers: the refunds made and the booking after them. */
+export interface BookingRefundResult {
+  readonly refunds: readonly LedgerEntry[];
+  readonly booking: Booking;
+}
+
+/** A contact change of an edit: each field changes when present (null clears it). */
+export interface ContactChanges {
+  readonly name?: string | null;
+  readonly email?: string | null;
+  readonly phone?: string | null;
+}
+
+/** `POST /admin/bookings/{ref}/edit-previews` and `/edits`, as validated. */
+export interface EditBookingInput {
+  readonly showtimeId?: number;
+  /** 1 to 8 distinct labels; the current seats when absent. */
+  readonly seats?: readonly string[];
+  readonly contact?: ContactChanges;
+  readonly reason: EditReason;
+  readonly notify: boolean;
+  /** Required exactly when the total goes up: the difference taken at the counter. */
+  readonly payment?: {
+    readonly method: CounterPaymentMethod;
+    readonly receiptReference: string | null;
+  };
+}
+
+/** A seat of an edit's proposal: priced, and whether it is a seat the booking keeps. */
+export interface PlannedSeat extends BookingSeat {
+  readonly kept: boolean;
+}
+
+/** One refund of an edit's lower total: this much of this charge. */
+export interface PlannedRefund {
+  readonly charge: LedgerEntry;
+  readonly amount: Money;
+}
+
+/** An edit's money: what moves and in which direction (the amount is never negative). */
+export interface EditDifference {
+  readonly direction: EditDirection;
+  readonly amount: Money;
+}
+
+/** What `planEdit()` decides from, all read by the caller. */
+export interface EditPlanInput {
+  readonly row: BookingRow;
+  readonly currentSeats: readonly BookingSeatRow[];
+  readonly target: {
+    readonly showtimeId: number;
+    readonly prices: ZonePrices;
+    /** The target hall's seats by label. */
+    readonly layout: ReadonlyMap<string, HallSeat>;
+  };
+  /** The requested labels; the current ones when the edit names none. */
+  readonly labels: readonly string[];
+  readonly contact: ContactChanges | undefined;
+  /** The booking's ledger, read under its lock for an edit. */
+  readonly ledger: readonly LedgerEntry[];
+}
+
+/** An edit as it will be applied: the same for the preview and for the edit itself. */
+export interface EditPlan {
+  readonly seats: readonly PlannedSeat[];
+  readonly previousTotal: Money;
+  readonly total: Money;
+  readonly difference: EditDifference;
+  readonly refunds: readonly PlannedRefund[];
+  readonly changedFields: readonly EditedField[];
+  readonly contact: BookingContact;
+  readonly showtimeChanged: boolean;
+  readonly seatsChanged: boolean;
+}
+
+/** `POST /admin/bookings/{ref}/edit-previews`: the edit before and after, nothing saved. */
+export interface EditPreview {
+  readonly current: {
+    readonly showtime: BookingShowtime;
+    readonly seats: readonly BookingSeat[];
+    readonly total: Money;
+  };
+  readonly proposed: {
+    readonly showtime: BookingShowtime;
+    readonly seats: readonly PlannedSeat[];
+    readonly total: Money;
+  };
+  readonly difference: EditDifference;
+  readonly refunds: readonly PlannedRefund[];
+  readonly changedFields: readonly EditedField[];
+  /** Target seats someone else holds or bought right now: the edit would be `SEAT_TAKEN`. */
+  readonly unavailableSeats: readonly string[];
+}
+
+/** What an edit answers: the booking after it, its money and the payments it wrote. */
+export interface EditResult {
+  readonly booking: Booking;
+  readonly difference: EditDifference;
+  readonly changedFields: readonly EditedField[];
+  readonly payments: readonly LedgerEntry[];
+}
+
+/** What an edit writes onto the booking row. */
+export interface EditedBookingColumns {
+  readonly showtime_id: number;
+  readonly seat_count: number;
+  readonly total_amount: number;
+  readonly contact_name: string | null;
+  readonly contact_email: string | null;
+  readonly contact_phone: string | null;
+  readonly updated_at: Date;
+}
+
+/** `GET /admin/showtimes/{id}/cancellation-preview` (PRD A5 "Cancel shows its impact"). */
+export interface ShowtimeCancellationPreview {
+  readonly showtimeId: number;
+  /** Scheduled and not ended: `PATCH /admin/showtimes/{id}` would cancel it. */
+  readonly cancellable: boolean;
+  readonly bookingCount: number;
+  readonly seatCount: number;
+  /** Given back through the payment provider to cards and wallets. */
+  readonly refundedOnline: Money;
+  /** Owed back at the counter in cash or to the card terminal, pending until paid out. */
+  readonly owedAtCounter: Money;
+  readonly liveHoldCount: number;
+  readonly emailCount: number;
+  readonly smsCount: number;
+}
+
+/** The seats an edit frees on its old showtime and sells on its target, for the seat map. */
+export interface EditSeatEvents {
+  readonly released: ShowtimeSeats;
+  readonly booked: ShowtimeSeats;
+}
+
+/** The parameters of the "booking cancelled and refunded" email (PRD "Email and SMS"). */
+export interface BookingRefundedParams {
+  readonly reference: string;
+  readonly customerName: string | null;
+  readonly movieTitle: string;
+  readonly theaterName: string;
+  /** `formatCairoDisplay`. */
+  readonly startsAt: string;
+  /** `formatMoneyDisplay` of the whole refund. */
+  readonly amount: string;
+  /** The part given back to the card or wallet, or null. */
+  readonly onlineAmount: string | null;
+  /** The part to collect at the box office, or null. */
+  readonly counterAmount: string | null;
+}
+
+/** The parameters of the "showtime cancelled" email and SMS (PRD "Email and SMS"). */
+export interface ShowtimeCancelledParams {
+  readonly reference: string;
+  readonly customerName: string | null;
+  readonly movieTitle: string;
+  readonly theaterName: string;
+  readonly hallName: string;
+  readonly startsAt: string;
+  readonly amount: string;
+  readonly onlineAmount: string | null;
+  readonly counterAmount: string | null;
+}
+
+/** One row of the admin bookings list: the booking, its contact and its check-in. */
+export interface AdminBookingListItem {
+  readonly booking: Booking;
+  readonly contact: BookingContact;
+  readonly checkedInAt: Date | null;
 }

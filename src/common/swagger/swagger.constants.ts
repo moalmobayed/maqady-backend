@@ -47,6 +47,11 @@ export const API_TAGS = [
     description:
       'Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset',
   },
+  {
+    name: 'Admin: bookings',
+    description:
+      "The Bookings page: search and filters, the summary cards, a booking's detail, internal notes, resending tickets (both roles); cancel and refund, payouts and edits (admins only)",
+  },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
   {
     name: 'My bookings',

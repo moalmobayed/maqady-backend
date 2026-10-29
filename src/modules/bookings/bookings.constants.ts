@@ -106,3 +106,27 @@ export const SCAN_CODE_MAX_LENGTH = 512;
 /** Audit actions of the box office that U10 and U11 do not already name. */
 export const BOOKING_CHECKED_IN_ACTION = 'booking.checked_in';
 export const TICKET_DOWNLOADED_ACTION = 'booking.ticket_downloaded';
+
+// --- Admin bookings (U14) -------------------------------------------------------------------
+
+/** A note is 1 to 1,000 characters after trimming (design §6.2 `booking_notes`). */
+export const NOTE_MAX_LENGTH = 1000;
+
+/** The admin search needs 2 to 100 characters (design §13.2). */
+export const SEARCH_MIN_LENGTH = 2;
+export const SEARCH_MAX_LENGTH = 100;
+
+/** An Egyptian mobile as typed locally, `01012345678`, which is stored as `+201012345678`. */
+export const LOCAL_MOBILE_PATTERN = /^0(1[0-9]{9})$/;
+
+/** The admin detail's activity log shows a booking's first this many events. */
+export const ACTIVITY_LOG_LIMIT = 100;
+
+/** The Refunded card counts the bookings refunded in this many days before now (PRD A6). */
+export const REFUNDED_CARD_DAYS = 7;
+
+/** Audit actions of admin bookings (U14) that earlier units do not already name. */
+export const BOOKING_REFUNDED_ACTION = 'booking.refunded';
+export const BOOKING_EDITED_ACTION = 'booking.edited';
+export const NOTE_ADDED_ACTION = 'booking.note_added';
+export const PAYOUT_ACTION = 'payment.paid_out';

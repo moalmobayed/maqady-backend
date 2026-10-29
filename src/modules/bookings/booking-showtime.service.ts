@@ -52,6 +52,24 @@ export class BookingShowtimeService {
   }
 
   /**
+   * A showtime read without locks, whatever its theater's status (a draft theater included, for
+   * the caller to judge); null when unknown (U14 edit previews).
+   */
+  async anyContext(showtimeId: number): Promise<ShowtimeContext | null> {
+    const view = await this.showtimes.findById(showtimeId);
+    return view ? this.contextOf(view) : null;
+  }
+
+  /**
+   * A showtime locked `FOR SHARE` in the open transaction (design §7.1 step 2), whatever its
+   * theater's status; null when unknown (U14 edits lock the current and the target showtime).
+   */
+  async lockedAnyContext(showtimeId: number): Promise<ShowtimeContext | null> {
+    const view = await this.showtimes.lockForShare(showtimeId);
+    return view ? this.contextOf(view) : null;
+  }
+
+  /**
    * The headers of many bookings' showtimes, by showtime id, whatever their theaters' status now
    * (My Bookings, U12): three batched reads whatever their number.
    */

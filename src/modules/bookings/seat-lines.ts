@@ -7,7 +7,7 @@ import type { BookingSeat, SeatLine } from './types';
  * A booking's seats in seat order: by row letter, then seat number, so `F2` comes before `F10`
  * (the stored label order is byte order, where `F10` sorts first).
  */
-export function inSeatOrder(seats: readonly BookingSeat[]): BookingSeat[] {
+export function inSeatOrder<T extends BookingSeat>(seats: readonly T[]): T[] {
   return [...seats].sort(
     (a, b) => a.rowLabel.localeCompare(b.rowLabel, 'en') || a.seatNumber - b.seatNumber,
   );
