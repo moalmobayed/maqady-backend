@@ -92,5 +92,9 @@ export function adminBookingConditions(filter: AdminBookingFilter, now: Date): A
   if (filter.dateTo !== undefined) {
     conditions.push({ sql: 'b.created_at < ?', bindings: [cinemaDayBounds(filter.dateTo).endsAt] });
   }
+  if (filter.customerId !== undefined) {
+    // idx_bookings_customer_id_status_hold_expires_at (U15: a customer's bookings).
+    conditions.push({ sql: 'b.customer_id = ?', bindings: [filter.customerId] });
+  }
   return conditions;
 }

@@ -50,7 +50,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: 'List bookings',
     description:
-      'Staff (box office or admin): the Bookings table (PRD A6), newest first, cursor-paged, with `total` under the same filters. Due slow payments are settled first, so nothing shows a stale `processing`.\n\n- `q` searches a booking reference exactly (any case), else part of the contact name, email or phone (case-insensitive; a local Egyptian mobile such as `01012345678` also finds `+201012345678`).\n- Filters combine: `theaterId`, `movieId`, `status` (decided now from stored times), `channel`, `method` (a sale payment of that method), `dateFrom` / `dateTo` (cinema dates the booking was made on, inclusive).\n- Each row carries the contact, the showtime header, the seats, the total, the latest payment and the check-in.',
+      "Staff (box office or admin): the Bookings table (PRD A6), newest first, cursor-paged, with `total` under the same filters. Due slow payments are settled first, so nothing shows a stale `processing`.\n\n- `q` searches a booking reference exactly (any case), else part of the contact name, email or phone (case-insensitive; a local Egyptian mobile such as `01012345678` also finds `+201012345678`).\n- Filters combine: `theaterId`, `movieId`, `status` (decided now from stored times), `channel`, `method` (a sale payment of that method), `dateFrom` / `dateTo` (cinema dates the booking was made on, inclusive), `customerId` (one customer's bookings, the Customers drawer).\n- Each row carries the contact, the showtime header, the seats, the total, the latest payment and the check-in.",
   })
   @ApiOkResponse({
     type: AdminBookingListItemPageResponse,
@@ -278,6 +278,7 @@ function filterOf(query: AdminBookingsQuery): AdminBookingFilter {
     ...(query.method !== undefined ? { method: query.method } : {}),
     ...(query.dateFrom !== undefined ? { dateFrom: query.dateFrom } : {}),
     ...(query.dateTo !== undefined ? { dateTo: query.dateTo } : {}),
+    ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
   };
 }
 

@@ -33,6 +33,8 @@ import { BookingsShowtimeCancellation } from './bookings-showtime-cancellation.s
 import { BookingsRepository } from './bookings.repository';
 import { CheckoutService } from './checkout.service';
 import { CounterSalesService } from './counter-sales.service';
+import { CustomerBookingsRepository } from './customer-bookings.repository';
+import { CustomerBookingsService } from './customer-bookings.service';
 import { HoldsController } from './holds.controller';
 import { HoldsService } from './holds.service';
 import { MyBookingsController } from './my-bookings.controller';
@@ -71,7 +73,9 @@ import { TicketsService } from './tickets.service';
  * `QrCodeService` and `SettleFirstInterceptor` (registered globally by `AppModule`); for the
  * admin booking list and detail (U14), `BookingViews` (`ofMany()`, a fixed query count) and
  * `BookingHistoryService` (`ofBooking()`); from U14, `BookingNotesService` (anonymisation deletes
- * notes, U15), `BookingRefundsService` and `AdminBookingsService` (the list filters, U19).
+ * notes, U15), `BookingRefundsService` and `AdminBookingsService` (the list filters, U19); for
+ * the admin Customers screen (U15), `CustomerBookingsService` (numbers, clearing contacts) and
+ * `AdminBookingResponseMapper` (the drawer's recent bookings).
  */
 @Module({
   imports: [
@@ -131,6 +135,8 @@ import { TicketsService } from './tickets.service';
     BookingRefundsService,
     BookingEditsService,
     BookingsShowtimeCancellation,
+    CustomerBookingsRepository,
+    CustomerBookingsService,
   ],
   exports: [
     HoldsService,
@@ -147,6 +153,8 @@ import { TicketsService } from './tickets.service';
     BookingNotesService,
     BookingRefundsService,
     AdminBookingsService,
+    AdminBookingResponseMapper,
+    CustomerBookingsService,
   ],
 })
 export class BookingsModule {}
