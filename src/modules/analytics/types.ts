@@ -262,6 +262,13 @@ export interface ReconciliationMismatch {
   readonly message: string;
 }
 
+/** What a provider check knows of a mismatched online row: its ledger status, the provider's, and why. */
+export interface ProviderMismatchFacts {
+  readonly ledgerStatus: PaymentStatus;
+  readonly providerStatus?: ChargeStatus;
+  readonly message: string;
+}
+
 export interface Reconciliation {
   readonly byTheater: readonly TheaterReconciliation[];
   readonly totals: ReconciliationAmounts;

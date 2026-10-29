@@ -31,6 +31,7 @@ import type {
   PaymentsSummary,
   PeriodQuery,
   ProviderCheckResult,
+  ProviderMismatchFacts,
   ReconciliationMismatch,
   Transaction,
   TransactionFilter,
@@ -326,8 +327,7 @@ function overRefundMismatch(row: OverRefundRow): ReconciliationMismatch {
 function mismatchOf(
   check: ReconciliationMismatch['check'],
   row: OnlineCheckRow,
-  facts: Pick<ReconciliationMismatch, 'ledgerStatus' | 'message'> &
-    Partial<Pick<ReconciliationMismatch, 'providerStatus'>>,
+  facts: ProviderMismatchFacts,
 ): ReconciliationMismatch {
   return {
     check,
