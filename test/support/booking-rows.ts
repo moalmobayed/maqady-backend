@@ -23,6 +23,8 @@ export function bookingRow(overrides: Partial<BookingRow> = {}): BookingRow {
     confirmed_at: new Date('2026-10-15T14:02:00+03:00'),
     refunded_at: null,
     qr_version: 1,
+    checked_in_at: null,
+    checked_in_by_staff_id: null,
     created_at: at,
     updated_at: at,
     ...overrides,
