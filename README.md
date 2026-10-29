@@ -284,6 +284,10 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/admin-bookings.ts` (U14): `paidOnline(testApp, showtimeId, seats)` (a new
   customer's booking paid by card), `listAdminBookings()`, `refundBooking()`, `payOutRefund()`,
   `previewEdit()` and `editBooking()` through the real admin routes.
+- `test/support/admin-customers.ts` (U15): `listAdminCustomers()`, `getAdminCustomer()`,
+  `updateAdminCustomer()`, `anonymiseCustomer()`, `requestCustomerReset()` through the real admin
+  routes, and `paidBookingOf(testApp, customer, showtimeId, seats)` (an existing customer's
+  booking paid by card).
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -512,7 +516,7 @@ annotate; refunds, payouts and edits are admin only.
 
 - `GET /api/v1/admin/bookings` lists bookings newest first with `q` (a reference, or part of the
   contact name, email or phone), `theaterId`, `movieId`, `status`, `channel`, `method`,
-  `dateFrom` and `dateTo` (cinema dates the booking was made on). `GET /admin/bookings/summary`
+  `dateFrom` and `dateTo` (cinema dates the booking was made on), and `customerId` (U15). `GET /admin/bookings/summary`
   gives the four cards; `GET /admin/bookings/{ref}` the detail with every payment and refund, the
   customer card and the activity log.
 - `GET` / `POST /api/v1/admin/bookings/{ref}/notes` are internal notes (no customer route ever
@@ -534,6 +538,36 @@ curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/edit-previews -H 
   -H 'Content-Type: application/json' -d '{"seats":["B5","B6"],"reason":"customer_request"}'
 curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/refunds -H "Authorization: Bearer $ADMIN" \
   -H "Idempotency-Key: $(uuidgen)"
+```
+
+## Admin customers
+
+The admin Customers page (U15, `docs/gh-16-admin-customers/spec.md`), in the `admin-customers`
+module. Both staff roles read; edits, block and unblock, the reset email and "Delete account" are
+admin only.
+
+- `GET /api/v1/admin/customers` lists live customers newest first with `q` (part of the name,
+  email or phone) and `status` (`active`, `blocked`). Each row has `stats`: Bookings (paid and not
+  refunded), Spent, No-shows (a show that ended, never scanned at the entrance) and Last booking.
+  `GET /admin/customers/{id}` adds the 4 newest bookings; `GET /admin/bookings?customerId=` pages
+  all of them.
+- `PATCH /api/v1/admin/customers/{id}` edits `fullName`, `email` (a new address is unverified and
+  its old links stop working) and `phone`, and `status: blocked` signs the customer out everywhere
+  (`ACCOUNT_BLOCKED` on sign-in and refresh); `status: active` unblocks.
+- `POST /api/v1/admin/customers/{id}/password-reset-requests` (strict) emails a 1-hour reset link;
+  a blocked customer is `CUSTOMER_BLOCKED`.
+- `DELETE /api/v1/admin/customers/{id}` anonymises the customer in one transaction (design §21):
+  name, email, phone and password gone, the contact on their bookings cleared, their sessions,
+  links, idempotency keys, messages and the notes on their bookings deleted; bookings and payments
+  stay. The answer counts what was kept and removed.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/customers?q=layla&status=active" -H "Authorization: Bearer $STAFF"
+curl -s -X PATCH localhost:3000/api/v1/admin/customers/42 -H "Authorization: Bearer $ADMIN" \
+  -H 'Content-Type: application/json' -d '{"status":"blocked"}'
+curl -s -X POST localhost:3000/api/v1/admin/customers/42/password-reset-requests \
+  -H "Authorization: Bearer $ADMIN" -H "Idempotency-Key: $(uuidgen)"
+curl -s -X DELETE localhost:3000/api/v1/admin/customers/42 -H "Authorization: Bearer $ADMIN"
 ```
 
 ## Database and migrations

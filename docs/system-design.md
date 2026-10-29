@@ -133,6 +133,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `bookings` | `bookings`, `booking_seats`, `booking_notes` | seating, payments, messaging; it reads showtimes, halls, theaters, catalog, customers, staff and media through their exported services (U10, `docs/gh-11-holds/spec.md`). *Deviation (U14, `docs/gh-15-admin-bookings/spec.md`):* the admin list's `method` filter reads `payments` in one `EXISTS` of its own query, like its joins to `showtimes`, since a filtered, paged list cannot be assembled through a service call |
 | `payments` | `payments`; the payment-provider interface and the simulated provider. *Deviation (U11, `docs/gh-12-checkout/spec.md`):* `SettlementService`, confirmation and the tickets live in `bookings`, which writes the bookings, claims and messages they change | — |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
+| `admin-customers` | No table: the admin Customers screen and anonymisation (U15, `docs/gh-16-admin-customers/spec.md`). *Deviation:* a module of its own, since its routes need `bookings` (the numbers, booking contacts and notes) and `bookings` imports `customers`; it changes each table through the module that owns it | customers, bookings, auth, idempotency, messaging, audit |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
 | `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
@@ -1191,6 +1192,21 @@ paginated route of their own and no customer route reads them. The staff resend
 booking's contact (`NO_CONTACT_DETAILS` with neither). `POST /admin/bookings/{ref}/edit-previews`
 answers `200`.
 
+Admin customers (U15, `docs/gh-16-admin-customers/spec.md`): `GET /admin/customers` lists live
+customers newest first (`created_at DESC, id DESC`), cursor-paged with `total`, after
+`settleAllDue()`; anonymised accounts are never listed, and their detail, edit, block, reset and
+delete answer `NOT_FOUND`. `q` (2–100 characters) is a case-insensitive substring of the name,
+email or phone (a local mobile also matches its E.164 form), on trigram indexes; `status` filters
+`active` or `blocked`. Every row carries `stats`: Bookings (stored `confirmed`), Spent (their
+totals), No-shows (Completed by `bookingStatusPredicate()` and never checked in) and Last booking,
+one grouped query per page. The detail adds the 4 newest bookings in any status (U14's list item;
+`GET /admin/bookings?customerId=` pages all). `PATCH` takes `fullName`, `email` (a new address must
+be free among live accounts, `EMAIL_TAKEN`; it is unverified and the customer's unused one-time
+links are deleted), `phone` and `status` (U9's `setStatus()`: blocking revokes every session) in one
+transaction and answers the customer with its stats. The admin reset email answers `202 { channel,
+queuedAt }` and refuses a blocked customer with `CUSTOMER_BLOCKED`. `DELETE` anonymises (§21) and
+answers `200` with `bookingsKept` and the counts removed.
+
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
@@ -1318,7 +1334,9 @@ generated contract (§19).
   `showtime.cancelled_sms` (SMS) for every booking a showtime cancellation refunds, queued with
   one `queueMany()`; a staff resend reuses `booking.tickets` and `booking.tickets_sms`. None has
   a secret parameter.
-- **Anonymisation.** Deleting a customer deletes their messages.
+- **Anonymisation.** Deleting a customer deletes their messages. *As built (U15):* every message
+  with `related_customer_id` = the customer (their account emails and every message about their
+  bookings, which carry it), whatever its status (`MessagingService.deleteForCustomer()`).
 
 ### 13.2 Search
 
@@ -1786,3 +1804,13 @@ the frontend early: a deployed API with real reads comes before the booking flow
 - deletes their sessions, one-time tokens, idempotency rows and messages, and the internal notes
   on their bookings;
 - keeps the bookings and payments themselves for accounting.
+
+*As built (U15, `docs/gh-16-admin-customers/spec.md`):* `DELETE /admin/customers/{id}` runs it in the
+request transaction. It locks the customer (`FOR NO KEY UPDATE`, §7.1 step 4), then their bookings
+`FOR UPDATE` in id order (step 5), clears the booking contacts, deletes the notes, every session
+(after locking the live heads, as a revocation does), every one-time token (used ones too), the
+idempotency rows of scope `customer:<id>` and the messages with `related_customer_id`, then clears
+the row; `chk_customers_live_or_anonymised` holds it. The status, `email_verified_at`,
+`last_sign_in_at` and timestamps stay; so do audit events, seats, totals, check-ins and payments
+(card brand and last 4 included). Audited as `customer.anonymised` with field names and counts.
+An unknown or already anonymised customer is `NOT_FOUND`, and nothing changes.
