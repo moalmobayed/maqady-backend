@@ -26,7 +26,7 @@ export class AdminShowtimeCancellationController {
   @ApiOperation({
     summary: 'Preview cancelling a showtime',
     description:
-      'Admins only: "Cancel this showtime" shows its impact (PRD A5) before `PATCH /admin/showtimes/{id}` with `status: cancelled`: the confirmed bookings and seats refunded, the total refunded online (cards and wallets, through the provider), the total owed back at the counter (cash and card terminal, each charge\'s remaining amount), the seat holds released, and the emails and SMS sent ("Everyone is emailed and sent an SMS"). `cancellable` says whether the showtime can still be cancelled (scheduled and not ended). Due slow payments of the showtime are settled first. An unknown showtime: `NOT_FOUND`.',
+      'Admin only: "Cancel this showtime" shows its impact (PRD A5) before `PATCH /admin/showtimes/{id}` with `status: cancelled`: the confirmed bookings and seats refunded, the total refunded online (cards and wallets, through the provider), the total owed back at the counter (cash and card terminal, each charge\'s remaining amount), the seat holds released, and the emails and SMS sent ("Everyone is emailed and sent an SMS"). `cancellable` says whether the showtime can still be cancelled (scheduled and not ended). Due slow payments of the showtime are settled first. An unknown showtime: `NOT_FOUND`.',
   })
   @ApiOkResponse({
     type: ShowtimeCancellationPreviewResponse,

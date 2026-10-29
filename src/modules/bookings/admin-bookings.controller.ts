@@ -106,7 +106,7 @@ export class AdminBookingsController {
   @ApiOperation({
     summary: "List a booking's internal notes",
     description:
-      'Staff: the internal notes on the booking, newest first, with their authors, cursor-paged. Notes are for staff only: no customer route ever shows them. An unknown reference: `NOT_FOUND`.',
+      'Staff (box office or admin): the "Internal notes" panel of the booking detail (PRD A6), newest first, each with its text, its author and when it was written, cursor-paged with `total`. Notes are for staff only: no customer route, message or export ever shows them, and the activity log records only that a note was added. An unknown reference: `NOT_FOUND`.',
   })
   @ApiOkResponse({
     type: BookingNotePageResponse,
