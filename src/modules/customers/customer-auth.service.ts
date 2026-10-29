@@ -151,11 +151,19 @@ export class CustomerAuthService {
   /**
    * "Forgot password": sends a reset link to a live, active customer with this email, and does
    * nothing otherwise. The route answers `202` either way, so the answer reveals nothing.
+   *
+   * The customer row is locked (`FOR NO KEY UPDATE`) and re-checked before the link is issued, as
+   * every change of the account does (U15 review): an admin email change or anonymisation in
+   * flight is waited for, then nothing is sent to the address it replaced; one that starts later
+   * waits for this link and deletes it.
    */
   async requestPasswordReset(email: string): Promise<void> {
     await this.transactions.run(async () => {
-      const row = await this.customers.findLiveByEmail(email);
-      if (!row || row.status !== 'active') return;
+      const found = await this.customers.findLiveByEmail(email);
+      if (!found) return;
+      const row = await this.customers.findByIdForUpdate(found.id);
+      if (!row || row.deleted_at !== null || row.status !== 'active') return;
+      if (row.email === null || row.email.toLowerCase() !== email.toLowerCase()) return;
       await this.customerService.issuePasswordReset(row.id);
     });
   }

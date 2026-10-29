@@ -3,10 +3,12 @@ import { OutboxDrainService } from '../../../../src/modules/messaging/outbox-dra
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
 import {
   anonymiseCustomer,
+  forgotPasswordInFlight,
   getAdminCustomer,
   listAdminCustomers,
   paidBookingOf,
   requestCustomerReset,
+  settledOrWaitingOnLock,
 } from '../../../support/admin-customers';
 import { counterSale } from '../../../support/box-office';
 import { TestClock } from '../../../support/clock';
@@ -385,6 +387,32 @@ describe('Customer anonymisation (integration)', () => {
     const before = await tableCounts();
     expectError(await anonymiseCustomer(testApp, admin.authorization, 999999), 404, 'NOT_FOUND');
     expect(await tableCounts()).toEqual(before);
+  });
+
+  it('leaves no link or email behind when a forgot-password races the deletion', async () => {
+    const customer = await registerCustomer(testApp);
+    const forgot = await forgotPasswordInFlight(testApp, customer.email);
+    const pendingDelete = Promise.resolve(
+      anonymiseCustomer(testApp, admin.authorization, customer.customerId),
+    );
+    await settledOrWaitingOnLock(testApp, pendingDelete);
+    forgot.release();
+    await forgot.committed;
+
+    expect((await pendingDelete).status).toBe(200);
+    const left = await footprintOf(customer.customerId);
+    expect(left).toEqual({
+      sessions: 0,
+      oneTimeTokens: 0,
+      idempotencyKeys: 0,
+      messages: 0,
+      bookingNotes: 0,
+    });
+    const recipients = await testApp
+      .knex('messages')
+      .count<{ n: number }[]>({ n: '*' })
+      .where({ recipient: customer.email });
+    expect(recipients).toEqual([{ n: 0 }]);
   });
 
   it('anonymises a customer who never booked', async () => {

@@ -3,10 +3,12 @@ import type { Response } from 'supertest';
 import { OutboxDrainService } from '../../../../src/modules/messaging/outbox-drain.service';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
 import {
+  forgotPasswordInFlight,
   getAdminCustomer,
   listAdminCustomers,
   paidBookingOf,
   requestCustomerReset,
+  settledOrWaitingOnLock,
   updateAdminCustomer,
 } from '../../../support/admin-customers';
 import { listAdminBookings, refundBooking } from '../../../support/admin-bookings';
@@ -438,6 +440,33 @@ describe('Admin customers (integration)', () => {
         .first();
       expect(row).toEqual({ full_name: 'Layla Hassan', email: 'layla.hassan@example.com' });
       expect(omar.customerId).toBeGreaterThan(0);
+    });
+
+    it('leaves no live reset link to the old address when a forgot-password races the email change', async () => {
+      const { layla } = await seedCustomers();
+      await testApp.knex('one_time_tokens').where({ customer_id: layla.customerId }).delete();
+
+      // The old mailbox asks for a reset; its link is issued and queued, not yet committed.
+      const forgot = await forgotPasswordInFlight(testApp, 'layla.hassan@example.com');
+      const pendingEdit = Promise.resolve(
+        updateAdminCustomer(testApp, admin.authorization, layla.customerId, {
+          email: 'layla.new@example.com',
+        }),
+      );
+      await settledOrWaitingOnLock(testApp, pendingEdit);
+      forgot.release();
+      await forgot.committed;
+
+      const edited = await pendingEdit;
+      expect({ status: edited.status, body: edited.body as unknown }).toMatchObject({
+        status: 200,
+      });
+      const live = await testApp
+        .knex('one_time_tokens')
+        .select('purpose')
+        .where({ customer_id: layla.customerId })
+        .whereNull('used_at');
+      expect(live).toEqual([]);
     });
 
     it('refuses an empty body and invalid fields', async () => {

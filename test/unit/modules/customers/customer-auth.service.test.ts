@@ -284,15 +284,26 @@ describe('CustomerAuthService', () => {
   });
 
   describe('requestPasswordReset', () => {
-    it('sends a reset link to an active customer', async () => {
-      await service.requestPasswordReset('layla@example.com');
+    it('sends a reset link to an active customer, after locking their row', async () => {
+      await service.requestPasswordReset('LAYLA@example.com');
+      expect(customers.findByIdForUpdate).toHaveBeenCalledWith(7);
       expect(customerService.issuePasswordReset).toHaveBeenCalledWith(7);
     });
 
     it('sends nothing for an unknown email or a blocked customer', async () => {
       customers.findLiveByEmail.mockResolvedValueOnce(undefined);
       await service.requestPasswordReset('nobody@example.com');
-      customers.findLiveByEmail.mockResolvedValueOnce(customer({ status: 'blocked' }));
+      customers.findByIdForUpdate.mockResolvedValueOnce(customer({ status: 'blocked' }));
+      await service.requestPasswordReset('layla@example.com');
+      expect(customerService.issuePasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the locked row lost the email or was anonymised meanwhile (U15 review)', async () => {
+      customers.findByIdForUpdate.mockResolvedValueOnce(customer({ email: 'new@example.com' }));
+      await service.requestPasswordReset('layla@example.com');
+      customers.findByIdForUpdate.mockResolvedValueOnce(
+        customer({ email: null, full_name: null, password_hash: null, deleted_at: NOW }),
+      );
       await service.requestPasswordReset('layla@example.com');
       expect(customerService.issuePasswordReset).not.toHaveBeenCalled();
     });

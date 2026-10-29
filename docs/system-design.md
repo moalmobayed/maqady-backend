@@ -1012,7 +1012,9 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
 - Both "Forgot password" routes always answer `202`, whether or not the email exists. The
   customer route sends a link only to a live, active customer; a blocked one gets the same answer
   and nothing else, and a link used after a block answers `ACCOUNT_BLOCKED` without being spent
-  (U9).
+  (U9). The customer route locks the customer row and re-checks its email before issuing the
+  link, so an admin email change or anonymisation racing it either waits for the link and deletes
+  it, or finishes first and nothing is sent to the address it replaced (U15 review).
 - A customer password reset also marks the email verified (the link proved the mailbox), revokes
   every session and opens none: the customer signs in with the new password (U9).
 - "Resend the verification link" answers `202` with no body, and sends nothing to a customer

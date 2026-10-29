@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'supertest';
+import { TransactionRepository } from '../../src/common/database/transaction.repository';
+import { CustomerAuthService } from '../../src/modules/customers/customer-auth.service';
 import { pay } from './checkout';
 import { expectHold } from './holds';
 import type { CustomerSessionFixture, PaidOnlineFixture, TestApp } from './types';
@@ -106,4 +108,57 @@ export async function paidBookingOf(
     authorization: customer.authorization,
     customerId: customer.customerId,
   };
+}
+
+/** A customer "Forgot password" that has issued its link and queued its email, not yet committed. */
+export interface ForgotPasswordInFlight {
+  /** Lets the transaction commit. */
+  readonly release: () => void;
+  /** Settles once it committed (or rolled back). */
+  readonly committed: Promise<void>;
+}
+
+/**
+ * Runs the customer "Forgot password" for `email` in a transaction of its own and holds it open,
+ * uncommitted, once the link is issued and its email queued, so a race test can run an admin
+ * change of the same customer beside it, then `release()` it.
+ */
+export async function forgotPasswordInFlight(
+  testApp: TestApp,
+  email: string,
+): Promise<ForgotPasswordInFlight> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let issued!: () => void;
+  const linkIssued = new Promise<void>((resolve) => (issued = resolve));
+  const committed = testApp.app.get(TransactionRepository).run(async () => {
+    await testApp.app.get(CustomerAuthService).requestPasswordReset(email);
+    issued();
+    await gate;
+  });
+  await Promise.race([linkIssued, committed]);
+  return { release, committed };
+}
+
+/**
+ * Resolves once `pending` has settled or at least one connection to this database waits on a
+ * lock, whichever comes first: the race test then releases the transaction it holds open.
+ */
+export async function settledOrWaitingOnLock(
+  testApp: TestApp,
+  pending: Promise<unknown>,
+): Promise<void> {
+  let settled = false;
+  void pending.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  for (let attempt = 0; attempt < 250 && !settled; attempt += 1) {
+    const { rows } = await testApp.knex.raw<{ rows: { waiting: number }[] }>(
+      `SELECT count(*)::int AS waiting FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if ((rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
