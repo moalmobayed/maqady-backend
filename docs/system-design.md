@@ -557,6 +557,23 @@ stateless and decides each result from the test token:
      (§7.9).
 3. A counter hold that lapses becomes Abandoned, like any other.
 
+**As built (U13, `docs/gh-14-box-office/spec.md`).**
+
+- A counter hold is U10's hold with a staff holder: the member is locked at §7.1 step 4 and their
+  previous live counter hold is released; customers' and colleagues' holds are never touched. The
+  route settles the body's showtime first (`@SettleFirst('showtime', 'body')`). The booking reads
+  `owner: staff` until a sale gives it a customer.
+- Only the member who made a counter hold may sell or release it (`FORBIDDEN { reason:
+  'not_your_counter_hold' }` for a colleague, admins included); an online booking is `NOT_FOUND`.
+- The sale's refusals follow U11's order (`NOT_FOUND`, `FORBIDDEN`, `ALREADY_PAID`,
+  `SHOWTIME_NOT_BOOKABLE`, an `existing` customer locked and refused as `VALIDATION_FAILED` on
+  `customer.customerId` when unknown, anonymised or blocked, then `ALREADY_PAID` / `HOLD_EXPIRED`
+  under the booking lock and `HOLD_EXPIRED` under the claim locks). The charge is `succeeded` at
+  once (`PaymentsService.recordCounterCharge()`), the receipt reference kept in
+  `provider_reference` (`chk_payments_receipt_reference`) and shown as `Payment.receiptReference`.
+- `existing` makes the booking the customer's and copies their contact; `contact` is never linked
+  to an account by its email.
+
 ### 7.7 Cancelling, refunding and paying out
 
 Refunds are computed **per charge**, because one booking can be paid on more than one rail: an
@@ -648,6 +665,15 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   instead. That answers `CONFIRM_REQUIRED` with the booking's showtime, seats and contact
   name. Only a second request with `confirm: true` checks the booking in, so the reference
   alone admits nobody (PRD "Tickets and QR codes").
+- **As built (U13, `docs/gh-14-box-office/spec.md`).** Every ticket outcome is `200` with a
+  `result` and a `reason` (`other_theater`, `cancelled`, `not_open_yet`, `ended` for
+  `WRONG_SHOWTIME`; `not_paid`, `refunded`, `replaced` for `NOT_VALID`); only an unknown theater is
+  `404`. The rules apply in that order (theater, cancellation, payment, QR version, window, the
+  earlier scan, confirmation), so a refunded ticket is never told to come back later. Admission is
+  one conditional update after the showtime's `FOR SHARE`; when it changes nothing the row is read
+  again and its verdict answered. `0140_02` lets only a confirmed or refunded booking carry a
+  check-in. `GET /admin/bookings/{ref}/ticket.pdf` serves any booking with a ticket and records
+  `booking.ticket_downloaded`.
 
 ### 7.10 Prices
 
@@ -1315,7 +1341,8 @@ Settling due payments (§7.5) runs before the request transaction of a `@SettleF
 write or read, in a short transaction of its own (`SettleFirstInterceptor`, U11).
 
 GET requests run without a request transaction. The few GET paths that write open their own
-short transactions explicitly: settlement and export audit rows.
+short transactions explicitly: settlement, export audit rows and the staff ticket download's
+audit row (U13).
 
 **Encryption at rest.** Stored response bodies can contain a guest's hold code, so they are
 encrypted with AES-256-GCM under `DATA_ENCRYPTION_KEY`, using a random nonce and a key-id prefix
