@@ -1346,8 +1346,10 @@ generated contract (§19).
   aggregates, after a batched `settleDue`, following the PRD "Dashboard numbers" definitions. No
   rollup tables, because refreshing them would need a timer.
 - **Grouping by day.** Revenue, tickets and occupancy group by `showtimes.cinema_date`.
-  "Collected" figures group by the cinema date of the money movement: `payments.created_at` for
-  charges, the payout or refund time for refunds.
+  "Collected" figures group by the cinema date of the money movement: `payments.completed_at`
+  (when a charge's result came, an online refund was made or a counter refund was paid out). *As
+  built (U14, U16):* a charge counts by `completed_at`, not `created_at`, so a slow payment counts
+  on the day it succeeded.
 - **Refunds KPI.** The Payments screen's refunds figure is refunds ÷ money collected in the same
   period, so the whole screen stays on the money-moved basis. The PRD states it the same way.
 - **Heatmap slots.** Showtimes group by local start time: before 15:00 (morning shows
