@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'supertest';
+import { AuditService } from '../../../../src/common/audit/audit.service';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
 import { pay } from '../../../support/checkout';
 import { TestClock } from '../../../support/clock';
@@ -144,7 +145,7 @@ describe('GET /bookings/{ref}/history (integration)', () => {
     });
   });
 
-  it('shows a refund, and no move after it', async () => {
+  it('shows a refund after the payment received', async () => {
     const early = await bookableShowtime(testApp, admin, { fixture: showtime, startTime: '15:00' });
     const reference = await paidBooking(
       testApp,
@@ -160,6 +161,47 @@ describe('GET /bookings/{ref}/history (integration)', () => {
     const response = await history(reference);
     expect(kinds(response)).toEqual(['seats_held', 'payment_received', 'refunded']);
     expect(response.body.items[2].label).toBe('Refunded');
+  });
+
+  it('stops adding moves of its showtime once the booking is refunded', async () => {
+    const hold = await expectHold(testApp, showtime.showtimeId, ['C5'], {
+      authorization: customer.authorization,
+    });
+    expect((await pay(testApp, customer.authorization, hold.reference)).status).toBe(201);
+    tick();
+    await move(showtime.showtimeId, '19:45'); // while it holds a ticket
+    tick();
+    // Refunded the way U14's cancel and refund will store it: the row, then its audit event.
+    const refundedAt = clock.now();
+    const [row] = await testApp
+      .knex('bookings')
+      .where({ reference: hold.reference })
+      .update({ status: 'refunded', refunded_at: refundedAt, updated_at: refundedAt })
+      .returning<{ id: number }[]>('id');
+    await testApp.app.get(AuditService).record({
+      actor: { kind: 'staff', id: admin.staffUserId },
+      action: 'booking.refunded',
+      entity: { type: 'booking', id: row!.id },
+      bookingId: row!.id,
+    });
+    tick();
+    await move(showtime.showtimeId, '20:00'); // after the refund: no longer the customer's ticket
+
+    const response = await history(hold.reference);
+    expect(response.body).toEqual({
+      items: [
+        expect.objectContaining({ kind: 'seats_held' }),
+        expect.objectContaining({ kind: 'payment_received' }),
+        {
+          kind: 'changed_by_cinema',
+          label: 'Changed by the cinema',
+          occurredAt: '2026-10-10T10:00:01+03:00',
+        },
+        { kind: 'refunded', label: 'Refunded', occurredAt: '2026-10-10T10:00:02+03:00' },
+      ],
+      nextCursor: null,
+      total: 4,
+    });
   });
 
   it('pages oldest first with limit=1, with no repeat or gap', async () => {
