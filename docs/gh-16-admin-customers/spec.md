@@ -89,7 +89,7 @@ stay for accounting. Box office sees the same data read-only.
 | `admin-customers.service.ts` | List with numbers, detail, edit and block, reset email |
 | `customer-anonymisation.service.ts` | Anonymisation in one transaction |
 | `admin-customer-response.mapper.ts` | Response DTOs from the service results |
-| `types.ts`, `enums.ts`, `admin-customers.constants.ts` | Types, the audit actions, the recent-bookings limit |
+| `types.ts`, `admin-customers.constants.ts` | Types; the audit actions, the anonymised field names and the recent-bookings limit |
 | `dto/` | `admin-customers.query.ts`, `customer-id.params.ts`, `update-customer.request.ts`, `admin-customer.response.ts` (list item, page, detail, numbers), `customer-anonymisation.response.ts`, `customer-password-reset.response.ts` |
 
 Additions elsewhere: `customers/customer-search.ts` (the search pattern and list conditions),
@@ -126,8 +126,8 @@ All under `/api/v1`. Times are Cairo ISO with offset; money `{ amount, currency 
 
 | Route | Access | S | Success | Errors |
 |---|---|---|---|---|
-| `GET /admin/customers?q&status&cursor&limit` | `@Staff()` | | `200 AdminCustomerListItemPage` | `400 VALIDATION_FAILED` (`q`, `status`, `cursor`, `limit`) |
-| `GET /admin/customers/{id}` | `@Staff()` | | `200 AdminCustomer` | `400`; `404 NOT_FOUND` (unknown or anonymised) |
+| `GET /admin/customers?q&status&cursor&limit` | `@Staff()` | | `200 AdminCustomerResponsePage` | `400 VALIDATION_FAILED` (`q`, `status`, `cursor`, `limit`) |
+| `GET /admin/customers/{id}` | `@Staff()` | | `200 AdminCustomerDetail` | `400`; `404 NOT_FOUND` (unknown or anonymised) |
 | `PATCH /admin/customers/{id}` | `@Admin()` | | `200 AdminCustomer` | `400`; `403 FORBIDDEN` (box office); `404`; `409 EMAIL_TAKEN` |
 | `DELETE /admin/customers/{id}` | `@Admin()` | | `200 CustomerAnonymisation` | `400`; `403`; `404` |
 | `POST /admin/customers/{id}/password-reset-requests` | `@Admin()` | S | `202 CustomerPasswordReset` | `400`, `IDEMPOTENCY_KEY_REQUIRED`; `403`; `404`; `409 CUSTOMER_BLOCKED`; `422 IDEMPOTENCY_KEY_REUSED` |
@@ -146,13 +146,19 @@ Every route also has the guards' `401`/`403` codes and `429 RATE_LIMITED` (cross
 
 **Response DTOs**
 
-- `AdminCustomerListItem`: `id`, `fullName`, `email`, `phone` (nullable), `status`,
-  `emailVerified`, `joinedAt`, `lastSignInAt` (nullable), `stats: CustomerStats`.
+Names as the contract (`contracts/openapi.yaml`) gives them; the contract wins.
+
+- `AdminCustomer` (a list item, and `PATCH`'s answer): `id`, `fullName`, `email`, `phone`
+  (nullable), `status`, `emailVerified`, `emailVerifiedAt` (nullable), `joinedAt`, `lastSignInAt`
+  (nullable), `updatedAt`, `stats: CustomerStats`. `PATCH` answers without `recentBookings`: an
+  edit does not change bookings, and settlement cannot run inside the request transaction.
+- `AdminCustomerResponsePage`: `items: AdminCustomer[]`, `nextCursor`, `total`.
 - `CustomerStats`: `bookings`, `spent` (Money), `noShows`, `lastBookingAt` (nullable).
-- `AdminCustomer` (detail, also `PATCH`'s answer): the list item's fields plus `emailVerifiedAt`
-  (nullable), `updatedAt`, `recentBookings: AdminBookingListItem[]` (U14's list item, at most 4).
-- `CustomerAnonymisation`: `customerId`, `anonymisedAt`, `bookingsKept`, `removed { sessions,
-  oneTimeTokens, idempotencyKeys, messages, bookingNotes, bookingContacts }`.
+- `AdminCustomerDetail` (`GET /admin/customers/{id}`): the `AdminCustomer` fields plus
+  `recentBookings: AdminBookingListItem[]` (U14's list item, at most 4).
+- `CustomerAnonymisation`: `customerId`, `anonymisedAt`, `bookingsKept`,
+  `removed: CustomerAnonymisationRemovals { sessions, oneTimeTokens, idempotencyKeys, messages,
+  bookingNotes, bookingContacts }`.
 - `CustomerPasswordReset`: `channel` (`email`), `queuedAt`.
 
 `GET /admin/bookings` gains `customerId?` (integer ≥ 1): only that customer's bookings.
