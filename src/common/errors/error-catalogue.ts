@@ -201,7 +201,14 @@ export const ERROR_CATALOGUE = {
   EMAIL_TAKEN: {
     status: 409,
     message: 'An account with this email already exists.',
-    description: 'Sign in instead, or use "Forgot password".',
+    description:
+      'Sign in instead, or use "Forgot password". On an admin edit of a customer (U15): another live customer account already uses this email, whatever the letter case.',
+  },
+  CUSTOMER_BLOCKED: {
+    status: 409,
+    message: 'This customer is blocked; unblock them first.',
+    description:
+      'A password reset link is not sent to a blocked customer (U15): the link would be refused with `ACCOUNT_BLOCKED` when used. Unblock the customer (`PATCH /admin/customers/{id}` with `status: active`), then send it.',
   },
   MOVIE_NOT_PUBLISHABLE: {
     status: 409,
