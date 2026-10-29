@@ -48,8 +48,11 @@ export const PAYMENT_STATUS_DISPLAYS = [
   'refunded',
 ] as const;
 
-/** What a route settles before it runs (`@SettleFirst()`): the booking `{ref}`, or showtime `{id}`. */
-export const SETTLE_FIRST_KINDS = ['booking', 'showtime'] as const;
+/**
+ * What a route settles before it runs (`@SettleFirst()`): the booking `{ref}`, the showtime `{id}`,
+ * or only the calling customer's bookings (`'customer'`, My Bookings, U12).
+ */
+export const SETTLE_FIRST_KINDS = ['booking', 'showtime', 'customer'] as const;
 
 /** The booking statuses that have a ticket: a QR code, a PDF and a calendar file. */
 export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
@@ -59,3 +62,21 @@ export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
  * all the booking's, or its showtime was cancelled meanwhile.
  */
 export const AUTOMATIC_REFUND_REASONS = ['claims_lost', 'showtime_cancelled'] as const;
+
+/** The two tabs of My Bookings (PRD C10): Confirmed bookings not ended; Completed, Refunded, Failed. */
+export const MY_BOOKINGS_TABS = ['upcoming', 'past'] as const;
+
+/**
+ * What a booking's History shows (PRD C11 "History from real events"), mapped from audit actions
+ * in `bookings.constants.ts`.
+ */
+export const BOOKING_HISTORY_KINDS = [
+  'seats_held',
+  'payment_received',
+  'refunded',
+  'changed_by_cinema',
+  'tickets_resent',
+] as const;
+
+/** How "Email again" sends the tickets: by email only (PRD "Email and SMS"). */
+export const TICKET_DELIVERY_CHANNELS = ['email'] as const;

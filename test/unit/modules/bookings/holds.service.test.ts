@@ -60,7 +60,15 @@ const CONTEXT: ShowtimeContext = {
     endsAt: new Date('2026-10-16T23:00:00+03:00'),
     cinemaDate: '2026-10-16',
     movie: { id: 9, title: 'The Nile Light', ageRating: '12+', runtimeMinutes: 120, poster: null },
-    theater: { id: 2, name: 'Zamalek' },
+    theater: {
+      id: 2,
+      name: 'Zamalek',
+      address: '26 July St',
+      district: 'Zamalek',
+      city: 'Cairo',
+      latitude: 30.06,
+      longitude: 31.22,
+    },
     hall: { id: 5, name: 'Hall 1' },
   },
 };
@@ -131,7 +139,7 @@ describe('HoldsService', () => {
     });
 
   let bookings: Record<keyof BookingsRepository, jest.Mock>;
-  let showtimes: { lockedContext: jest.Mock; bookingContext: jest.Mock };
+  let showtimes: { lockedContext: jest.Mock };
   let halls: { lockForShare: jest.Mock; findLayout: jest.Mock };
   let customers: { findByIdForUpdate: jest.Mock };
   let seatClaims: { write: jest.Mock };
@@ -165,10 +173,12 @@ describe('HoldsService', () => {
       extendHold: logged('extend', undefined),
       markRefunded: logged('mark refunded', undefined),
       ticketHoldersOf: logged('ticket holders', []),
+      pageForCustomer: logged('page for customer', []),
+      tabCountsOfCustomer: logged('tab counts', { upcoming: 0, past: 0 }),
+      countConfirmedOfCustomer: logged('count confirmed', 0),
     };
     showtimes = {
       lockedContext: logged('lock showtime', CONTEXT),
-      bookingContext: jest.fn().mockResolvedValue(CONTEXT),
     };
     halls = { lockForShare: logged('lock hall', HALL), findLayout: logged('layout', LAYOUT) };
     customers = { findByIdForUpdate: logged('lock customer', CUSTOMER) };

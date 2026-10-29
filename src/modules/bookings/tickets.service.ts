@@ -49,9 +49,13 @@ export class TicketsService {
   /**
    * Queues the tickets email of each of these confirmed bookings with an email on file, and with
    * `sms` the tickets SMS of each with a phone, in the open transaction: they leave only once it
-   * commits (design §13.1). No stored copy holds the QR payload.
+   * commits (design §13.1). No stored copy holds the QR payload. With `emailTo` (one booking
+   * only, "Email again", U12) the email goes there instead of the booking's contact email.
    */
   async queueTickets(bookingIds: readonly number[], options: QueueTicketsOptions): Promise<void> {
+    if (options.emailTo !== undefined && new Set(bookingIds).size !== 1) {
+      throw new AppError('INTERNAL', 'Tickets go to another address one booking at a time.');
+    }
     const rows = (await this.bookings.findByIds(bookingIds)).filter(
       (row) => row.status === 'confirmed',
     );
@@ -178,10 +182,11 @@ function messagesOf(
     bookingId: ticket.bookingId,
     ...(ticket.customerId === null ? {} : { customerId: ticket.customerId }),
   };
+  const emailTo = options.emailTo ?? ticket.contactEmail;
   return [
-    ...(ticket.contactEmail === null
+    ...(emailTo === null
       ? []
-      : [{ template: bookingTicketsTemplate, recipient: ticket.contactEmail, params, related }]),
+      : [{ template: bookingTicketsTemplate, recipient: emailTo, params, related }]),
     ...(options.sms && ticket.contactPhone !== null
       ? [{ template: bookingTicketsSmsTemplate, recipient: ticket.contactPhone, params, related }]
       : []),

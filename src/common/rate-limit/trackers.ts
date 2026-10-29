@@ -21,6 +21,11 @@ function customerOf(request: Request): string | undefined {
   return request.principal?.kind === 'customer' ? `customer:${request.principal.id}` : undefined;
 }
 
+function bookingRefOf(request: Request): string {
+  const ref = request.params?.ref;
+  return `booking:${typeof ref === 'string' ? ref.toUpperCase() : 'unknown'}`;
+}
+
 /** The string a limit counts requests by (see `RATE_LIMIT_KEYS`). */
 export function trackerFor(key: RateLimitKey, request: Request): string {
   switch (key) {
@@ -33,10 +38,10 @@ export function trackerFor(key: RateLimitKey, request: Request): string {
       return emailOf(request);
     case 'ipAndEmail':
       return `${ipOf(request)}|${emailOf(request)}`;
-    case 'bookingRef': {
-      const ref = request.params?.ref;
-      return `booking:${typeof ref === 'string' ? ref.toUpperCase() : 'unknown'}`;
-    }
+    case 'bookingRef':
+      return bookingRefOf(request);
+    case 'customerAndBookingRef':
+      return `${customerOf(request) ?? ipOf(request)}|${bookingRefOf(request)}`;
   }
 }
 

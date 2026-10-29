@@ -1,5 +1,6 @@
 import type { AuditActor } from '../../common/audit/types';
 import type { Currency, Money } from '../../common/money/types';
+import type { Page } from '../../common/pagination/types';
 import type { CalendarDate } from '../../common/time/types';
 import type { AgeRating, MovieStatus } from '../catalog/types';
 import type { HallLayout, HallStatus, Zone } from '../halls/types';
@@ -17,12 +18,15 @@ import type {
   AUTOMATIC_REFUND_REASONS,
   BOOKING_CHANNELS,
   BOOKING_DISPLAY_STATUSES,
+  BOOKING_HISTORY_KINDS,
   BOOKING_STATUSES,
   HOLD_OWNERS,
+  MY_BOOKINGS_TABS,
   NOT_BOOKABLE_REASONS,
   PAYMENT_STATUS_DISPLAYS,
   RELEASE_REASONS,
   SETTLE_FIRST_KINDS,
+  TICKET_DELIVERY_CHANNELS,
   TICKET_STATUSES,
 } from './enums';
 
@@ -45,6 +49,12 @@ export type SettleFirstKind = (typeof SETTLE_FIRST_KINDS)[number];
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 export type AutomaticRefundReason = (typeof AUTOMATIC_REFUND_REASONS)[number];
+
+export type MyBookingsTab = (typeof MY_BOOKINGS_TABS)[number];
+
+export type BookingHistoryKind = (typeof BOOKING_HISTORY_KINDS)[number];
+
+export type TicketDeliveryChannel = (typeof TICKET_DELIVERY_CHANNELS)[number];
 
 // --- Rows -----------------------------------------------------------------------------------
 
@@ -242,6 +252,15 @@ export interface NamedRef {
   readonly name: string;
 }
 
+/** A theater as a booking names it, with where it is for "Directions" (PRD C9, C11). */
+export interface BookingTheater extends NamedRef {
+  readonly address: string;
+  readonly district: string;
+  readonly city: string;
+  readonly latitude: number;
+  readonly longitude: number;
+}
+
 /** The showtime header of a booking and of the seat page (PRD C6): movie, theater, hall, time. */
 export interface BookingShowtime {
   readonly id: number;
@@ -249,8 +268,28 @@ export interface BookingShowtime {
   readonly endsAt: Date;
   readonly cinemaDate: CalendarDate;
   readonly movie: BookingMovie;
-  readonly theater: NamedRef;
+  readonly theater: BookingTheater;
   readonly hall: NamedRef;
+}
+
+/**
+ * One line of a booking's payment table (PRD C8, C11): the seats of one zone at one price,
+ * "Middle · F7, F8 · 2 × EGP 190".
+ */
+export interface SeatLine {
+  readonly zone: Zone;
+  /** In seat order: row, then number (`F2` before `F10`). */
+  readonly labels: readonly string[];
+  readonly count: number;
+  readonly unitPrice: Money;
+  /** `count × unitPrice`. */
+  readonly amount: Money;
+}
+
+/** A refunded booking's refund (PRD C11 "the refund amount and date"): always the full total. */
+export interface BookingRefund {
+  readonly amount: Money;
+  readonly refundedAt: Date;
 }
 
 /** A confirmed booking's ticket: the signed QR payload and how many people it admits. */
@@ -282,6 +321,10 @@ export interface Booking {
   readonly payment: Payment | null;
   /** Set while the booking is confirmed or completed. */
   readonly ticket: BookingTicket | null;
+  /** The seats by zone and price, zones front to back (U12). */
+  readonly seatLines: readonly SeatLine[];
+  /** Set for a refunded booking (U12). */
+  readonly refund: BookingRefund | null;
 }
 
 /** A hold just created: the booking, and the guest's hold code (null for a customer). */
@@ -452,9 +495,14 @@ export interface TicketFile {
   readonly body: Buffer;
 }
 
-/** Whether the tickets of a confirmation also go by SMS to a phone on file. */
+/**
+ * Whether the tickets also go by SMS to a phone on file, and where the email goes: the booking's
+ * contact email unless `emailTo` names another address ("Email again" sends to the account's own
+ * email, U12; only for one booking at a time).
+ */
 export interface QueueTicketsOptions {
   readonly sms: boolean;
+  readonly emailTo?: string;
 }
 
 /**
@@ -478,4 +526,51 @@ export interface BookingTicketsParams {
   /** `formatMoneyDisplay`, `EGP 380`. */
   readonly total: string;
   readonly qrCode: string;
+}
+
+// --- Customer bookings (U12) ----------------------------------------------------------------
+
+/** `GET /me/bookings`, as validated. */
+export interface MyBookingsQueryInput {
+  readonly tab: MyBookingsTab;
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+/** How many bookings each tab of My Bookings has, for the tab labels. */
+export type MyBookingsTabCounts = Readonly<Record<MyBookingsTab, number>>;
+
+/** One page of a My Bookings tab, with both tabs' counts. */
+export interface MyBookingsPage extends Page<Booking> {
+  readonly tabCounts: MyBookingsTabCounts;
+}
+
+/** A booking of a My Bookings page: its row and its showtime's start, the keyset's sort key. */
+export interface MyBookingRow extends BookingRow {
+  readonly showtime_starts_at: Date;
+}
+
+/** One `COUNT(*) FILTER` row per customer: how many bookings each tab has. */
+export interface TabCountsRow {
+  readonly upcoming: number;
+  readonly past: number;
+}
+
+/** One event of a booking's History (PRD C11): what happened and when, never who did it. */
+export interface BookingHistoryEvent {
+  readonly kind: BookingHistoryKind;
+  readonly label: string;
+  readonly occurredAt: Date;
+}
+
+/** An audit event as `toHistoryEvent()` reads it. */
+export interface HistoryAuditEvent {
+  readonly action: string;
+  readonly occurredAt: Date;
+}
+
+/** What "Email again" answers: the tickets email is queued and leaves after commit. */
+export interface TicketDelivery {
+  readonly channel: TicketDeliveryChannel;
+  readonly queuedAt: Date;
 }

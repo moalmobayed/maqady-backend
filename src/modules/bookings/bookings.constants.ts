@@ -1,3 +1,5 @@
+import type { BookingHistoryKind } from './types';
+
 /** A hold lasts 5 minutes, and never beyond the showtime's start (design §7.3, PRD Seats 2). */
 export const HOLD_MINUTES = 5;
 
@@ -52,3 +54,36 @@ export const TICKET_CACHE_CONTROL = 'private, no-store';
 
 /** The calendar event's organizer-free UID domain: `UID:<reference>@maqady`. */
 export const CALENDAR_UID_DOMAIN = 'maqady';
+
+/** Personal reads (My Bookings, a booking's History): no shared or browser cache keeps them. */
+export const PRIVATE_CACHE_CONTROL = 'private, no-store';
+
+/** The audit action of "Email again" (U12) and of the staff resend (U14). */
+export const TICKETS_RESENT_ACTION = 'booking.tickets_resent';
+
+/**
+ * A booking's own audit actions its History shows (PRD C11), and as what. Every other action
+ * (`booking.claimed`, `booking.released`, `booking.confirmed`, `payment.declined`,
+ * `payment.cancelled`, `payment.processing`, `payment.refunded`) stays internal.
+ */
+export const HISTORY_BOOKING_ACTIONS: Readonly<Record<string, BookingHistoryKind>> = {
+  'booking.held': 'seats_held',
+  'payment.succeeded': 'payment_received',
+  'booking.refunded': 'refunded',
+  'booking.edited': 'changed_by_cinema',
+  [TICKETS_RESENT_ACTION]: 'tickets_resent',
+};
+
+/** The showtime's audit actions a booking's History shows while the booking holds a ticket. */
+export const HISTORY_SHOWTIME_ACTIONS: Readonly<Record<string, BookingHistoryKind>> = {
+  'showtime.moved': 'changed_by_cinema',
+};
+
+/** The English label of each History kind, as the booking page shows it. */
+export const HISTORY_LABELS: Readonly<Record<BookingHistoryKind, string>> = {
+  seats_held: 'Seats held',
+  payment_received: 'Payment received',
+  refunded: 'Refunded',
+  changed_by_cinema: 'Changed by the cinema',
+  tickets_resent: 'Tickets resent',
+};

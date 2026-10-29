@@ -17,7 +17,8 @@ import type { SettleFirstKind, SettlementScope } from './types';
  * after the guards (the caller is known) and before the request transaction opens: settlement
  * commits in its own transaction first, and the request then takes its own locks in order.
  *
- * The scope is the path's booking reference or showtime id, plus the calling customer. Pipes
+ * The scope is the path's booking reference or showtime id, plus the calling customer, or for
+ * `'customer'` only the calling customer (anyone else settles nothing). Pipes
  * have not run yet, so a malformed parameter settles nothing and the route's validation answers
  * it. Other routes, and contexts other than HTTP, pass straight through. A settlement error fails
  * the request (`SERVICE_UNAVAILABLE` when the database is down).
@@ -46,6 +47,8 @@ export class SettleFirstInterceptor implements NestInterceptor {
 export function scopeOf(kind: SettleFirstKind, request: Request): SettlementScope | undefined {
   const customer =
     request.principal?.kind === 'customer' ? { customerId: request.principal.id } : {};
+  // My Bookings (U12): only the calling customer's bookings; anyone else settles nothing.
+  if (kind === 'customer') return 'customerId' in customer ? customer : undefined;
   if (kind === 'booking') {
     const ref = request.params?.ref;
     return typeof ref === 'string' && REFERENCE_PATTERN.test(ref)

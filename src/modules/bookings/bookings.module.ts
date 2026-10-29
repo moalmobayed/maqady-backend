@@ -8,6 +8,8 @@ import { SeatingModule } from '../seating/seating.module';
 import { ShowtimesModule } from '../showtimes/showtimes.module';
 import { TheatersModule } from '../theaters/theaters.module';
 import { BookingConfirmationService } from './booking-confirmation.service';
+import { BookingHistoryController } from './booking-history.controller';
+import { BookingHistoryService } from './booking-history.service';
 import { BookingPaymentsController } from './booking-payments.controller';
 import { BookingReadService } from './booking-read.service';
 import { BookingResponseMapper } from './booking-response.mapper';
@@ -20,26 +22,33 @@ import { BookingsRepository } from './bookings.repository';
 import { CheckoutService } from './checkout.service';
 import { HoldsController } from './holds.controller';
 import { HoldsService } from './holds.service';
+import { MyBookingsController } from './my-bookings.controller';
+import { MyBookingsService } from './my-bookings.service';
 import { PublicShowtimesController } from './public-showtimes.controller';
 import { QrCodeService } from './qr-code.service';
 import { SettleFirstInterceptor } from './settle-first.interceptor';
 import { SettlementService } from './settlement.service';
 import { ShowtimeSeatMapService } from './showtime-seat-map.service';
 import { BookingTemplatesRegistrar } from './templates/booking-templates.registrar';
+import { TicketDeliveriesController } from './ticket-deliveries.controller';
+import { TicketDeliveryService } from './ticket-delivery.service';
 import { TicketsService } from './tickets.service';
 
 /**
  * Bookings (design §5, §7.3–§7.5, §7.9; PRD "Seats and holds", "Payments", "Tickets and QR
  * codes"): `bookings` and `booking_seats`, holds for guests and customers, claiming a guest hold
  * at sign-in, releasing, the public seat page, `GET /bookings/{ref}` (U10); checkout, settlement,
- * confirmation and the tickets (U11). It reads showtimes, halls, theaters, catalog and customers
+ * confirmation and the tickets (U11); My Bookings, a booking's History and "Email again" (U12).
+ * It reads showtimes, halls, theaters, catalog and customers
  * through their exported services, writes seat claims through seating and payments through
  * payments.
  *
  * Exported for My Bookings, the box office and admin bookings (U12–U14), which extend this
  * module: `HoldsService`, `BookingReadService`, `BookingShowtimeService`,
  * `BookingResponseMapper`, `SettlementService`, `BookingConfirmationService`, `TicketsService`,
- * `QrCodeService` and `SettleFirstInterceptor` (registered globally by `AppModule`).
+ * `QrCodeService` and `SettleFirstInterceptor` (registered globally by `AppModule`); for the
+ * admin booking list and detail (U14), `BookingViews` (`ofMany()`, a fixed query count) and
+ * `BookingHistoryService` (`ofBooking()`).
  */
 @Module({
   imports: [
@@ -58,6 +67,9 @@ import { TicketsService } from './tickets.service';
     BookingsController,
     BookingPaymentsController,
     BookingTicketsController,
+    MyBookingsController,
+    BookingHistoryController,
+    TicketDeliveriesController,
   ],
   providers: [
     BookingsRepository,
@@ -75,6 +87,9 @@ import { TicketsService } from './tickets.service';
     SettleFirstInterceptor,
     BookingTicketHolders,
     BookingTemplatesRegistrar,
+    MyBookingsService,
+    BookingHistoryService,
+    TicketDeliveryService,
   ],
   exports: [
     HoldsService,
@@ -86,6 +101,8 @@ import { TicketsService } from './tickets.service';
     TicketsService,
     QrCodeService,
     SettleFirstInterceptor,
+    BookingViews,
+    BookingHistoryService,
   ],
 })
 export class BookingsModule {}

@@ -1,7 +1,8 @@
 import { money } from '../../common/money/money';
 import { bookingStatusOf, paymentStatusOf } from './booking-status.sql';
 import { TICKET_STATUSES } from './enums';
-import type { Booking, BookingDisplayStatus, BookingParts } from './types';
+import { seatLinesOf } from './seat-lines';
+import type { Booking, BookingDisplayStatus, BookingParts, BookingSeat } from './types';
 
 /** A booking as the API shows it, from its row, its seats and its showtime, judged at `now`. */
 export function toBooking({
@@ -21,6 +22,17 @@ export function toBooking({
     },
     now,
   );
+  const ownSeats: BookingSeat[] = seats
+    .filter((seat) => seat.booking_id === row.id)
+    .map((seat) => ({
+      label: seat.seat_label,
+      rowLabel: seat.row_label,
+      seatNumber: seat.seat_number,
+      zone: seat.zone,
+      price: money(seat.price, row.currency),
+      isWheelchair: seat.is_wheelchair,
+    }));
+  const total = money(row.total_amount, row.currency);
   return {
     id: row.id,
     reference: row.reference,
@@ -29,18 +41,9 @@ export function toBooking({
     owner: row.customer_id === null ? 'guest' : 'customer',
     customerId: row.customer_id,
     showtime,
-    seats: seats
-      .filter((seat) => seat.booking_id === row.id)
-      .map((seat) => ({
-        label: seat.seat_label,
-        rowLabel: seat.row_label,
-        seatNumber: seat.seat_number,
-        zone: seat.zone,
-        price: money(seat.price, row.currency),
-        isWheelchair: seat.is_wheelchair,
-      })),
+    seats: ownSeats,
     seatCount: row.seat_count,
-    total: money(row.total_amount, row.currency),
+    total,
     holdExpiresAt: row.hold_expires_at,
     serverTime: now,
     createdAt: row.created_at,
@@ -52,6 +55,12 @@ export function toBooking({
     }),
     payment: latestSale,
     ticket: hasTicket(status) && qrCode !== null ? { qrCode, admits: row.seat_count } : null,
+    seatLines: seatLinesOf(ownSeats),
+    // A refund is always the full total (PRD "Statuses": Refunded is a full refund).
+    refund:
+      row.status === 'refunded' && row.refunded_at !== null
+        ? { amount: total, refundedAt: row.refunded_at }
+        : null,
   };
 }
 

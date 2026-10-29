@@ -2,13 +2,19 @@ import { Injectable } from '@nestjs/common';
 import type { Knex } from 'knex';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
+import type { PageRequest } from '../../common/pagination/types';
 import { bookingStatusPredicate } from './booking-status.sql';
+import { tabPredicate } from './my-bookings.sql';
 import type {
   BookingOwnerColumns,
   BookingRow,
   BookingSeatRow,
+  MyBookingRow,
+  MyBookingsTab,
   NewBookingRow,
   SqlPredicate,
+  StatusAliases,
+  TabCountsRow,
   TicketHolderRow,
 } from './types';
 
@@ -45,6 +51,9 @@ const SEAT_COLUMNS = [
   'price',
   'is_wheelchair',
 ] as const;
+
+/** My Bookings joins each booking to its showtime under these aliases (design §5, §7.4). */
+const MY_BOOKINGS_ALIASES: StatusAliases = { booking: 'b', showtime: 's' };
 
 /** A live hold at `now`, on the unaliased `bookings` table (design §7.4). */
 function liveHold(now: Date): SqlPredicate {
@@ -217,6 +226,78 @@ export class BookingsRepository {
       .select<TicketHolderRow[]>('id', 'reference', 'customer_id', 'contact_email', 'contact_phone')
       .where({ showtime_id: showtimeId, status: 'confirmed' })
       .orderBy('id');
+  }
+
+  /**
+   * One page of a customer's bookings in a My Bookings tab at `now` (PRD C10), `limit + 1` rows:
+   * Upcoming soonest show first, Past most recent show first, ties by id the same way. Joined to
+   * `showtimes` for the clock-derived status and the keyset (design §5: bookings reads showtimes
+   * through its own SQL joins). The customer's rows come from
+   * `idx_bookings_customer_id_status_hold_expires_at`. The cursor's sort key is the show's start as
+   * an ISO instant, bound as a `Date`.
+   */
+  async pageForCustomer(
+    customerId: number,
+    tab: MyBookingsTab,
+    now: Date,
+    page: PageRequest,
+  ): Promise<MyBookingRow[]> {
+    const predicate = tabPredicate(tab, MY_BOOKINGS_ALIASES, now);
+    const order = tab === 'upcoming' ? 'asc' : 'desc';
+    const query = this.customerBookings(customerId)
+      .select<MyBookingRow[]>([
+        ...BOOKING_COLUMNS.map((column) => `b.${column}`),
+        's.starts_at as showtime_starts_at',
+      ])
+      .andWhereRaw(predicate.sql, [...predicate.bindings])
+      .orderBy([
+        { column: 's.starts_at', order },
+        { column: 'b.id', order },
+      ])
+      .limit(page.limit + 1);
+    if (page.after) {
+      query.andWhereRaw(`(s.starts_at, b.id) ${order === 'asc' ? '>' : '<'} (?, ?)`, [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
+    }
+    return query;
+  }
+
+  /** How many of the customer's bookings each My Bookings tab has at `now`, in one query. */
+  async tabCountsOfCustomer(customerId: number, now: Date): Promise<TabCountsRow> {
+    const upcoming = tabPredicate('upcoming', MY_BOOKINGS_ALIASES, now);
+    const past = tabPredicate('past', MY_BOOKINGS_ALIASES, now);
+    const row = await this.customerBookings(customerId)
+      .select<TabCountsRow[]>(
+        this.db
+          .executor()
+          .raw(`COUNT(*) FILTER (WHERE ${upcoming.sql})::int AS upcoming`, [...upcoming.bindings]),
+        this.db
+          .executor()
+          .raw(`COUNT(*) FILTER (WHERE ${past.sql})::int AS past`, [...past.bindings]),
+      )
+      .first();
+    return { upcoming: row?.upcoming ?? 0, past: row?.past ?? 0 };
+  }
+
+  /**
+   * How many of the customer's bookings are stored `confirmed`: Confirmed and Completed, the
+   * Profile's booking count (PRD C12). Served by `idx_bookings_customer_id_status_hold_expires_at`.
+   */
+  async countConfirmedOfCustomer(customerId: number): Promise<number> {
+    const row = await this.bookings()
+      .where({ customer_id: customerId, status: 'confirmed' })
+      .count<{ count: number }[]>({ count: 'id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  private customerBookings(customerId: number): Knex.QueryBuilder {
+    return this.db
+      .executor()({ b: 'bookings' })
+      .join({ s: 'showtimes' }, 's.id', 'b.showtime_id')
+      .where('b.customer_id', customerId);
   }
 
   private bookings(): Knex.QueryBuilder {
