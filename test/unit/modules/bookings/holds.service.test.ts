@@ -24,6 +24,8 @@ import type { HoldRefusalService } from '../../../../src/modules/seating/hold-re
 import type { SeatClaimService } from '../../../../src/modules/seating/seat-claim.service';
 import type { SeatEventPublisher } from '../../../../src/modules/seating/seat-event.publisher';
 import type { ClaimPlan } from '../../../../src/modules/seating/types';
+import type { StaffService } from '../../../../src/modules/staff/staff.service';
+import type { StaffMember } from '../../../../src/modules/staff/types';
 import { TestClock } from '../../../support/clock';
 import { socketError } from '../../../support/errors';
 
@@ -95,6 +97,18 @@ const CUSTOMER: Customer = {
   deletedAt: null,
 };
 
+const STAFF_MEMBER: StaffMember = {
+  id: 7,
+  email: 'counter@example.com',
+  fullName: 'Counter One',
+  role: 'box_office',
+  status: 'active',
+  hasPassword: true,
+  lastSignInAt: NOW,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
 function bookingRow(overrides: Partial<BookingRow>): BookingRow {
   return {
     id: 100,
@@ -116,6 +130,8 @@ function bookingRow(overrides: Partial<BookingRow>): BookingRow {
     confirmed_at: null,
     refunded_at: null,
     qr_version: null,
+    checked_in_at: null,
+    checked_in_by_staff_id: null,
     created_at: NOW,
     updated_at: NOW,
     ...overrides,
@@ -139,6 +155,7 @@ describe('HoldsService', () => {
   let events: { publishAfterCommit: jest.Mock };
   let audit: { record: jest.Mock };
   let payments: { processingSaleBookingIds: jest.Mock };
+  let staff: { findByIdForUpdate: jest.Mock };
   let views: { of: jest.Mock };
   let clock: TestClock;
   let service: HoldsService;
@@ -155,6 +172,7 @@ describe('HoldsService', () => {
       findByReference: logged('find', undefined),
       liveOnlineHoldIdsOfCustomer: logged('customer holds', []),
       liveUnownedHoldIdByCodeHash: logged('code hold', undefined),
+      liveCounterHoldIdsOfStaff: logged('staff holds', []),
       lockForUpdate: logged('lock bookings', []),
       seatsOf: logged('seats of', []),
       expireHolds: logged('expire', undefined),
@@ -165,6 +183,8 @@ describe('HoldsService', () => {
       extendHold: logged('extend', undefined),
       markRefunded: logged('mark refunded', undefined),
       ticketHoldersOf: logged('ticket holders', []),
+      setCounterCustomer: logged('set counter customer', undefined),
+      checkIn: logged('check in', undefined),
     };
     showtimes = {
       lockedContext: logged('lock showtime', CONTEXT),
@@ -182,6 +202,7 @@ describe('HoldsService', () => {
     events = { publishAfterCommit: logged('publish', undefined) };
     audit = { record: logged('audit', 1) };
     payments = { processingSaleBookingIds: jest.fn().mockResolvedValue(new Set()) };
+    staff = { findByIdForUpdate: logged('lock staff', STAFF_MEMBER) };
     views = {
       of: jest.fn((row: BookingRow, now: Date) =>
         Promise.resolve(
@@ -210,6 +231,7 @@ describe('HoldsService', () => {
       clock,
       views as unknown as BookingViews,
       payments as unknown as PaymentsService,
+      staff as unknown as StaffService,
     );
   });
 
@@ -623,6 +645,140 @@ describe('HoldsService', () => {
         service.claim({ kind: 'customer', id: 12, sessionId: 3 }, 'MQ-7K3P9Q', code),
       ).rejects.toEqual(new AppError('PAYMENT_IN_PROGRESS'));
       expect(bookings.assignOwner).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a counter hold (U13)', () => {
+    const seatOf = (bookingId: number, label: string) => ({
+      booking_id: bookingId,
+      seat_label: label,
+      row_label: label[0]!,
+      seat_number: Number(label.slice(1)),
+      zone: 'middle' as const,
+      price: 19000,
+      is_wheelchair: false,
+    });
+
+    it('locks the member after the hall, then replaces only their own live counter hold', async () => {
+      const previous = bookingRow({ id: 95, channel: 'counter', created_by_staff_id: 7 });
+      bookings.liveCounterHoldIdsOfStaff.mockImplementation(() => {
+        calls.push('staff holds');
+        return Promise.resolve([95]);
+      });
+      bookings.lockForUpdate.mockImplementation(() => {
+        calls.push('lock bookings');
+        return Promise.resolve([previous]);
+      });
+      bookings.seatsOf.mockResolvedValue([seatOf(95, 'C1')]);
+
+      const hold = await service.create({
+        showtimeId: 81,
+        labels: ['B2'],
+        holder: { kind: 'staff', staffUserId: 7 },
+      });
+
+      expect(calls.slice(0, 7)).toEqual([
+        'lock showtime',
+        'lock hall',
+        'layout',
+        'lock staff',
+        'staff holds',
+        'lock bookings',
+        'expire',
+      ]);
+      expect(staff.findByIdForUpdate).toHaveBeenCalledWith(7);
+      expect(bookings.liveCounterHoldIdsOfStaff).toHaveBeenCalledWith(7, NOW);
+      expect(bookings.liveOnlineHoldIdsOfCustomer).not.toHaveBeenCalled();
+      expect(bookings.liveUnownedHoldIdByCodeHash).not.toHaveBeenCalled();
+      expect(bookings.expireHolds).toHaveBeenCalledWith([95], NOW);
+      expect(seatClaims.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          claim: expect.objectContaining({ bookingId: 200, labels: ['B2'] }),
+          release: [{ showtimeId: 81, bookingId: 95, labels: ['C1'] }],
+        }),
+      );
+      const [row] = bookings.insertUnlessReferenceTaken.mock.calls[0] as [NewBookingRow, string];
+      expect(row).toMatchObject({
+        channel: 'counter',
+        customer_id: null,
+        created_by_staff_id: 7,
+        hold_token_hash: null,
+        contact_name: null,
+        contact_email: null,
+        contact_phone: null,
+      });
+      expect(hold.holdCode).toBeNull();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: { kind: 'staff', id: 7 },
+          action: 'booking.held',
+          metadata: { showtimeId: 81, seatCount: 1, channel: 'counter', holder: 'staff' },
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: { kind: 'staff', id: 7 },
+          action: 'booking.released',
+          bookingId: 95,
+          metadata: { showtimeId: 81, reason: 'replaced', holder: 'staff' },
+        }),
+      );
+    });
+
+    it("leaves a hold alone that, under the lock, is not the member's live counter hold", async () => {
+      bookings.liveCounterHoldIdsOfStaff.mockResolvedValue([95, 96, 97]);
+      bookings.lockForUpdate.mockResolvedValue([
+        bookingRow({ id: 95, channel: 'counter', created_by_staff_id: 8 }),
+        bookingRow({ id: 96, channel: 'counter', created_by_staff_id: 7, hold_expires_at: NOW }),
+        bookingRow({ id: 97, channel: 'online', customer_id: 12 }),
+      ]);
+      await service.create({
+        showtimeId: 81,
+        labels: ['B2'],
+        holder: { kind: 'staff', staffUserId: 7 },
+      });
+      expect(bookings.expireHolds).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member deactivated or gone under the lock, before writing', async () => {
+      staff.findByIdForUpdate.mockResolvedValueOnce({ ...STAFF_MEMBER, status: 'deactivated' });
+      await expect(
+        service.create({
+          showtimeId: 81,
+          labels: ['B2'],
+          holder: { kind: 'staff', staffUserId: 7 },
+        }),
+      ).rejects.toEqual(new AppError('ACCOUNT_DEACTIVATED'));
+      staff.findByIdForUpdate.mockResolvedValueOnce(null);
+      await expect(
+        service.create({
+          showtimeId: 81,
+          labels: ['B2'],
+          holder: { kind: 'staff', staffUserId: 7 },
+        }),
+      ).rejects.toEqual(new AppError('UNAUTHENTICATED'));
+      expect(bookings.insertUnlessReferenceTaken).not.toHaveBeenCalled();
+    });
+
+    it('lets only the member who made it release an unowned counter hold', async () => {
+      const counter = bookingRow({ id: 95, channel: 'counter', created_by_staff_id: 7 });
+      bookings.findByReference.mockResolvedValue(counter);
+      bookings.lockForUpdate.mockResolvedValue([counter]);
+      bookings.seatsOf.mockResolvedValue([seatOf(95, 'C1')]);
+      for (const access of [{ staffUserId: 8 }, {}, { customerId: 12 }]) {
+        await expect(service.release(access, counter.reference)).rejects.toEqual(
+          new AppError('NOT_FOUND'),
+        );
+      }
+      await service.release({ staffUserId: 7 }, counter.reference);
+      expect(bookings.expireHolds).toHaveBeenCalledWith([95], NOW);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: { kind: 'staff', id: 7 },
+          action: 'booking.released',
+          metadata: { showtimeId: 81, reason: 'released', holder: 'staff' },
+        }),
+      );
     });
   });
 });

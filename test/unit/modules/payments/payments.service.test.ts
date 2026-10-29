@@ -34,7 +34,14 @@ function paymentRow(overrides: Partial<PaymentRow> = {}): PaymentRow {
 describe('PaymentsService', () => {
   const calls: string[] = [];
   let repository: Record<
-    'insert' | 'recordResult' | 'countOf' | 'countsOf' | 'insertMany' | 'finishProcessing' | 'due',
+    | 'insert'
+    | 'insertCounterCharge'
+    | 'recordResult'
+    | 'countOf'
+    | 'countsOf'
+    | 'insertMany'
+    | 'finishProcessing'
+    | 'due',
     jest.Mock
   >;
   let provider: Record<'charge' | 'retrieve' | 'refund', jest.Mock>;
@@ -49,6 +56,9 @@ describe('PaymentsService', () => {
         calls.push(`insert ${row.status}`);
         return Promise.resolve(paymentRow({ ...row, id: 7 }));
       }),
+      insertCounterCharge: jest.fn((row: Partial<PaymentRow>) =>
+        Promise.resolve(paymentRow({ ...row, id: 9 })),
+      ),
       recordResult: jest.fn((id: number, columns: Partial<PaymentRow>) => {
         calls.push('record');
         return Promise.resolve(paymentRow({ id, ...columns }));
@@ -185,6 +195,77 @@ describe('PaymentsService', () => {
     await expect(
       service.refundOnline([{ charge: { ...charge, status: 'declined' }, reference: 'MQ-7K3P9Q' }]),
     ).rejects.toMatchObject({ code: 'INTERNAL' });
+  });
+
+  describe('recordCounterCharge (U13)', () => {
+    it('records money taken at the counter as succeeded at once, with no provider call', async () => {
+      const payment = await service.recordCounterCharge({
+        bookingId: 100,
+        amount: money(38000),
+        method: 'card_terminal',
+        receiptReference: 'TRX-0042817',
+        purpose: 'sale',
+        collectedByStaffId: 7,
+      });
+      expect(repository.insertCounterCharge).toHaveBeenCalledWith({
+        booking_id: 100,
+        kind: 'charge',
+        purpose: 'sale',
+        method: 'card_terminal',
+        status: 'succeeded',
+        amount: 38000,
+        currency: 'EGP',
+        provider_reference: 'TRX-0042817',
+        collected_by_staff_id: 7,
+        completed_at: NOW,
+        created_at: NOW,
+        updated_at: NOW,
+      });
+      expect(provider.charge).not.toHaveBeenCalled();
+      expect(payment).toMatchObject({
+        id: 9,
+        method: 'card_terminal',
+        status: 'succeeded',
+        providerReference: 'TRX-0042817',
+        completedAt: NOW,
+      });
+    });
+
+    it('never stores a receipt reference for cash, and refuses a terminal payment without one', async () => {
+      await service.recordCounterCharge({
+        bookingId: 100,
+        amount: money(15000),
+        method: 'cash',
+        receiptReference: 'ignored',
+        purpose: 'sale',
+        collectedByStaffId: 7,
+      });
+      expect(repository.insertCounterCharge).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'cash', provider_reference: null }),
+      );
+      await expect(
+        service.recordCounterCharge({
+          bookingId: 100,
+          amount: money(15000),
+          method: 'card_terminal',
+          receiptReference: null,
+          purpose: 'sale',
+          collectedByStaffId: 7,
+        }),
+      ).rejects.toMatchObject({ code: 'INTERNAL' });
+      active = false;
+      await expect(
+        service.recordCounterCharge({
+          bookingId: 100,
+          amount: money(15000),
+          method: 'cash',
+          receiptReference: null,
+          purpose: 'sale',
+          collectedByStaffId: 7,
+        }),
+      ).rejects.toMatchObject({ code: 'INTERNAL' });
+      expect(repository.insertCounterCharge).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('refuses every write outside a transaction (INTERNAL)', async () => {

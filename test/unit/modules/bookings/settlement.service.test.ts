@@ -37,6 +37,8 @@ function row(id: number, overrides: Partial<BookingRow> = {}): BookingRow {
     confirmed_at: null,
     refunded_at: null,
     qr_version: null,
+    checked_in_at: null,
+    checked_in_by_staff_id: null,
     created_at: NOW,
     updated_at: NOW,
     ...overrides,

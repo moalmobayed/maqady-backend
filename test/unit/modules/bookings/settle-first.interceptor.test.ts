@@ -12,6 +12,9 @@ class Routes {
   @SettleFirst('showtime')
   showtime(): void {}
 
+  @SettleFirst('showtime', 'body')
+  showtimeInBody(): void {}
+
   plain(): void {}
 }
 
@@ -81,6 +84,26 @@ describe('SettleFirstInterceptor', () => {
     await run('booking', { params: { ref: 'MQ-7K3P9Q' } }, 'ws');
     expect(settlement.settleDue).not.toHaveBeenCalled();
     expect(next.handle).toHaveBeenCalledTimes(10);
+  });
+
+  it("settles the body's showtimeId for a route that names it there (U13), and nothing else", async () => {
+    await run('showtimeInBody', { params: { id: '5' }, body: { showtimeId: 81 } });
+    expect(settlement.settleDue).toHaveBeenLastCalledWith({ showtimeId: 81 });
+    settlement.settleDue.mockClear();
+    for (const body of [
+      undefined,
+      null,
+      'text',
+      {},
+      { showtimeId: '81' },
+      { showtimeId: 0 },
+      { showtimeId: -3 },
+      { showtimeId: 1.5 },
+      { showtimeId: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      await run('showtimeInBody', { params: { id: '5' }, body });
+    }
+    expect(settlement.settleDue).not.toHaveBeenCalled();
   });
 
   it('fails the request when settlement fails, without running the handler', async () => {

@@ -54,7 +54,7 @@ describe('Checkout and tickets in the OpenAPI document and the router', () => {
 
   it('serves the 3 routes to signed-in customers only', () => {
     const routes = listHttpRoutes(testApp).filter((route) =>
-      /\/(payments|ticket\.pdf|calendar\.ics)$/.test(route.path),
+      /^\/api\/v1\/bookings\/.*\/(payments|ticket\.pdf|calendar\.ics)$/.test(route.path),
     );
     expect(routes.map((route) => [route.method, route.path, route.access]).sort()).toEqual(
       [
@@ -108,6 +108,7 @@ describe('Checkout and tickets in the OpenAPI document and the router', () => {
       'status',
       'method',
       'amount',
+      'receiptReference',
       'card',
       'walletType',
       'createdAt',
