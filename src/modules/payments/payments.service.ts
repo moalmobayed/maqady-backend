@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
 import { money } from '../../common/money/money';
+import type { Money } from '../../common/money/types';
 import { Clock } from '../../common/time/clock';
 import { PaymentProvider } from './payment-provider';
 import { PaymentsRepository } from './payments.repository';
@@ -11,11 +12,18 @@ import type {
   DueCharge,
   DueCursor,
   FinishedChargeRow,
+  InstantRange,
+  LedgerEntry,
+  LedgerRow,
+  MoneyMoved,
   NewPaymentRow,
+  NewRefundRow,
   OnlineChargeInput,
   OnlineRefundInput,
   Payment,
   PaymentRow,
+  RefundItem,
+  RefundPurpose,
 } from './types';
 
 /**
@@ -219,10 +227,150 @@ export class PaymentsService {
     );
   }
 
+  /**
+   * Every payment and refund of these bookings (U14 admin detail, U16 Payments screen), by
+   * booking then oldest first, each succeeded charge with its remaining refundable amount.
+   */
+  async ledgerOf(bookingIds: readonly number[]): Promise<readonly LedgerEntry[]> {
+    return (await this.payments.ledgerOf(bookingIds)).map(toLedgerEntry);
+  }
+
+  /** One payment or refund with the ledger fields, or null. */
+  async findLedgerEntry(id: number): Promise<LedgerEntry | null> {
+    const row = await this.payments.findLedgerEntry(id);
+    return row ? toLedgerEntry(row) : null;
+  }
+
+  /**
+   * Refunds part or all of succeeded charges, each on its own rail (design §7.7, §7.8; U14):
+   * a card or wallet charge through the provider with our key `<reference>-r<n>` (`succeeded` at
+   * once), a cash or card-terminal charge as a `pending` refund to pay out at the counter. One
+   * multi-row insert; returns the refunds in input order.
+   *
+   * The caller holds the bookings `FOR UPDATE` (design §7.1 step 5), read the charges' remaining
+   * amounts under that lock, and refunds each charge at most once per call: an amount above what
+   * is left, a charge that is not a succeeded charge, or one named twice is `INTERNAL`.
+   */
+  async refund(
+    items: readonly RefundItem[],
+    purpose: RefundPurpose,
+  ): Promise<readonly LedgerEntry[]> {
+    this.requireTransaction();
+    if (items.length === 0) return [];
+    if (new Set(items.map((item) => item.charge.id)).size !== items.length) {
+      throw new AppError('INTERNAL', 'A charge is refunded at most once per batch.');
+    }
+    const now = this.clock.now();
+    const counts = new Map(
+      (
+        await this.payments.countsOf(
+          items.map(({ charge }) => charge.bookingId),
+          'refund',
+        )
+      ).map((row) => [row.booking_id, Number(row.count)]),
+    );
+    const rows: NewRefundRow[] = [];
+    for (const { charge, amount, reference } of items) {
+      assertRefundable(charge, amount);
+      const attempt = (counts.get(charge.bookingId) ?? 0) + 1;
+      counts.set(charge.bookingId, attempt);
+      const base = {
+        booking_id: charge.bookingId,
+        kind: 'refund',
+        purpose,
+        method: charge.method,
+        amount: amount.amount,
+        currency: amount.currency,
+        refund_of_payment_id: charge.id,
+        created_at: now,
+        updated_at: now,
+      } as const;
+      if (charge.method === 'card' || charge.method === 'wallet') {
+        const idempotencyKey = `${reference}-r${attempt}`;
+        const refund = await this.provider.refund({
+          chargeReference: charge.providerReference!,
+          amount,
+          idempotencyKey,
+        });
+        rows.push({
+          ...base,
+          status: refund.status,
+          provider_idempotency_key: idempotencyKey,
+          provider_reference: refund.providerReference,
+          completed_at: now,
+        });
+      } else {
+        rows.push({
+          ...base,
+          status: 'pending',
+          provider_idempotency_key: null,
+          provider_reference: null,
+          completed_at: null,
+        });
+      }
+    }
+    return (await this.payments.insertRefunds(rows)).map(toLedgerEntry);
+  }
+
+  /**
+   * Records a pending counter refund as paid out by this staff member (design §7.7), in the open
+   * transaction with its booking locked. Returns the refund, or null when it was not pending.
+   */
+  async markPaidOut(refundId: number, staffUserId: number): Promise<LedgerEntry | null> {
+    this.requireTransaction();
+    const row = await this.payments.markPaidOut(refundId, staffUserId, this.clock.now());
+    return row ? toLedgerEntry(row) : null;
+  }
+
+  /**
+   * The money that moved in a period (PRD "Collected": money taken minus refunds paid out, on the
+   * day it moved) and how many charges were declined in it (U14's cards, U16's KPIs).
+   */
+  async moneyMovedBetween(range: InstantRange): Promise<MoneyMoved> {
+    const row = await this.payments.moneyMovedBetween(range);
+    return { collected: money(row.collected), declinedCount: row.declined };
+  }
+
+  /** The total of these bookings' refunds of one purpose, pending ones included. */
+  async refundTotalOf(bookingIds: readonly number[], purpose: RefundPurpose): Promise<Money> {
+    return money(await this.payments.refundTotalOf(bookingIds, purpose));
+  }
+
   private requireTransaction(): void {
     if (!this.context.isActive()) {
       throw new AppError('INTERNAL', 'Payments are written inside a transaction.');
     }
+  }
+}
+
+/** A ledger row as the services see it: the payment, its counter and payout facts, its remainder. */
+export function toLedgerEntry(row: LedgerRow): LedgerEntry {
+  return {
+    ...toPayment(row),
+    collectedByStaffId: row.collected_by_staff_id,
+    paidOutAt: row.paid_out_at,
+    paidOutByStaffId: row.paid_out_by_staff_id,
+    refundable:
+      row.kind === 'charge' && row.status === 'succeeded'
+        ? money(row.amount - row.refunded_amount, row.currency)
+        : null,
+  };
+}
+
+/** A refund of `amount` from `charge` is possible: a succeeded charge with that much left. */
+function assertRefundable(charge: LedgerEntry, amount: Money): void {
+  const online = charge.method === 'card' || charge.method === 'wallet';
+  if (
+    charge.kind !== 'charge' ||
+    charge.status !== 'succeeded' ||
+    charge.refundable === null ||
+    !Number.isInteger(amount.amount) ||
+    amount.amount <= 0 ||
+    amount.currency !== charge.amount.currency ||
+    amount.amount > charge.refundable.amount ||
+    (online && charge.providerReference === null)
+  ) {
+    throw new AppError('INTERNAL', 'Only what is left of a succeeded charge is refunded.');
   }
 }
 
