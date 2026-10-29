@@ -221,5 +221,10 @@ amount }`, `refunds` (the planned split: payment id, method, amount), `changedFi
 - U16: the Payments screen reads `PaymentsService.ledgerOf()` and adds the payment-status SQL.
 - U19: the activity log should render `booking.edited`, `booking.note_added`,
   `booking.tickets_resent { by: staff }`, `payment.paid_out`.
+- Known limit: an edit locks every existing claim row of its current and target seats in one
+  ordered statement, but a target seat with no claim row yet is inserted by the upsert afterwards;
+  a rival hold inserting that same new seat while waiting on a row the edit locked can deadlock
+  with it. Postgres aborts one side and the write interceptor retries it once (design §7.1); the
+  window is narrow (a new seat, raced at that instant). Not fixed here.
 - A show-date filter on the bookings list (by the showtime's cinema date) if the box office asks for
   it; today the theater and movie filters narrow to a show.
