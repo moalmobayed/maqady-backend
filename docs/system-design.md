@@ -1208,7 +1208,9 @@ one grouped query per page. The detail adds the 4 newest bookings in any status 
 `GET /admin/bookings?customerId=` pages all). `PATCH` takes `fullName`, `email` (a new address must
 be free among live accounts, `EMAIL_TAKEN`; it is unverified and the customer's unused one-time
 links are deleted), `phone` and `status` (U9's `setStatus()`: blocking revokes every session) in one
-transaction and answers the customer with its stats. The admin reset email answers `202 { channel,
+transaction and answers the customer with its stats; that answer is never stored for replay
+(`@NoIdempotencyStorage()`, U15 review), since a stored copy would outlive "Delete account" with
+the name, email and phone it removed. The admin reset email answers `202 { channel,
 queuedAt }` and refuses a blocked customer with `CUSTOMER_BLOCKED`. `DELETE` anonymises (§21) and
 answers `200` with `bookingsKept` and the counts removed.
 

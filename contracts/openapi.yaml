@@ -27033,7 +27033,7 @@ paths:
         - Bookings keep the contact they were made with; edit a booking's contact on the booking.
         - A deleted (anonymised) or unknown customer is `NOT_FOUND`.
         - Recorded in the activity log with the names of the changed fields, never their values.
-        - Answers the customer with their stats (without `recentBookings`, which an edit does not change).
+        - Answers the customer with their stats (without `recentBookings`, which an edit does not change). The answer is never stored for replay (it carries personal data that Delete account removes); an `Idempotency-Key` is ignored, and sending the same edit again changes nothing.
       operationId: updateAdminCustomer
       parameters:
         - name: id
@@ -27045,15 +27045,6 @@ paths:
             nullable: false
             example: 42
             type: integer
-        - name: Idempotency-Key
-          in: header
-          required: false
-          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
-          schema:
-            type: string
-            maxLength: 128
-            pattern: ^[A-Za-z0-9_-]{1,128}$
-            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
       requestBody:
         required: true
         content:
@@ -27069,12 +27060,6 @@ paths:
               schema:
                 type: string
                 format: uuid
-            Idempotent-Replayed:
-              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
-              schema:
-                type: string
-                enum:
-                  - 'true'
           content:
             application/json:
               schema:
@@ -27239,27 +27224,6 @@ paths:
                     error:
                       code: PAYLOAD_TOO_LARGE
                       message: The request body is too large.
-                      details: null
-                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
-        '422':
-          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
-          headers:
-            X-Request-Id:
-              description: Correlation id for this request. Quote it when reporting a problem.
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                IDEMPOTENCY_KEY_REUSED:
-                  summary: IDEMPOTENCY_KEY_REUSED
-                  value:
-                    error:
-                      code: IDEMPOTENCY_KEY_REUSED
-                      message: This Idempotency-Key was already used for a different request.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '429':

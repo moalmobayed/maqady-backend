@@ -388,6 +388,28 @@ describe('Customer anonymisation (integration)', () => {
     expect(registered.body.customer.id).not.toBe(customer.customerId);
   });
 
+  it('keeps no stored admin edit answer that could replay the deleted details', async () => {
+    const customer = await registerCustomer(testApp, {
+      fullName: 'Replay Person',
+      email: 'replay.person@example.com',
+    });
+    const edit = () =>
+      testApp
+        .http()
+        .patch(`/api/v1/admin/customers/${customer.customerId}`)
+        .set('Authorization', admin.authorization)
+        .set('Idempotency-Key', 'edit-before-delete')
+        .send({ phone: '01012345678' });
+    expect((await edit()).status).toBe(200);
+    expect(
+      (await anonymiseCustomer(testApp, admin.authorization, customer.customerId)).status,
+    ).toBe(200);
+
+    const retried = await edit();
+    expectError(retried, 404, 'NOT_FOUND');
+    expect(JSON.stringify(retried.body)).not.toContain('replay.person@example.com');
+  });
+
   it('answers NOT_FOUND for an unknown customer and changes nothing', async () => {
     const before = await tableCounts();
     expectError(await anonymiseCustomer(testApp, admin.authorization, 999999), 404, 'NOT_FOUND');

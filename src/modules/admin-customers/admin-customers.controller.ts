@@ -8,7 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { Admin, CurrentPrincipal, Staff } from '../../common/auth/access.decorators';
 import type { StaffPrincipal } from '../../common/auth/types';
-import { Strict } from '../../common/idempotency/idempotency.decorators';
+import { NoIdempotencyStorage, Strict } from '../../common/idempotency/idempotency.decorators';
 import {
   ApiErrorResponses,
   REQUEST_ID_RESPONSE_HEADER,
@@ -87,10 +87,14 @@ export class AdminCustomersController {
 
   @Patch(':id')
   @Admin()
+  // The answer carries the customer's name, email and phone, so it is never stored: a stored copy
+  // would outlive "Delete account" and replay them (U15 review). Sending the same edit again is
+  // harmless: equal values change nothing.
+  @NoIdempotencyStorage()
   @ApiOperation({
     summary: 'Edit a customer, block or unblock them',
     description:
-      'Admin only: "Save details", Block and Unblock in the drawer (PRD A7, Accounts 5). Send any of `fullName`, `email`, `phone` (`null` removes it) and `status`; fields not sent stay, and values equal to the stored ones change nothing. All of it applies together or not at all.\n\n- A new email must not belong to another live account (`EMAIL_TAKEN`). It is unverified from then on, and the customer\'s unused verification and reset links stop working.\n- `status: blocked` signs the customer out everywhere at once (their next request is `401`), and their sign-in and refresh answer `ACCOUNT_BLOCKED`; paid tickets stay valid. `status: active` unblocks: they sign in and book again right away.\n- Bookings keep the contact they were made with; edit a booking\'s contact on the booking.\n- A deleted (anonymised) or unknown customer is `NOT_FOUND`.\n- Recorded in the activity log with the names of the changed fields, never their values.\n- Answers the customer with their stats (without `recentBookings`, which an edit does not change).',
+      'Admin only: "Save details", Block and Unblock in the drawer (PRD A7, Accounts 5). Send any of `fullName`, `email`, `phone` (`null` removes it) and `status`; fields not sent stay, and values equal to the stored ones change nothing. All of it applies together or not at all.\n\n- A new email must not belong to another live account (`EMAIL_TAKEN`). It is unverified from then on, and the customer\'s unused verification and reset links stop working.\n- `status: blocked` signs the customer out everywhere at once (their next request is `401`), and their sign-in and refresh answer `ACCOUNT_BLOCKED`; paid tickets stay valid. `status: active` unblocks: they sign in and book again right away.\n- Bookings keep the contact they were made with; edit a booking\'s contact on the booking.\n- A deleted (anonymised) or unknown customer is `NOT_FOUND`.\n- Recorded in the activity log with the names of the changed fields, never their values.\n- Answers the customer with their stats (without `recentBookings`, which an edit does not change). The answer is never stored for replay (it carries personal data that Delete account removes); an `Idempotency-Key` is ignored, and sending the same edit again changes nothing.',
   })
   @ApiBody({ type: UpdateCustomerRequest })
   @ApiOkResponse({
