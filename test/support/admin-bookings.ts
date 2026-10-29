@@ -86,21 +86,6 @@ export function editBooking(
     .send(body);
 }
 
-/** `PATCH /admin/showtimes/{id}` cancelling the showtime. */
-export function cancelShowtime(
-  testApp: TestApp,
-  authorization: string,
-  showtimeId: number,
-  key: string = randomUUID(),
-): Promise<Response> {
-  return testApp
-    .http()
-    .patch(`/api/v1/admin/showtimes/${showtimeId}`)
-    .set('Authorization', authorization)
-    .set('Idempotency-Key', key)
-    .send({ status: 'cancelled', cancelReason: 'technical_issue' });
-}
-
 /** A new customer's booking of `seats`, paid online (Visa unless told otherwise). */
 export async function paidOnline(
   testApp: TestApp,

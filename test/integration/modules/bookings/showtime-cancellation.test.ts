@@ -1,12 +1,13 @@
 import type { Response } from 'supertest';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
-import { cancelShowtime, paidOnline, refundBooking } from '../../../support/admin-bookings';
+import { paidOnline, refundBooking } from '../../../support/admin-bookings';
 import { counterSale } from '../../../support/box-office';
 import { customerHold, pay, readPayments } from '../../../support/checkout';
 import { TestClock } from '../../../support/clock';
 import { bookableShowtime, expectHold } from '../../../support/holds';
 import { readMessages } from '../../../support/messaging/messages';
 import { RecordingEmailSender } from '../../../support/messaging/recording-email-sender';
+import { cancelShowtime } from '../../../support/showtimes';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
 import type { BookableShowtimeFixture, StaffSession, TestApp } from '../../../support/types';
@@ -128,9 +129,12 @@ describe('Showtime cancellation (integration)', () => {
   it('refunds every booking, releases every live hold and tells every ticket holder', async () => {
     const seeded = await seed();
     const before = (await readMessages(testApp.knex)).length;
-    const response = await cancelShowtime(testApp, admin.authorization, showtime.showtimeId);
-    expect(response.status).toBe(200);
-    expect(response.body.status).toBe('cancelled');
+    await cancelShowtime(testApp, admin, showtime.showtimeId);
+    const cancelled = (await testApp
+      .knex('showtimes')
+      .first('status')
+      .where({ id: showtime.showtimeId })) as { status: string };
+    expect(cancelled.status).toBe('cancelled');
 
     for (const reference of [
       seeded.card.reference,
@@ -212,9 +216,7 @@ describe('Showtime cancellation (integration)', () => {
 
   it('refunds a payment that succeeds after its showtime was cancelled', async () => {
     const seeded = await seed();
-    expect((await cancelShowtime(testApp, admin.authorization, showtime.showtimeId)).status).toBe(
-      200,
-    );
+    await cancelShowtime(testApp, admin, showtime.showtimeId);
     clock.advance({ seconds: 11 });
     const page = await testApp
       .http()
@@ -233,6 +235,6 @@ describe('Showtime cancellation (integration)', () => {
       bookingCount: 0,
       emailCount: 0,
     });
-    expect((await cancelShowtime(testApp, admin.authorization, other.showtimeId)).status).toBe(200);
+    await cancelShowtime(testApp, admin, other.showtimeId);
   });
 });
