@@ -22,6 +22,12 @@ export interface MigrationFile {
   config?: { transaction?: boolean };
 }
 
+/** One entry of the migration list (`migration-list.ts`): its recorded name and its module. */
+export interface ListedMigration {
+  readonly name: string;
+  readonly file: Partial<MigrationFile>;
+}
+
 /** A migration as handed to Knex: `up` and `down` already bound to their context. */
 export interface BoundMigration {
   up(knex: Knex): Promise<void>;

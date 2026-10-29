@@ -38,6 +38,24 @@ export interface SeedTheater {
   readonly publish: boolean;
   /** Base colour of the generated pictures. */
   readonly colour: string;
+  /** The cover picture to download, `null` for none; left out, a generated one. */
+  readonly coverUrl?: string | null;
+  /** Zone prices; left out, `SEED_PRICES`. */
+  readonly prices?: SeedPrices;
+  /** The halls to create and make active; left out, only `SEED_HALL_NAME`. */
+  readonly halls?: readonly string[];
+}
+
+/** A theater's default price per zone, in piastres. */
+export interface SeedPrices {
+  readonly front: SeedMoney;
+  readonly middle: SeedMoney;
+  readonly back: SeedMoney;
+}
+
+export interface SeedMoney {
+  readonly amount: number;
+  readonly currency: string;
 }
 
 export interface SeedSpecialDate {
@@ -57,6 +75,8 @@ export interface SeedPerson {
   readonly bio: string | null;
   readonly roles: readonly CreditRole[];
   readonly colour: string;
+  /** The photo to download, `null` for none; left out, a generated one. */
+  readonly photoUrl?: string | null;
 }
 
 /** A credit of a seed movie, by person name. */
@@ -78,10 +98,18 @@ export interface SeedVideo {
 export interface SeedMoviePhoto {
   readonly kind: MoviePhotoKind;
   readonly caption: string;
+  /** The picture to download; left out, a generated one. */
+  readonly url?: string;
 }
 
 /** The status a seed movie ends in. */
 export type SeedMovieStatus = 'draft' | 'coming_soon' | 'now_showing';
+
+/** The exact size, in pixels, a seed picture is uploaded at. */
+export interface SeedImageSize {
+  readonly width: number;
+  readonly height: number;
+}
 
 /** A movie of the development seed. */
 export interface SeedMovie {
@@ -91,10 +119,13 @@ export interface SeedMovie {
   readonly runtimeMinutes: number;
   /** The release date, this many days from today (negative: in the past). */
   readonly releaseInDays: number;
-  readonly ageRating: AgeRating;
+  /** A fixed release date, which `releaseInDays` then gives way to (real datasets). */
+  readonly releaseDate?: CalendarDate;
+  /** `null` leaves the catalog's default (`12+`): a film not yet rated by the censor. */
+  readonly ageRating: AgeRating | null;
   readonly language: string;
   readonly country: string;
-  readonly productionCompany: string;
+  readonly productionCompany: string | null;
   readonly budgetLabel: string | null;
   readonly filmingLocations: string | null;
   /** Genre slugs, in display order. */
@@ -105,17 +136,30 @@ export interface SeedMovie {
   /** The home carousel position (with the first video as the hero), or none. */
   readonly featuredPosition: number | null;
   readonly colour: string;
+  /** The poster to download, `null` for none; left out, a generated one. */
+  readonly posterUrl?: string | null;
 }
 
 /**
- * A showtime slot of the development seed: a theater's `Hall 1` shows `movie` at `startTime`
+ * A showtime slot of the development seed: a theater's `hall` shows `movie` at `startTime`
  * (`HH:mm`; `00:00`–`05:59` is after midnight) on each of the next cinema dates it fits.
  */
 export interface SeedShowtimeSlot {
   readonly theater: string;
+  /** One of the theater's `halls`; left out, `SEED_HALL_NAME`. */
+  readonly hall?: string;
   readonly startTime: string;
   /** The title of a Now showing seed movie. */
   readonly movie: string;
+}
+
+/** A named set of seed data: what `SEED_DATASET` picks. */
+export interface SeedDataset {
+  readonly name: string;
+  readonly theaters: readonly SeedTheater[];
+  readonly people: readonly SeedPerson[];
+  readonly movies: readonly SeedMovie[];
+  readonly showtimes: readonly SeedShowtimeSlot[];
 }
 
 /** What one step did: how many things it created and how many it found already there. */
@@ -133,9 +177,10 @@ export interface SeedStep {
 /** What the steps share: the signed-in admin API, today's date and the ids found so far. */
 export interface SeedContext {
   readonly api: SeedApi;
+  readonly dataset: SeedDataset;
   readonly today: CalendarDate;
   readonly theaterIds: Map<string, number>;
-  /** The seed hall (`SEED_HALL_NAME`) of each published theater, by theater name. */
+  /** The halls of each published theater, by `hallKey(theater, hall)`. */
   readonly hallIds: Map<string, number>;
   readonly personIds: Map<string, number>;
   readonly movieIds: Map<string, number>;
@@ -255,3 +300,22 @@ export interface SeedShowtimeBatch {
 
 /** Why the seed refuses to run here; empty when it may. */
 export type SeedRefusals = readonly string[];
+
+/** Where `npm run seed:remote` signs in and seeds. */
+export interface RemoteSeedTarget {
+  /** The deployed API's base URL, ending in `/api/v1`, with no trailing slash. */
+  readonly baseUrl: string;
+  readonly email: string;
+  readonly password: string;
+}
+
+/** What `npm run seed:remote` would do: a target only when nothing refused it. */
+export interface RemoteSeedPlan {
+  readonly refusals: SeedRefusals;
+  readonly target: RemoteSeedTarget | null;
+}
+
+/** The one field of `GET /home` the remote seed reads: the server's cinema date. */
+export interface SeedHomeDate {
+  readonly cinemaDate: CalendarDate;
+}

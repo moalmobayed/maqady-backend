@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import type { Knex } from 'knex';
-import type { BoundMigration, MigrationContext, MigrationFile } from './types';
+import type { BoundMigration, ListedMigration, MigrationContext, MigrationFile } from './types';
 
 /**
  * Lists and loads the migrations in one directory, for `knex.migrate`.
@@ -36,14 +36,54 @@ export class DirectoryMigrationSource implements Knex.MigrationSource<string> {
     // Loaded by path at run time, like Knex's own source; Jest's require compiles the .ts files.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const file = require(path) as Partial<MigrationFile>;
-    const { up, down, config } = file;
-    if (typeof up !== 'function' || typeof down !== 'function') {
-      return Promise.reject(new TypeError(`Migration ${migration} must export up() and down()`));
-    }
-    return Promise.resolve({
-      up: (knex: Knex) => up(knex, this.context),
-      down: (knex: Knex) => down(knex, this.context),
-      ...(config ? { config } : {}),
-    });
+    return bindMigration(migration, file, this.context);
   }
+}
+
+/**
+ * Hands Knex the migrations of a static list (`MIGRATIONS`), in its order, for the app at run
+ * time: nothing is read from disk, so a bundled or traced deployment has every migration. Names
+ * match `DirectoryMigrationSource`'s, so both record the same `knex_migrations` rows.
+ */
+export class ListedMigrationSource implements Knex.MigrationSource<string> {
+  private readonly byName: ReadonlyMap<string, Partial<MigrationFile>>;
+
+  constructor(
+    private readonly migrations: readonly ListedMigration[],
+    private readonly context: MigrationContext,
+  ) {
+    this.byName = new Map(migrations.map((migration) => [migration.name, migration.file]));
+  }
+
+  getMigrations(): Promise<string[]> {
+    return Promise.resolve(this.migrations.map((migration) => migration.name));
+  }
+
+  getMigrationName(migration: string): string {
+    return migration;
+  }
+
+  getMigration(migration: string): Promise<BoundMigration> {
+    const file = this.byName.get(migration);
+    if (file === undefined) {
+      return Promise.reject(new TypeError(`Migration ${migration} is not in the migration list`));
+    }
+    return bindMigration(migration, file, this.context);
+  }
+}
+
+function bindMigration(
+  name: string,
+  file: Partial<MigrationFile>,
+  context: MigrationContext,
+): Promise<BoundMigration> {
+  const { up, down, config } = file;
+  if (typeof up !== 'function' || typeof down !== 'function') {
+    return Promise.reject(new TypeError(`Migration ${name} must export up() and down()`));
+  }
+  return Promise.resolve({
+    up: (knex: Knex) => up(knex, context),
+    down: (knex: Knex) => down(knex, context),
+    ...(config ? { config } : {}),
+  });
 }

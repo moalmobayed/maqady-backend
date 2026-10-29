@@ -28,6 +28,19 @@ export const EXTENSION_SCHEMAS = ['extensions', 'public'] as const;
  */
 export const MIGRATION_ADVISORY_LOCK = 'maqady-backend:migrations';
 
+/**
+ * How long a booting process waits for another's migration run before it gives up with a lock
+ * timeout. Without a limit, a holder that never finishes (its process died, but a pooler kept
+ * its server session) would hang every later boot until the host's request timeout.
+ */
+export const MIGRATION_LOCK_TIMEOUT = '45s';
+
+/**
+ * How long the lock holder may sit idle in its transaction while the migrations run on other
+ * connections. Far above any real run; it ends a holder whose process died, so the lock frees.
+ */
+export const MIGRATION_LOCK_HOLDER_IDLE_TIMEOUT = '5min';
+
 /** Knex's bookkeeping table; it lives in the service's schema (with `<name>_lock`). */
 export const MIGRATIONS_TABLE = 'knex_migrations';
 

@@ -1,6 +1,27 @@
 import type { AppConfig } from '../../../../src/common/config/types';
-import { seedRefusals } from '../../../../src/modules/seed/seed.command';
+import {
+  remoteSeedPlan,
+  runRemoteSeed,
+  seedDataset,
+  seedRefusals,
+} from '../../../../src/modules/seed/seed.command';
 import { buildTestConfig } from '../../../support/test-config';
+
+describe('seedDataset', () => {
+  it('picks the demo dataset unless SEED_DATASET names another', () => {
+    expect(seedDataset({}).name).toBe('demo');
+    expect(seedDataset({ SEED_DATASET: '' }).name).toBe('demo');
+    expect(seedDataset({ SEED_DATASET: ' egypt-2026 ' }).name).toBe('egypt-2026');
+  });
+
+  it('refuses a dataset it does not have, naming the ones it has', () => {
+    for (const name of ['egypt-2025', 'toString']) {
+      expect(() => seedDataset({ SEED_DATASET: name })).toThrow(
+        'The seed refuses to run: SEED_DATASET must be one of demo, egypt-2026',
+      );
+    }
+  });
+});
 
 describe('seedRefusals', () => {
   const local = buildTestConfig();
@@ -60,5 +81,81 @@ describe('seedRefusals', () => {
     expect(refusals).toEqual(['SEED_ADMIN_PASSWORD must meet the password policy']);
     expect(refusals.join(' ')).not.toContain('short');
     expect(seedRefusals({ SEED_ADMIN_PASSWORD: 'Longer-passw0rd' }, local)).toEqual([]);
+  });
+});
+
+describe('remoteSeedPlan', () => {
+  const complete = {
+    SEED_API_URL: 'https://maqady-api.onrender.com/api/v1/',
+    SEED_ADMIN_EMAIL: ' staging-admin@maqady.local ',
+    SEED_ADMIN_PASSWORD: 'Staging-passw0rd',
+  };
+
+  it('targets an https deployment, without the trailing slash, with the admin it names', () => {
+    expect(remoteSeedPlan(complete)).toEqual({
+      refusals: [],
+      target: {
+        baseUrl: 'https://maqady-api.onrender.com/api/v1',
+        email: 'staging-admin@maqady.local',
+        password: 'Staging-passw0rd',
+      },
+    });
+  });
+
+  it('allows plain http only on this machine', () => {
+    for (const url of ['http://127.0.0.1:3000/api/v1', 'http://localhost:3000/api/v1']) {
+      expect(remoteSeedPlan({ ...complete, SEED_API_URL: url }).refusals).toEqual([]);
+    }
+    const plain = remoteSeedPlan({
+      ...complete,
+      SEED_API_URL: 'http://maqady-api.onrender.com/api/v1',
+    });
+    expect(plain).toEqual({
+      refusals: [
+        "SEED_API_URL must use https (http only on this machine): the admin's password travels in the sign-in request",
+      ],
+      target: null,
+    });
+  });
+
+  it('refuses a URL that is not absolute or carries credentials, a query or a fragment, without echoing it', () => {
+    expect(remoteSeedPlan({ ...complete, SEED_API_URL: 'maqady-api/api/v1' }).refusals).toEqual([
+      'SEED_API_URL must be an absolute URL',
+    ]);
+    for (const url of [
+      'https://admin:s3cret@maqady-api.onrender.com/api/v1',
+      'https://maqady-api.onrender.com/api/v1?token=s3cret',
+      'https://maqady-api.onrender.com/api/v1#s3cret',
+    ]) {
+      const { refusals, target } = remoteSeedPlan({ ...complete, SEED_API_URL: url });
+      expect({ url, refusals, target }).toEqual({
+        url,
+        refusals: ['SEED_API_URL must carry no credentials, query or fragment'],
+        target: null,
+      });
+      expect(refusals.join(' ')).not.toContain('s3cret');
+    }
+  });
+
+  it('names every missing variable, and never echoes the password', () => {
+    expect(remoteSeedPlan({ SEED_ADMIN_EMAIL: '  ' })).toEqual({
+      refusals: [
+        "SEED_API_URL is required: the deployed API's base URL, ending in /api/v1",
+        'SEED_ADMIN_EMAIL is required: an admin that already exists there',
+        "SEED_ADMIN_PASSWORD is required: that admin's password",
+      ],
+      target: null,
+    });
+    const refused = remoteSeedPlan({ ...complete, SEED_API_URL: 'http://example.com/api/v1' });
+    expect(JSON.stringify(refused.refusals)).not.toContain('Staging-passw0rd');
+  });
+
+  it('refuses before any request is sent', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    await expect(runRemoteSeed({}, () => {})).rejects.toThrow(
+      'The remote seed refuses to run:\n- SEED_API_URL is required',
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

@@ -5,6 +5,12 @@ export const SEED_ADMIN_NAME = 'Seed Admin';
 /** Overrides the seed admin's password; it must meet the password policy. */
 export const SEED_ADMIN_PASSWORD_VARIABLE = 'SEED_ADMIN_PASSWORD';
 
+/** `npm run seed:remote`: the deployed API's base URL, ending in `/api/v1`. */
+export const SEED_API_URL_VARIABLE = 'SEED_API_URL';
+
+/** `npm run seed:remote`: an admin that already exists on that deployment. */
+export const SEED_REMOTE_ADMIN_EMAIL_VARIABLE = 'SEED_ADMIN_EMAIL';
+
 /** The development-only default, documented in the README; the seed refuses production. */
 export const DEFAULT_SEED_ADMIN_PASSWORD = 'Maqady-seed-2026';
 
@@ -32,6 +38,15 @@ export const SEED_LIST_LIMIT = 100;
 
 /** The hall the seed adds to each theater it publishes (the standard 12 × 16 layout). */
 export const SEED_HALL_NAME = 'Hall 1';
+
+/** How long one picture download of a real dataset may take. */
+export const SEED_IMAGE_TIMEOUT_MS = 60_000;
+
+/** Sent with picture downloads; some image hosts refuse requests without a browser-like agent. */
+export const SEED_IMAGE_USER_AGENT = 'Mozilla/5.0 (compatible; MaqadySeed/1.0)';
+
+/** Picks the dataset `npm run seed` and `npm run seed:remote` load (`SEED_DATASETS`). */
+export const SEED_DATASET_VARIABLE = 'SEED_DATASET';
 
 /** The seed schedules showtimes on today's cinema date and the 6 after. */
 export const SEED_SHOWTIME_DAYS = 7;

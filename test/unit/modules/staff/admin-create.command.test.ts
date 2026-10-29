@@ -1,4 +1,7 @@
-import { parseBootstrapAdminEnv } from '../../../../src/modules/staff/admin-create.command';
+import {
+  bootstrapAdminRequested,
+  parseBootstrapAdminEnv,
+} from '../../../../src/modules/staff/admin-create.command';
 
 const VALID = {
   BOOTSTRAP_ADMIN_EMAIL: ' owner@maqady.example ',
@@ -64,5 +67,19 @@ describe('parseBootstrapAdminEnv', () => {
       'BOOTSTRAP_ADMIN_EMAIL',
       'BOOTSTRAP_ADMIN_NAME',
     ]);
+  });
+});
+
+describe('bootstrapAdminRequested', () => {
+  it('creates the first admin at boot only when BOOTSTRAP_ADMIN_PASSWORD is set', () => {
+    expect(bootstrapAdminRequested({})).toBe(false);
+    expect(bootstrapAdminRequested({ BOOTSTRAP_ADMIN_PASSWORD: '' })).toBe(false);
+    expect(
+      bootstrapAdminRequested({
+        BOOTSTRAP_ADMIN_EMAIL: 'admin@maqady.example',
+        BOOTSTRAP_ADMIN_NAME: 'Admin',
+      }),
+    ).toBe(false);
+    expect(bootstrapAdminRequested({ BOOTSTRAP_ADMIN_PASSWORD: 'Staging-passw0rd' })).toBe(true);
   });
 });

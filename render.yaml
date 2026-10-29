@@ -1,0 +1,52 @@
+# Render Blueprint for the staging API (README "Deploying (Render and Supabase)").
+# Render generates the four secrets itself; the three values marked sync: false are asked for
+# when the Blueprint is created, and are copied from the Supabase dashboard.
+services:
+  - type: web
+    name: maqady-api-staging
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main-jf8hqi
+    dockerfilePath: ./Dockerfile
+    # Migrate, create the first admin if none exists (idempotent), then serve.
+    dockerCommand: sh -c "node dist/cli/migrate.js && node dist/cli/admin-create.js && exec node --enable-source-maps dist/main.js"
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      # Supabase session pooler URL with ?sslmode=verify-full&sslrootcert=/app/certs/supabase-prod-ca-2021.crt
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SCHEMA
+        value: maqady
+      - key: CORS_ORIGINS
+        value: http://localhost:3000
+      - key: FRONTEND_BASE_URL
+        value: http://localhost:3000
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET_CUSTOMER
+        generateValue: true
+      - key: JWT_SECRET_STAFF
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
+      - key: QR_SIGNING_KEY
+        generateValue: true
+      # No verified Resend domain yet (ADR 0004): emails are recorded, not sent.
+      - key: EMAIL_DRIVER
+        value: simulated
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: STORAGE_BUCKET
+        value: media
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: staging-admin@maqady.local
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Staging Admin
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false

@@ -1,5 +1,4 @@
 # maqady-backend
-
 The API behind **Maqady**, a cinema seat-booking platform for Cairo cinemas: the customer
 website (browse movies and theaters, hold seats, pay, tickets) and the admin dashboard
 (catalog, theaters and halls, showtimes, bookings, box office, analytics).
@@ -82,6 +81,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all twelve |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
 | `SEED_ADMIN_PASSWORD` | `npm run seed` only, optional | The seed admin's password (default `Maqady-seed-2026`, development only); it must meet the password policy |
+| `SEED_DATASET` | `npm run seed` and `seed:remote`, optional | `demo` (default: invented data, generated pictures) or `egypt-2026` (real films, people and cinemas; pictures downloaded). See "Development seed" |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
 ### Email and SMS
@@ -139,16 +139,15 @@ pages and the admin dashboard.
   `POST /api/v1/admin/auth/sessions` and drives the admin routes: validation, transactions,
   idempotency, audit rows and the image pipeline all apply. Sign in to the dashboard with the
   same account (password `SEED_ADMIN_PASSWORD`, default `Maqady-seed-2026`).
-- What it adds: 6 theaters (5 published, Dokki left a draft) with weekly hours, some past
-  midnight, a special date, prices, phones, facilities, a cover and gallery photos; 18 people with
-  photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the first is the
-  backdrop), two YouTube videos each and credits; 5 of them in the home carousel; showtimes over
-  the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00 and 21:45,
-  plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
-  nights), so the ticker, the movie and theater showtime lists and the show-date filter have
-  data. Names, phones
-  and emails are invented; release dates are relative to the day you run it. Pictures are
-  generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
+- What the default `demo` dataset adds: 6 theaters (5 published, Dokki left a draft) with weekly
+  hours, some past midnight, a special date, prices, phones, facilities, a cover and gallery photos;
+  18 people with photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the
+  first is the backdrop), two YouTube videos each and credits; 5 of them in the home carousel;
+  showtimes over the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00
+  and 21:45, plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
+  nights), so the ticker, the movie and theater showtime lists and the show-date filter have data.
+  Names, phones and emails are invented; release dates are relative to the day you run it. Pictures
+  are generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
   videos are Blender Foundation open movies on YouTube, so the embeds play.
 - It is idempotent: each step finds what exists by name or title and adds only what is missing,
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
@@ -157,6 +156,44 @@ pages and the admin dashboard.
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,
   keeps the slots already scheduled, dry-runs the missing dates and creates only the `available`
   ones, so a started slot or a night whose hours don't fit is simply skipped.
+
+### The real dataset: `SEED_DATASET=egypt-2026`
+
+```bash
+SEED_DATASET=egypt-2026 npm run seed          # this machine
+SEED_DATASET=egypt-2026 npm run seed:remote   # a deployed environment (below)
+```
+
+Real Egyptian cinema as it stood on 2026-10-29, instead of the invented demo. Seed it into an
+empty database: the two datasets don't share names, so seeding one over the other mixes them.
+
+- **13 Egyptian films of 2026**: 9 Now showing (Naseeb, Matloub Aaeleyan, Wala Kan Ala El-Bal,
+  Saqr w Kanarya, El Gawahergy in the carousel; Mahmoud El Tany, Red Flag, Shish Doo, Khally
+  Balak Min Nafsak) and 4 Coming soon (Hadoota, Leila Bazet Khales, Crypto, Mamsos), with their
+  real synopsis, genres, censor rating, release date, official poster, stills, official YouTube
+  trailers and teasers (checked by hand), cast and crew.
+- **118 people** credited on them, with their photo, bio, birthplace and nationality where
+  elCinema publishes them. It publishes no birth dates.
+- **8 cinemas** in Cairo and Giza (VOX City Centre Almaza, City Stars, Cairo Festival Scene,
+  Cosmos, Galaxy El Manyal, VOX Mall of Egypt, Galaxy Cineplex Mall of Arabia, Cairo Mall),
+  with their address, map position, phones, standard ticket price, as many halls as they ran at
+  once, and the 238 showtimes they actually ran that day, repeated on each of the 7 days.
+- **Sources**: elCinema.com for the films, people, cinemas, showtimes and pictures; YouTube for
+  the videos; The Numbers and Arabic Wikipedia for two runtimes; the Egyptian press for two
+  release dates. Each movie's comment in `src/modules/seed/datasets/egypt-2026.ts` names its
+  sources.
+- **Estimates**: runtimes are mostly unpublished, so five are estimated from how often the
+  cinemas repeat the film, and Shish Doo, El Gawahergy and the Coming soon films have a 110
+  minute placeholder. Mamsos's release date is estimated (the press says December 2026).
+  Opening hours run from each cinema's first show to its last; facilities are by venue type;
+  zone prices all equal the standard ticket.
+- **Pictures** are downloaded from their sources when the seed runs (allow a few minutes, and
+  network access to `media0106.elcinema.com` and `i.ytimg.com`). Each is cropped to the
+  pipeline's size around its most salient part. They belong to their owners: use this dataset
+  for staging and demos, not for a public launch.
+- To refresh it, add a dataset beside it in `src/modules/seed/datasets/` and register it in
+  `SEED_DATASETS`. `test/unit/modules/seed/datasets/index.test.ts` checks every dataset against
+  the catalog limits, its own references, the opening hours and the 20-minute cleaning gap.
 
 ## Dependencies
 
@@ -430,27 +467,74 @@ curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Au
   the search path. Knex's bookkeeping tables live in the schema too, with row-level security on.
 - BIGINT comes back as a number, NUMERIC as a float, and DATE as a `YYYY-MM-DD` string.
 
+## Deploying to Vercel (staging, no card)
+
+Staging runs on Vercel's free Hobby plan, which needs no payment card. `vercel.json` makes the
+compiled `dist/main.js` the entrypoint (Vercel's NestJS runtime runs it as one function and
+handles its `listen()`) and pins the function to Frankfurt (`fra1`), next to the database.
+
+- Import the repository in Vercel, then set **Settings → Git → Production Branch** to the branch
+  to deploy (today `main-jf8hqi`) and redeploy.
+- Environment variables: the same as Render's (below), with these differences: Vercel has no
+  generated secrets, so set the four secrets yourself (`openssl rand -base64 32` each); end
+  `DATABASE_URL` with `?sslmode=no-verify` (the CA file in `certs/` is not part of a Vercel
+  function, so the connection is encrypted but the server is not verified: a follow-up); and set
+  `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` and `BOOTSTRAP_ADMIN_PASSWORD`, because there is
+  no shell: on boot, after migrating, the app creates the first admin when none exists.
+- Vercel ships only the files it traces from the entrypoint, which is why migrations run from the
+  static list in `src/common/database/migration-list.ts`: add each new migration there too (a
+  unit test fails when the list and `src/migrations/` differ).
+- On Vercel (`VERCEL=1`), `src/main.ts` starts a plain HTTP server at once, which Vercel's launcher captures (it waits only a second for `listen()`), and boots the app on the first request of each instance. That first request migrates (a no-op when up to date) and checks the first admin, so it takes a few seconds. A boot that fails, or runs past 20 seconds, answers 503 and logs `Boot failed` or the step it is on; every step logs a `Boot: …` line.
+
 ## Deploying (Render and Supabase)
 
-- Render builds the `Dockerfile`. The container runs `node dist/main.js`, which migrates under
-  an advisory lock, then listens on `PORT`. Set the health check path to `/api/v1/health`.
-- Set the environment variables above in Render; secrets live only there.
-- **First admin.** Once, from a Render shell (or any machine that reaches the database), with
-  `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME` and `BOOTSTRAP_ADMIN_PASSWORD` set for that
-  command only: `npm run admin:create`. It prints `Created admin #<id>` or that an active admin
-  already exists. Sign in at `/admin/login`; the admin can change the password later through
-  "Forgot password".
-- `DATABASE_URL` is Supabase's **session pooler** URL (port 5432): the direct connection is IPv6
-  only. Supabase requires TLS. With `sslmode=require`, node-pg also verifies the certificate, so
-  give it Supabase's CA certificate (`sslrootcert`), or the connection is refused.
+Staging is described by `render.yaml`, a Render Blueprint: Render → New → Blueprint → this
+repository. Render builds the `Dockerfile`, generates the four secrets (`JWT_SECRET_CUSTOMER`,
+`JWT_SECRET_STAFF`, `DATA_ENCRYPTION_KEY`, `QR_SIGNING_KEY`) itself, and asks for the values
+marked `sync: false`:
+
+- `DATABASE_URL`: Supabase → Connect → **Session pooler** URI (port 5432; the direct connection
+  is IPv6 only), with the database password in place of `[YOUR-PASSWORD]` and this suffix, so
+  node-pg verifies Supabase's certificate against the CA in `certs/`:
+  `?sslmode=verify-full&sslrootcert=/app/certs/supabase-prod-ca-2021.crt`.
+  If the first deploy logs a certificate error, use `?sslmode=no-verify` instead: still
+  encrypted, but the server is not verified. Record that as a follow-up.
+- `SUPABASE_URL` (`https://<ref>.supabase.co`) and `SUPABASE_SERVICE_ROLE_KEY` (Project
+  Settings → API Keys → Legacy API keys → `service_role`; it never leaves the server).
+- `BOOTSTRAP_ADMIN_PASSWORD`: the first admin's password (policy: 8+ characters with a digit).
+
+Notes:
+
+- The container migrates, creates the first admin from `BOOTSTRAP_ADMIN_*` when no active admin
+  exists (`admin:create`, idempotent, so it is harmless on every boot), then listens on `PORT`.
+  The health check path is `/api/v1/health`.
+- **Image storage.** Create the bucket (`STORAGE_BUCKET`, default `media`) once, as a **public**
+  bucket, in Supabase → Storage → New bucket; the API returns its public URLs and the browser
+  loads images from them. Never use `local` on Render: its disk is wiped on every deploy.
 - Keep the `maqady` schema out of the Supabase Data API's exposed schemas.
-- **Image storage.** Set `STORAGE_DRIVER=supabase`, `SUPABASE_URL` and
-  `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API keys; keep it secret). Create the bucket
-  (`STORAGE_BUCKET`, default `media`) once, as a **public** bucket, in Storage → New bucket; the
-  API returns its public URLs and the browser loads images from them. Never use `local` on
-  Render: its disk is wiped on every deploy.
+- Staging sends no email (`EMAIL_DRIVER=simulated`) until a domain is verified in Resend
+  (ADR 0004). Add the frontend's origins to `CORS_ORIGINS` in Render when they change.
 - The service trusts one proxy hop for the client address; confirm on the first deploy that
   Render's `X-Forwarded-For` gives the real client.
+- The free instance sleeps after 15 minutes idle; the first request then takes up to a minute.
+
+### Seeding a deployed environment
+
+`npm run seed:remote` fills a deployed environment with the development seed through its own
+admin API, so the server stores the images and no database URL or storage key is needed
+locally. It reads only these variables, never `.env`, and refuses plain http except on this
+machine:
+
+```bash
+SEED_API_URL=https://<service>.onrender.com/api/v1 \
+SEED_ADMIN_EMAIL=staging-admin@maqady.local \
+SEED_ADMIN_PASSWORD='<BOOTSTRAP_ADMIN_PASSWORD>' \
+SEED_DATASET=egypt-2026 \
+npm run seed:remote
+```
+
+It is idempotent, so it can run again. Never run it against production. The **Seed staging**
+workflow runs it from Actions, with the dataset as an input.
 
 ## Layout
 

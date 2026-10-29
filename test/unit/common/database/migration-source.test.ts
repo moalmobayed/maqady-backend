@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Knex } from 'knex';
 import { MIGRATIONS_DIRECTORY } from '../../../../src/common/database/database.constants';
-import { DirectoryMigrationSource } from '../../../../src/common/database/migration-source';
+import { MIGRATIONS } from '../../../../src/common/database/migration-list';
+import {
+  DirectoryMigrationSource,
+  ListedMigrationSource,
+} from '../../../../src/common/database/migration-source';
+import type { MigrationContext } from '../../../../src/common/database/types';
 
 const MIGRATION_JS = `
 exports.up = async (knex, context) => { knex.calls.push(['up', context.schema]); };
@@ -84,5 +89,73 @@ describe('DirectoryMigrationSource', () => {
     }).getMigrations();
     expect(names[0]).toBe('0010_01_create_schema');
     expect(names.every((name) => /^\d{4}_\d{2}_[a-z0-9_]+$/.test(name))).toBe(true);
+  });
+});
+
+describe('ListedMigrationSource', () => {
+  const recorder = (label: string) => ({
+    up: (knex: Knex, context: MigrationContext): Promise<void> => {
+      (knex as unknown as { calls: unknown[] }).calls.push([label, 'up', context.schema]);
+      return Promise.resolve();
+    },
+    down: (knex: Knex, context: MigrationContext): Promise<void> => {
+      (knex as unknown as { calls: unknown[] }).calls.push([label, 'down', context.schema]);
+      return Promise.resolve();
+    },
+  });
+
+  it('lists the migrations in the order given, and binds each to its context', async () => {
+    const source = new ListedMigrationSource(
+      [
+        { name: '0010_01_create_schema', file: recorder('a') },
+        {
+          name: '0020_01_create_staff',
+          file: { ...recorder('b'), config: { transaction: false } },
+        },
+      ],
+      { schema: 'tenant_x' },
+    );
+    expect(await source.getMigrations()).toEqual(['0010_01_create_schema', '0020_01_create_staff']);
+    expect(source.getMigrationName('0020_01_create_staff')).toBe('0020_01_create_staff');
+
+    const knex = { calls: [] as unknown[] };
+    const first = await source.getMigration('0010_01_create_schema');
+    const second = await source.getMigration('0020_01_create_staff');
+    await first.up(knex as unknown as Knex);
+    await second.down(knex as unknown as Knex);
+    expect(knex.calls).toEqual([
+      ['a', 'up', 'tenant_x'],
+      ['b', 'down', 'tenant_x'],
+    ]);
+    expect(first).not.toHaveProperty('config');
+    expect(second.config).toEqual({ transaction: false });
+  });
+
+  it('rejects a name that is not listed, or a module without up() and down()', async () => {
+    const source = new ListedMigrationSource(
+      [{ name: '0010_01_broken', file: { up: recorder('x').up } }],
+      { schema: 'maqady' },
+    );
+    await expect(source.getMigration('0099_01_missing')).rejects.toThrow(
+      'Migration 0099_01_missing is not in the migration list',
+    );
+    await expect(source.getMigration('0010_01_broken')).rejects.toThrow(
+      'Migration 0010_01_broken must export up() and down()',
+    );
+  });
+
+  it("lists exactly this repository's migration files, in file order, each with up() and down()", async () => {
+    // A migration file missing from MIGRATIONS would never run on a traced deployment.
+    const onDisk = await new DirectoryMigrationSource(MIGRATIONS_DIRECTORY, {
+      schema: 'maqady',
+    }).getMigrations();
+    expect(MIGRATIONS.map((migration) => migration.name)).toEqual(onDisk);
+    for (const { name, file } of MIGRATIONS) {
+      expect({ name, up: typeof file.up, down: typeof file.down }).toEqual({
+        name,
+        up: 'function',
+        down: 'function',
+      });
+    }
   });
 });

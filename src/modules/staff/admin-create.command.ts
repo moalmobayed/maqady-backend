@@ -42,6 +42,16 @@ export function parseBootstrapAdminEnv(
 }
 
 /**
+ * Whether the app creates the first admin as it boots: only when `BOOTSTRAP_ADMIN_PASSWORD` is
+ * set. For hosts with no shell to run `npm run admin:create` on (Vercel); unset, boot is unchanged.
+ */
+export function bootstrapAdminRequested(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return (env[BOOTSTRAP_ADMIN_VARIABLES.password] ?? '') !== '';
+}
+
+/**
  * `npm run admin:create` (design §10.1): migrates, then creates the first admin unless an active
  * admin exists. Safe to run again, and concurrently. `write` receives the one line of output,
  * which never contains the email or the password.
