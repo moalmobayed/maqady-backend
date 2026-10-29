@@ -82,6 +82,15 @@ export class MessagingService {
   }
 
   /**
+   * Deletes every message about a customer (`related_customer_id`), whatever its status, in the
+   * open transaction (anonymisation, U15, design §13.1 and §21); returns how many went. A message
+   * a drain is sending at that moment may still arrive; its result then updates no row.
+   */
+  async deleteForCustomer(customerId: number): Promise<number> {
+    return this.transactions.run(() => this.messages.deleteRelatedToCustomer(customerId));
+  }
+
+  /**
    * Checks one input and renders its stored copy. Every problem here is a programming error,
    * `INTERNAL`.
    */
