@@ -38,8 +38,6 @@ import type {
   SCAN_REASONS,
   SCAN_RESULTS,
   SCAN_VIA,
-  SETTLE_FIRST_KINDS,
-  SETTLE_FIRST_SOURCES,
   STAFF_TICKET_CHANNELS,
   TICKET_DELIVERY_CHANNELS,
   TICKET_STATUSES,
@@ -59,9 +57,11 @@ export type ReleaseReason = (typeof RELEASE_REASONS)[number];
 
 export type PaymentStatusDisplay = (typeof PAYMENT_STATUS_DISPLAYS)[number];
 
-export type SettleFirstKind = (typeof SETTLE_FIRST_KINDS)[number];
-
-export type SettleFirstSource = (typeof SETTLE_FIRST_SOURCES)[number];
+export type {
+  SettleFirstKind,
+  SettleFirstOptions,
+  SettleFirstSource,
+} from '../../common/settlement/types';
 
 export type CounterCustomerKind = (typeof COUNTER_CUSTOMER_KINDS)[number];
 
@@ -733,12 +733,6 @@ export interface ScanOutcome {
   readonly scannedAt: Date;
   /** Null for `NOT_FOUND`. */
   readonly booking: ScannedBooking | null;
-}
-
-/** `@SettleFirst()`'s metadata: what to settle, and where the route names it. */
-export interface SettleFirstOptions {
-  readonly kind: SettleFirstKind;
-  readonly source: SettleFirstSource;
 }
 
 // --- Admin bookings (U14) -------------------------------------------------------------------

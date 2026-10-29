@@ -621,7 +621,10 @@ minus the refunds that already name it in `refund_of_payment_id`.
     claims deleted, one `showtime.cancelled` email per booking with an email and one
     `showtime.cancelled_sms` per booking with a phone (no separate refund email). A hold whose
     payment is still processing is ended too; if the charge succeeds, settlement refunds it at
-    once because the showtime is cancelled (§7.5). The preview lives in `bookings`.
+    once because the showtime is cancelled (§7.5). The PATCH is `@SettleFirst('showtime')` (step
+    1; the decorator lives in `common/settlement` so showtimes need not import bookings), so a
+    slow payment whose result was already due is settled before the lock: confirmed, then refunded
+    and told like every other ticket holder. The preview lives in `bookings`.
 
 ### 7.8 Booking edits (admin only)
 

@@ -43,8 +43,8 @@ export const QR_PAYLOAD_PATTERN =
 export const TICKET_LINK_PATH = '/ticket';
 export const MY_BOOKINGS_PATH = '/my-bookings';
 
-/** Metadata key `@SettleFirst()` writes. */
-export const SETTLE_FIRST_METADATA = 'maqady:settle-first';
+/** Metadata key `@SettleFirst()` writes (in `common/settlement` since U14). */
+export { SETTLE_FIRST_METADATA } from '../../common/settlement/settle-first.constants';
 
 /** Audit entity type of payment events. */
 export const PAYMENT_ENTITY = 'payment';

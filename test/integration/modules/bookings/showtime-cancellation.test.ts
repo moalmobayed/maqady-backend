@@ -230,6 +230,34 @@ describe('Showtime cancellation (integration)', () => {
     ]);
   });
 
+  it('settles a payment whose result is due before cancelling, so its customer is told', async () => {
+    // The provider decided the slow charge 10 s after it was made; nobody has read it since. The
+    // money was taken before the cancellation, so the booking is a ticket holder's: settled and
+    // confirmed first (design §7.1 step 1), then refunded with the cancellation notice.
+    const slow = await customerHold(testApp, showtime.showtimeId, ['C7']);
+    const processing = await pay(testApp, slow.customer.authorization, slow.reference, {
+      method: 'card',
+      token: 'sim_card_slow',
+    });
+    expect(processing.body.payment.status).toBe('processing');
+    clock.advance({ seconds: 11 });
+    await cancelShowtime(testApp, admin, showtime.showtimeId);
+
+    expect(await statusOf(slow.reference)).toBe('refunded');
+    const notices = (await readMessages(testApp.knex)).filter(
+      (message) =>
+        message.related_booking_id === slow.bookingId && message.template === 'showtime.cancelled',
+    );
+    expect(notices).toHaveLength(1);
+    const cancelled = (await testApp
+      .knex('audit_events')
+      .first('metadata')
+      .where({ action: 'showtime.cancelled', entity_id: showtime.showtimeId })) as {
+      metadata: Record<string, unknown>;
+    };
+    expect(cancelled.metadata).toMatchObject({ refundedBookingCount: 1, releasedHoldCount: 0 });
+  });
+
   it('cancels a showtime with no bookings', async () => {
     expect((await preview(other.showtimeId)).body).toMatchObject({
       bookingCount: 0,

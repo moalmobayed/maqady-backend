@@ -52,17 +52,8 @@ export const PAYMENT_STATUS_DISPLAYS = [
   'refunded',
 ] as const;
 
-/**
- * What a route settles before it runs (`@SettleFirst()`): the booking `{ref}`, the showtime `{id}`,
- * or only the calling customer's bookings (`'customer'`, My Bookings, U12).
- */
-export const SETTLE_FIRST_KINDS = ['booking', 'showtime', 'customer'] as const;
-
-/**
- * Where `@SettleFirst()` reads the booking reference or showtime id: the path (`{ref}`, `{id}`),
- * or the JSON body's `showtimeId` (`POST /admin/counter-holds`, U13).
- */
-export const SETTLE_FIRST_SOURCES = ['params', 'body'] as const;
+/** What and where `@SettleFirst()` settles (in `common/settlement` since U14). */
+export { SETTLE_FIRST_KINDS, SETTLE_FIRST_SOURCES } from '../../common/settlement/enums';
 
 /** The booking statuses that have a ticket: a QR code, a PDF and a calendar file. */
 export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
