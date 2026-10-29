@@ -448,6 +448,28 @@ curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/payments \
 curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Authorization: Bearer $TOKEN"
 ```
 
+## My bookings
+
+The signed-in customer's own bookings (U12, `docs/gh-13-customer-bookings/spec.md`):
+
+- `GET /api/v1/me/bookings?tab=upcoming|past` pages a tab with `tabCounts` for the tab labels.
+  Upcoming is every confirmed booking whose showtime has not ended; Past is completed, refunded
+  and failed ones. Both are decided at read time against the `Clock` (no job), so a test moves a
+  `TestClock` to see a booking change tab, and signs in again when it moves past the access
+  token's life.
+- `GET /api/v1/bookings/{ref}` also shows `seatLines`, `refund` and the theater's address and
+  coordinates; `GET /api/v1/bookings/{ref}/history` is its History from the audit log.
+- `POST /api/v1/bookings/{ref}/ticket-deliveries` ("Email again", `Idempotency-Key` required)
+  queues the tickets email to the account email; `RATE_LIMIT_TICKET_EMAIL` (3 an hour) counts per
+  booking and signed-in customer. `test/support/my-bookings.ts` has `paidBooking()`,
+  `listMyBookings()`, `bookingHistory()` and `emailAgain()` for integration tests.
+
+```bash
+curl -s "localhost:3000/api/v1/me/bookings?tab=past&limit=5" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket-deliveries \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets

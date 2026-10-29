@@ -2,7 +2,7 @@
 title: Maqady backend — system design
 owner: Mohamed Tarek
 status: Approved — 2026-10-20
-last_verified: 2026-10-20
+last_verified: 2026-10-29
 tags: [architecture, system-design, backend]
 ---
 
@@ -117,7 +117,7 @@ a repository, a service, a controller or gateway, and the module file.
 |---|---|---|
 | `common/database` | Knex provider, `TransactionRepository`, transaction context, migrations runner, pg type parsers | — |
 | `common/idempotency` | `idempotency_keys`, the write interceptor | database |
-| `common/audit` | `audit_events` (write side) | database |
+| `common/audit` | `audit_events`: the write side, and the read side a booking's History uses (`AuditReadService`, U12) | database |
 | `common/auth` | Guards, the access decorators (§11), the boot-time route check | auth |
 | `common/crypto` | Encryption for stored idempotency responses, HMAC helpers | config |
 | `common/time`, `common/money`, `common/errors`, `common/pagination`, `common/logging`, `common/config` | Shared helpers, `AppError`, the global exception filter, cursor codec, pino setup, validated environment | — |
@@ -966,7 +966,7 @@ first deploy verifies that against Render's real `X-Forwarded-For` header (§16)
 | Email verification, customer password reset, customer password change | 20 per minute per IP address, shared with sign-in | IP address (U9) |
 | Create a hold | 30 per 10 minutes per IP address, and 10 per 10 minutes per signed-in customer | IP address; customer |
 | Pay | 10 per 5 minutes | Booking |
-| Customer "Email again" | 3 per hour | Booking |
+| Customer "Email again" | 3 per hour | Booking and the signed-in customer (else the IP address): the limiter runs before the access guard, so a booking-only key would let anyone who knows a reference spend the owner's sends (U12) |
 | Search | 60 per minute | IP address |
 | WebSocket | 20 connections, 3 subscriptions each; snapshot reads count against the default limit (U10) | IP address and connection |
 | Every other route | 300 per minute, counted per route | The signed-in customer, else the IP address |
@@ -1042,6 +1042,7 @@ customer by account rather than address for the same shared-address reason (U1,
 | `GET /bookings/{ref}` | Owner, or Guest with the hold code while held | |
 | `POST /bookings/{ref}/payments` | Owner | S |
 | `GET /bookings/{ref}/ticket.pdf`, `/bookings/{ref}/calendar.ics` | Owner | |
+| `GET /bookings/{ref}/history` | Owner | |
 | `POST /bookings/{ref}/ticket-deliveries` ("Email again") | Owner | S |
 | `GET /me/bookings?tab=upcoming\|past` | Customer | |
 | `POST /auth/registrations` (sign up) · `POST /auth/sessions` (sign in) · `POST /auth/tokens` (refresh) | Public | |
@@ -1049,6 +1050,19 @@ customer by account rather than address for the same shared-address reason (U1,
 | `POST /auth/email-verifications` (with the emailed token) · `POST /auth/password-reset-requests` · `POST /auth/password-resets` (with the emailed token) | Public | |
 | `POST /auth/email-verification-requests` (resend) | Customer | |
 | `GET /me` · `PATCH /me` · `PUT /me/password` | Customer | |
+
+Customer bookings (U12, `docs/gh-13-customer-bookings/spec.md`): `GET /me/bookings` answers one
+cursor page of a tab with `tabCounts { upcoming, past }`. Upcoming is every Confirmed booking whose
+showtime has not ended, soonest show first; Past is Completed, Refunded and Failed, most recent
+show first (`starts_at`, then id); live and Abandoned holds appear in neither, and a due slow
+payment is settled first (`@SettleFirst('customer')`). Each card carries the showtime's
+`cinemaDate`; the split itself is by the showtime's end, an instant. `GET /bookings/{ref}` adds
+`seatLines` (by zone and price, front to back), `refund { amount, refundedAt }` and the theater's
+address and coordinates; `GET /bookings/{ref}/history` is the History (§13.5), oldest first.
+"Email again" answers `201 { channel: 'email', queuedAt }` and queues the tickets email to the
+account email (never SMS) under the booking's lock; a booking without a ticket is
+`TICKET_NOT_AVAILABLE { status }`. All three send `Cache-Control: private, no-store` (the reads)
+and answer `NOT_FOUND` for anyone else's booking.
 
 Customer auth (U9): registration and sign-in answer `201` with the token pair and the customer, so
 the booking flow can claim its hold next; refresh `201`; sign-out, verification, reset and the
@@ -1266,7 +1280,14 @@ generated contract (§19).
   data.
 - The admin Activity log filters by staff member, entity type and date.
 - A customer's booking History is the customer-visible subset of that booking's events,
-  mapped to friendly labels.
+  mapped to friendly labels. *As built (U12):* `booking.held` → "Seats held",
+  `payment.succeeded` → "Payment received", `booking.refunded` → "Refunded", `booking.edited` →
+  "Changed by the cinema", `booking.tickets_resent` → "Tickets resent", plus the `showtime.moved`
+  events of its showtime between its confirmation and its refund ("Changed by the cinema"). Every
+  other action, the actor and the metadata stay internal. `AuditReadService` reads both branches
+  in one query (`idx_audit_events_booking_id`, `idx_audit_events_entity_type_entity_id_occurred_at`),
+  ordered by `occurred_at`, then id; settlement records a charge's result before the
+  confirmation or refund it causes, so the order reads right within one instant.
 
 ## 14. Cross-cutting concerns
 

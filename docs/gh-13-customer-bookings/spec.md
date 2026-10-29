@@ -2,8 +2,8 @@
 title: U12 — Customer bookings - My Bookings, booking details and history, Email again
 owner: Mohamed Tarek
 status: Built
-last_verified: 2026-10-20
-tags: [bookings, my-bookings, history, audit, tickets, email-again, rate-limit, clock, cinema-day, pagination, profile]
+last_verified: 2026-10-29
+tags: [bookings, my-bookings, history, audit, tickets, email-again, rate-limit, clock, cinema-day, pagination]
 ---
 
 # U12 — Customer bookings: My Bookings, booking details and history, Email again
@@ -12,10 +12,10 @@ Issue: #13. Docs folder: `docs/gh-13-customer-bookings/`. Migration prefix `0130
 (`SettlementService`, `@SettleFirst()`, `TicketsService`, `PaymentsService.latestSalesOf()`,
 `paymentStatusOf()`, `TICKET_STATUSES`, `test/support/checkout.ts`) and, through it, U10
 (`BookingsRepository`, `BookingReadService`, `BookingViews`, `booking-status.sql.ts`,
-`BookingResponse`, `REFERENCE_PATTERN`), U9 (`CustomerService`, `/me`), U7 (`ShowtimeReadService`,
+`BookingResponse`, `REFERENCE_PATTERN`), U9 (`CustomerService`), U7 (`ShowtimeReadService`,
 the `showtime.moved` audit row), U6, U4b, U4a, U3 and U1. Design: `docs/system-design.md` §5, §6.1,
-§7.1, §7.4, §7.9, §8 (cinema day), §10.4, §10.6, §11, §13.1, §13.5, §14; PRD v2 C10, C11, C12
-("booking count"), "Email and SMS", "Statuses and definitions".
+§7.1, §7.4, §7.9, §8 (cinema day), §10.4, §10.6, §11, §13.1, §13.5, §14; PRD v2 C10, C11,
+"Email and SMS", "Statuses and definitions".
 
 ## Goal
 
@@ -33,11 +33,14 @@ most 3 times an hour. Anyone but the owner gets `404` on every booking route.
 - In `src/modules/bookings/`: `GET /me/bookings`, `GET /bookings/{ref}/history`,
   `POST /bookings/{ref}/ticket-deliveries`; every `Booking` response (`GET /bookings/{ref}`, the
   hold and payment responses) gains `seatLines` and `refund`, and its `showtime.theater` the
-  address and coordinates; the Profile's `bookingCount` (the U9 follow-up).
+  address and coordinates. Booking details stay on `GET /bookings/{ref}` (design §11), not a new
+  `GET /me/bookings/{ref}`: the owner already reads every detail there, and the History is its own
+  paginated list.
 - `common/audit` gains a read side, `AuditReadService` (a booking's events).
 - `common/rate-limit` gains the `customerAndBookingRef` key, used by `ticketEmail`.
 - Small additions in U11 (`SettleFirst('customer')`, `queueTickets` `emailTo`, `BookingViews.ofMany`)
-  and U9 (`CustomerBookingCountRegistry`, `CustomerProfileResponse.bookingCount`).
+  and one fix: settlement records the charges' results before confirming or refunding their
+  bookings, so a History reads "Payment received" before an immediate "Refunded".
 - Complete Swagger: a `My bookings` tag in `API_TAGS`, summaries, descriptions,
   `@ApiErrorResponses(...)`, examples. Contract regenerated.
 - `docs/system-design.md` §5, §10.6, §11, §13.5 updated (Decisions below); `docs/INDEX.md`.
@@ -48,6 +51,9 @@ most 3 times an hour. Anyone but the owner gets `404` on every booking route.
   and the showtime-cancellation fan-out (U14). U14 writes the audit actions this unit's History
   maps (`booking.refunded`, `booking.edited`, `booking.tickets_resent`).
 - Counter sales and their `payment.succeeded` audit (U13).
+- The Profile's `bookingCount` (a U9 follow-up). Dropped from this unit to keep `customers`
+  untouched while U15 (admin customers, which needs per-customer booking counts for its list)
+  builds in parallel; handed to U15.
 - The SQL form of the payment status. My Bookings neither filters nor sorts by it, so it uses U11's
   `paymentStatusOf()` over one batched `latestSalesOf()`. U16 adds the SQL form.
 - PDF and calendar downloads (U11, unchanged).
@@ -72,9 +78,10 @@ most 3 times an hour. Anyone but the owner gets `404` on every booking route.
    knows a reference, even without a token, could spend the owner's three sends for the hour.
    Only the owner can ever send, so the limit is still 3 emails an hour per booking (§10.6
    updated). A caller who is not signed in is counted by address.
-5. **Profile `bookingCount` counts Confirmed and Completed bookings** (stored `status =
-   'confirmed'`), U9's recommendation: the bookings the customer paid for and kept, the same set as
-   the dashboard's "Tickets sold". A refunded booking drops out, like it drops out of revenue.
+5. **No `GET /me/bookings/{ref}`.** The design's route for a booking's details is
+   `GET /bookings/{ref}` (owner), which already answers everything the booking page shows; U12
+   adds the seat lines, the refund and the theater's location to it, and the History as
+   `GET /bookings/{ref}/history`. A second details route would duplicate it.
 
 ## Decisions taken here
 
@@ -100,31 +107,31 @@ most 3 times an hour. Anyone but the owner gets `404` on every booking route.
 | **`Booking` gains `seatLines`** (grouped by zone and price, zones `front` → `middle` → `back`, labels in seat order: row, then number, so `F2` before `F10`) **and `refund`** (`{ amount, refundedAt }` for a refunded booking, else `null`) | PRD C8 and C11: "seat lines by zone", "Refunded bookings show the refund amount and date" |
 | The refund amount is the booking's `total` | PRD "Statuses": Refunded is "cancelled with a full refund", and an edit (U14) keeps `total` equal to what was paid. No extra query |
 | **`showtime.theater` becomes `BookingTheater`** (`id`, `name`, `address`, `district`, `city`, `latitude`, `longitude`) everywhere a `BookingShowtime` appears (bookings, holds, the seat page header) | PRD C9 and C11 "Directions"; a theater's address is public data. Additive for every existing client |
-| **Profile `bookingCount`**: `CustomersModule` exports `CustomerBookingCountRegistry` (answers `0` until a source registers; a second registration is `INTERNAL`), and bookings' `BookingCountsRegistrar.onModuleInit()` registers `BookingsRepository.countConfirmedOfCustomer` | Open question 5; customers can't import bookings, so the repo's registry pattern (U5, U6, U4b, U11) |
 | `Cache-Control: private, no-store` on `GET /me/bookings` and `GET /bookings/{ref}/history` | Personal, and changes with the clock |
+| A cursor whose sort key is null is `VALIDATION_FAILED` on both lists | Their keys are instants, never null; `toPageRequest('instant')` accepts null for nullable columns |
+| **Settlement audits the charges' results first** (U11 fix) | A refund at once wrote `booking.refunded` before `payment.succeeded` at the same instant, so the History (by `occurred_at`, then id) read "Refunded" before "Payment received" |
 
 ## Modules and files
 
 **`src/modules/bookings/`** additions. `BookingsModule` registers the new controllers and providers
-(`MyBookingsService`, `BookingHistoryService`, `TicketDeliveryService`, `BookingCountsRegistrar`).
-No new export.
+(`MyBookingsService`, `BookingHistoryService`, `TicketDeliveryService`) and exports
+`BookingViews` and `BookingHistoryService` for U14's admin list and detail.
 
 | File | Holds |
 |---|---|
 | `enums.ts` (extended) | `MY_BOOKINGS_TABS = ['upcoming', 'past']`, `BOOKING_HISTORY_KINDS`, `TICKET_DELIVERY_CHANNELS = ['email']`; `SETTLE_FIRST_KINDS` gains `'customer'` |
-| `types.ts` (extended) | `MyBookingsTab`, `MyBookingsQueryInput`, `MyBookingsTabCounts`, `MyBookingsPage`, `MyBookingRow`, `BookingHistoryKind`, `BookingHistoryEvent`, `SeatLine`, `BookingRefund`, `BookingTheater`, `TicketDeliveryChannel`, `TicketDelivery`, `BookingCountRow`; `Booking` gains `seatLines` and `refund`; `BookingShowtime.theater` is a `BookingTheater`; `QueueTicketsOptions.emailTo` |
+| `types.ts` (extended) | `MyBookingsTab`, `MyBookingsQueryInput`, `MyBookingsTabCounts`, `MyBookingsPage`, `MyBookingRow`, `BookingHistoryKind`, `BookingHistoryEvent`, `SeatLine`, `BookingRefund`, `BookingTheater`, `TicketDeliveryChannel`, `TicketDelivery`, `TabCountsRow`, `HistoryAuditEvent`; `Booking` gains `seatLines` and `refund`; `BookingShowtime.theater` is a `BookingTheater`; `QueueTicketsOptions.emailTo` |
 | `bookings.constants.ts` (extended) | `TICKETS_RESENT_ACTION`, `HISTORY_BOOKING_ACTIONS`, `HISTORY_SHOWTIME_ACTIONS`, `HISTORY_LABELS`, `PRIVATE_CACHE_CONTROL` |
 | `booking-history.ts` | pure: `toHistoryEvent(event)` → `BookingHistoryEvent \| null` |
 | `seat-lines.ts` | pure: `seatLinesOf(seats)` → `SeatLine[]`, `inSeatOrder(seats)` |
 | `my-bookings.sql.ts` | pure: `tabPredicate(tab, aliases, now)` built from `bookingStatusPredicate()` |
-| `bookings.repository.ts` (extended) | `pageForCustomer(customerId, tab, now, page)`, `tabCountsOfCustomer(customerId, now)`, `countConfirmedOfCustomer(customerId)` |
+| `bookings.repository.ts` (extended) | `pageForCustomer(customerId, tab, now, page)`, `tabCountsOfCustomer(customerId, now)`, `countConfirmedOfCustomer(customerId)` (for U15's counts) |
 | `booking-showtime.service.ts` (extended) | `headersOf(showtimeIds)`: the headers of many showtimes in a fixed number of queries; headers carry `BookingTheater` |
 | `booking-views.service.ts` (extended) | `ofMany(rows, now)`; `of()` delegates to it |
 | `booking-assembly.ts` (extended) | `toBooking()` adds `seatLines` and `refund` |
 | `my-bookings.service.ts` | `MyBookingsService.list(customerId, query)` |
-| `booking-history.service.ts` | `BookingHistoryService.list(reference, customerId, query)` |
+| `booking-history.service.ts` | `BookingHistoryService.list(reference, customerId, query)`, `.ofBooking(row, query)` (staff, U14); `historyFilterOf(row)` |
 | `ticket-delivery.service.ts` | `TicketDeliveryService.emailAgain(reference, customerId)` |
-| `booking-counts.registrar.ts` | `BookingCountsRegistrar` |
 | `my-bookings.controller.ts` | `@Controller('me/bookings')`: `GET` |
 | `booking-history.controller.ts` | `@Controller('bookings')`: `GET :ref/history` |
 | `ticket-deliveries.controller.ts` | `@Controller('bookings')`: `POST :ref/ticket-deliveries` |
@@ -140,10 +147,9 @@ No new export.
   `BookingEventsFilter`, `AuditEventView`; `AuditModule` provides and exports `AuditReadService`.
 - `src/common/rate-limit/`: key `customerAndBookingRef` (`customer:<id>|booking:<REF>`, the address
   in place of the customer when nobody is signed in); `ticketEmail` uses it.
-- `src/modules/customers/`: `customer-booking-count.registry.ts` (`CustomerBookingCountRegistry`),
-  exported; `CustomerBookingCountSource` in `types.ts`; `CustomerProfileService.bookingCount()`;
-  `CustomerProfileResponse.from(customer, bookingCount)` adds `bookingCount`.
 - `src/common/swagger/swagger.constants.ts`: tag `My bookings`.
+- `src/common/database/migration-list.ts`: `0130_01`.
+- `src/modules/bookings/settlement.service.ts`: the charges' audit rows first (fix above).
 
 ## Migration (prefix `0130`)
 
@@ -219,7 +225,6 @@ All under `/api/v1`, `@ApiTags('My bookings')`, a summary, a description and
 | `GET /bookings/{ref}/history` | `@Customer()` (owner checked in the service), `@SettleFirst('booking')` | — | `BookingRefParams`, `PageQuery` | `200 BookingHistoryEventPage` | `VALIDATION_FAILED`, `UNAUTHENTICATED`, `NOT_FOUND` |
 | `POST /bookings/{ref}/ticket-deliveries` | `@Customer()` (owner), `@RateLimit('ticketEmail')`, `@SettleFirst('booking')` | **S** | `BookingRefParams`, no body | `201 TicketDelivery` | `VALIDATION_FAILED`, `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_REUSED`, `UNAUTHENTICATED`, `NOT_FOUND`, `TICKET_NOT_AVAILABLE`, `RATE_LIMITED` |
 | `GET /bookings/{ref}` (U10/U11, extended) | unchanged | — | unchanged | `200 Booking` with the fields below | unchanged |
-| `GET /me` · `PATCH /me` (U9, extended) | unchanged | — | unchanged | `CustomerProfileResponse` gains `bookingCount` | unchanged |
 
 **Request DTO**: `MyBookingsQuery extends PageQuery`: `tab` `@IsOptional() @IsIn(MY_BOOKINGS_TABS)`,
 Swagger enum with default `upcoming`. An unknown query field is `VALIDATION_FAILED` (global pipe).
@@ -242,7 +247,6 @@ Swagger enum with default `upcoming`. An unknown query field is `VALIDATION_FAIL
 - `BookingTheaterResponse` (schema `BookingTheater`): `id`, `name`, `address`, `district`, `city`,
   `latitude`, `longitude`. Replaces `NamedRef` for `BookingShowtime.theater`.
 - `Booking` gains `seatLines` and `refund` (`\| null`).
-- `CustomerProfileResponse` gains `bookingCount` (integer ≥ 0).
 
 **Error shapes**: `TICKET_NOT_AVAILABLE { status }` (U11). No new codes.
 
@@ -268,8 +272,10 @@ class TicketDeliveryService {
 // TicketDelivery = { channel: 'email'; queuedAt: Date }
 ```
 
-Exported by path for U14 (it writes the same action names): `TICKETS_RESENT_ACTION`,
-`HISTORY_BOOKING_ACTIONS`, `seatLinesOf()`.
+Exported for U14: `BookingViews.ofMany()` and `BookingHistoryService.ofBooking()` (module
+exports); by path `TICKETS_RESENT_ACTION`, `HISTORY_BOOKING_ACTIONS`, `HISTORY_LABELS`,
+`historyFilterOf()`, `seatLinesOf()`, `inSeatOrder()`, `tabPredicate()`. For U15:
+`BookingsRepository.countConfirmedOfCustomer()` behind whatever seam U15 adds.
 
 **Added to other modules and to U11's services**:
 
@@ -288,12 +294,6 @@ SettleFirst(kind: 'booking' | 'showtime' | 'customer'): MethodDecorator;
 BookingViews.ofMany(rows: readonly BookingRow[], now: Date): Promise<readonly Booking[]>;   // fixed query count
 BookingShowtimeService.headersOf(showtimeIds: readonly number[]): Promise<ReadonlyMap<number, BookingShowtime>>;
 
-// customers (U9, exported by CustomersModule)
-class CustomerBookingCountRegistry {
-  register(source: CustomerBookingCountSource): void;   // INTERNAL on a second registration
-  countFor(customerId: number): Promise<number>;          // 0 with no source
-}
-// CustomerBookingCountSource = { countFor(customerId: number): Promise<number> }
 ```
 
 **Consumed** (exact names): U11 `SettlementService` (through `SettleFirstInterceptor`),
@@ -301,7 +301,7 @@ class CustomerBookingCountRegistry {
 `toPaymentResponse()`, `TICKET_STATUSES`, `hasTicket()`; U10 `BookingsRepository`
 (`findByReference`, `lockForUpdate`, `seatsOf`), `BookingViews`, `bookingStatusOf()`,
 `bookingStatusPredicate()`, `BookingRefParams`, `BookingResponse`, `BookingShowtimeResponse`; U9
-`CustomerService.findById()`, `CustomerProfileService`, `CustomerProfileResponse`; U7
+`CustomerService.findById()`; U7
 `ShowtimeReadService.findById()` / `.findByIds()`; U6 `CatalogReadService.findMoviesByIds()`; U4b
 `TheaterReadService.findByIds()`; U4a `MediaService.toImageResponse()`; U1 `Customer()`,
 `CurrentPrincipal()`, `Strict()`, `RateLimit()`, `AuditService.record()`, `Clock`,
@@ -332,8 +332,9 @@ class CustomerBookingCountRegistry {
   nothing queued; `queueTickets([id], { sms: false, emailTo })`; an anonymised customer → `401`.
 - `modules/bookings/settle-first.interceptor.test.ts` (extended): `'customer'` → `{ customerId }`;
   a staff principal or none → no settlement.
-- `modules/customers/customer-booking-count.registry.test.ts`: `0` without a source; delegates once
-  registered; a second `register` → `INTERNAL`.
+- `modules/bookings/tickets.service.test.ts`: `emailTo` with more than one booking → `INTERNAL`.
+- `modules/bookings/settlement.service.test.ts` (changed): the charges are audited before the
+  confirmation and before the refunds.
 - `common/audit/audit-read.service.test.ts`: passes the filter and page through and returns rows
   with the total.
 - `common/rate-limit/trackers.test.ts` (extended): `customerAndBookingRef` for a customer and for
@@ -379,12 +380,13 @@ at the email boundary; nothing of ours mocked):
   limit; held, failed, abandoned and refunded → `409 TICKET_NOT_AVAILABLE { status }`, no message;
   completed → `201`; another customer → `404`; no key → `400 IDEMPOTENCY_KEY_REQUIRED`; malformed
   reference → `400`; no token → `401`.
-- `modules/customers/me.controller.test.ts` (extended): `bookingCount` 0 for a new customer; 2
-  after two confirmed bookings; unchanged by a live hold.
 - `modules/bookings/dto/my-bookings-contract.test.ts`: the 3 routes as `customer`, their tag, prose,
   errors and security, the schemas `MyBooking`, `MyBookingPage`, `BookingHistoryEvent`,
   `BookingHistoryEventPage`, `TicketDelivery`, `SeatLine`, `BookingRefund`, `BookingTheater`, and
-  the new `Booking` and `CustomerProfileResponse` fields.
+  the new `Booking` fields. `bookings-contract.test.ts` leaves the two new `/bookings/{ref}/…`
+  routes to it.
+- Log hygiene (in `ticket-deliveries.controller.test.ts`, debug level): no name, email, phone,
+  ticket link or QR payload in any log line.
 
 ## Acceptance
 
@@ -398,11 +400,14 @@ at the email boundary; nothing of ours mocked):
   - another customer gets `404` on details, history and Email again, and sees nothing in the list;
   - Email again queues exactly one tickets email per idempotent request, to the account email,
     without SMS, and the 4th request in an hour is `429`.
-- `docs/system-design.md` updated: §5 (`common/audit` has a read side; customers' booking-count
-  registry); §10.6 (Email again keyed by booking and customer); §11 (`GET /bookings/{ref}/history`,
+- `docs/system-design.md` updated: §5 (`common/audit` has a read side); §10.6 (Email again keyed by booking and customer); §11 (`GET /bookings/{ref}/history`,
   My Bookings tabs, order and counts, Email again's `201`); §13.5 (the History mapping).
 
 ## Follow-ups
+
+- **U15**: the Profile's `bookingCount` (U9 follow-up, open question 5 of the first draft:
+  Confirmed and Completed, `BookingsRepository.countConfirmedOfCustomer()`), next to the admin
+  customer list's counts.
 
 - **U13**: counter payments write `payment.succeeded` with `bookingId`, so History shows "Payment
   received" for them.
