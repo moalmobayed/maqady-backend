@@ -12,6 +12,9 @@ class Routes {
   @SettleFirst('showtime')
   showtime(): void {}
 
+  @SettleFirst('customer')
+  customer(): void {}
+
   plain(): void {}
 }
 
@@ -61,6 +64,19 @@ describe('SettleFirstInterceptor', () => {
       customerId: 12,
     });
     expect(calls).toEqual(['settle', 'handler']);
+  });
+
+  it("settles only the calling customer's payments for 'customer', and nothing for anyone else", async () => {
+    await run('customer', { params: {}, principal: { kind: 'customer', id: 12 } });
+    expect(settlement.settleDue).toHaveBeenCalledWith({ customerId: 12 });
+    expect(calls).toEqual(['settle', 'handler']);
+
+    settlement.settleDue.mockClear();
+    calls.length = 0;
+    await run('customer', { params: {}, principal: { kind: 'staff', id: 3 } });
+    await run('customer', { params: {} });
+    expect(settlement.settleDue).not.toHaveBeenCalled();
+    expect(calls).toEqual(['handler', 'handler']);
   });
 
   it('settles a showtime, without a customer for a guest or a staff member', async () => {

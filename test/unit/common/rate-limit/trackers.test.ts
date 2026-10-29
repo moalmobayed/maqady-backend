@@ -31,6 +31,24 @@ describe('trackerFor', () => {
     );
   });
 
+  it('counts by the signed-in customer (else the address) and the booking reference', () => {
+    expect(
+      trackerFor(
+        'customerAndBookingRef',
+        request({ principal: CUSTOMER, params: { ref: 'MQ-7Q2K' } }),
+      ),
+    ).toBe('customer:5|booking:MQ-7Q2K');
+    expect(trackerFor('customerAndBookingRef', request({ params: { ref: 'MQ-7Q2K' } }))).toBe(
+      'ip:203.0.113.9|booking:MQ-7Q2K',
+    );
+    expect(
+      trackerFor(
+        'customerAndBookingRef',
+        request({ principal: STAFF, params: { ref: 'MQ-7Q2K' } }),
+      ),
+    ).toBe('ip:203.0.113.9|booking:MQ-7Q2K');
+  });
+
   it('counts by the booking reference of the path', () => {
     expect(trackerFor('bookingRef', request({ params: { ref: 'mq-7q2k' } }))).toBe(
       'booking:MQ-7Q2K',
