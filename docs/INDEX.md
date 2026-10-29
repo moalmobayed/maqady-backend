@@ -5,7 +5,7 @@ gate (G5) checks it.
 
 | Doc | What it covers | Owner | Last verified |
 |---|---|---|---|
-| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-10-20 |
+| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-10-29 |
 | `docs/adr/0001-track-in-github-issues.md` | Decision: track work in GitHub Issues instead of Linear (recorded exception) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0002-nestjs-instead-of-express.md` | Decision: build the API on NestJS instead of plain Express (recorded exception to the pack) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0003-idempotency-in-postgres.md` | Decision: keep idempotency keys in Postgres instead of Redis; Redis leaves the stack (recorded exception to the pack) | Mohamed Tarek | 2026-10-19 |
@@ -58,6 +58,9 @@ gate (G5) checks it.
 | `docs/gh-12-checkout/spec.md` | U11 spec: the `payments` ledger, the payment provider and its simulated test tokens, `POST /bookings/{ref}/payments` under the lock order, settlement on read and on write, confirmation, the tickets email and SMS, the signed QR payload, the PDF ticket and the calendar file; decisions on the open questions; the exported services U12–U17 call | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-12-checkout/qa.md` | U11 manual QA: curl evidence for paying by card and wallet, replays and `ALREADY_PAID`, the PDF ticket and the calendar file, access refusals, declines, a closed wallet, validation, a released hold, a slow payment settled on read and its refusals while processing, a slow decline, the tickets email and SMS with the QR hidden in the Message log, the payment limit and log hygiene | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-12-checkout/review.md` | U11 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-13-customer-bookings/spec.md` | U12 spec: My Bookings (Upcoming and Past by the clock, the cinema date on each card, tab counts, settlement first), booking details with seat lines, refund and the theater's location, the History from audit events, Email again with its per-booking-and-caller limit; decisions on the open questions; the seams U14 and U15 reuse | Mohamed Tarek | 2026-10-29 |
+| `docs/gh-13-customer-bookings/qa.md` | U12 manual QA: curl evidence for My Bookings in every status and its pages and refusals, seat lines, refund and Directions on a booking, Email again with its replay, limit and refusals, the History after a move, and log hygiene | Mohamed Tarek | 2026-10-29 |
+| `docs/gh-13-customer-bookings/review.md` | U12 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-29 |
 | `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
 | `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |

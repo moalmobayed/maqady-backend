@@ -58,11 +58,12 @@ describe('Seats and holds in the OpenAPI document and the router', () => {
   });
 
   it('serves the 6 routes with exactly the access the design gives them, and the gateway', () => {
-    // U11's checkout and ticket routes under /bookings are covered by checkout-contract.test.ts.
+    // U11's checkout and ticket routes under /bookings are covered by checkout-contract.test.ts,
+    // U12's History and "Email again" by my-bookings-contract.test.ts.
     const routes = listHttpRoutes(testApp).filter(
       (route) =>
         /^\/api\/v1\/(showtimes|holds|bookings)\//.test(route.path) &&
-        !/\/(payments|ticket\.pdf|calendar\.ics)$/.test(route.path),
+        !/\/(payments|ticket\.pdf|calendar\.ics|history|ticket-deliveries)$/.test(route.path),
     );
     expect(routes.map((route) => [route.method, route.path, route.access]).sort()).toEqual(
       ROUTES.map(([method, path, access]) => [

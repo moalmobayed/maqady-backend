@@ -38,6 +38,7 @@ import * as m0110_03 from '../../migrations/0110_03_create_seat_claims';
 import * as m0110_04 from '../../migrations/0110_04_create_hold_refusals';
 import * as m0110_05 from '../../migrations/0110_05_add_booking_foreign_keys';
 import * as m0120_01 from '../../migrations/0120_01_create_payments';
+import * as m0130_01 from '../../migrations/0130_01_add_audit_events_entity_index';
 
 /**
  * Every migration in `src/migrations/`, in run order. Imported statically so a bundler or file
@@ -84,4 +85,5 @@ export const MIGRATIONS: readonly ListedMigration[] = [
   { name: '0110_04_create_hold_refusals', file: m0110_04 },
   { name: '0110_05_add_booking_foreign_keys', file: m0110_05 },
   { name: '0120_01_create_payments', file: m0120_01 },
+  { name: '0130_01_add_audit_events_entity_index', file: m0130_01 },
 ];

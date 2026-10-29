@@ -38,3 +38,39 @@ export interface AuditEventRow {
   readonly changed_fields: string[];
   readonly metadata: Readonly<Record<string, AuditMetadataValue>>;
 }
+
+/**
+ * What a booking's History reads (U12): the booking's own events with these actions and, once it
+ * held a ticket, these actions of its showtime between `from` (inclusive) and `until` (exclusive,
+ * none when the booking still holds it).
+ */
+export interface BookingEventsFilter {
+  readonly bookingId: number;
+  readonly bookingActions: readonly string[];
+  readonly showtime: {
+    readonly id: number;
+    readonly actions: readonly string[];
+    readonly from: Date;
+    readonly until: Date | null;
+  } | null;
+}
+
+/** An audit event as a History reads it: when and what, never who or the metadata. */
+export interface AuditEventView {
+  readonly id: number;
+  readonly occurredAt: Date;
+  readonly action: string;
+}
+
+/** An `audit_events` row as `AuditReadRepository` reads it. */
+export interface AuditEventViewRow {
+  readonly id: number;
+  readonly occurred_at: Date;
+  readonly action: string;
+}
+
+/** One page of audit events and how many the whole list has. */
+export interface AuditEventPage {
+  readonly rows: readonly AuditEventView[];
+  readonly total: number;
+}

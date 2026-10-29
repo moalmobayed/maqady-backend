@@ -216,8 +216,9 @@ describe('Settlement (integration)', () => {
     expect((await auditOf(bookingId)).map((row) => [row.action, row.actor_kind])).toEqual([
       ['booking.held', 'customer'],
       ['payment.processing', 'customer'],
-      ['booking.confirmed', 'system'],
+      // The charge's result first, then the confirmation it caused (U12: History order).
       ['payment.succeeded', 'system'],
+      ['booking.confirmed', 'system'],
     ]);
     expect(await map.next()).toEqual({
       event: 'seat.booked',

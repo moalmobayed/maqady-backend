@@ -241,9 +241,9 @@ describe('SettlementService', () => {
       'retrieve',
       'retrieve',
       'finish',
+      'audit',
       'confirm',
       'mark declined',
-      'audit',
     ]);
     expect(showtimes.lockForShareMany).toHaveBeenCalledWith([81, 82]);
     expect(bookings.lockForUpdate).toHaveBeenCalledWith([1, 2]);
@@ -325,7 +325,11 @@ describe('SettlementService', () => {
       showtimeId: 81,
       labels: ['F7'],
     });
-    const refundAudit = audit.recordMany.mock.calls[0]![0] as {
+    // The charges' results are recorded first, then the refunds.
+    expect(
+      (audit.recordMany.mock.calls[0]![0] as { action: string }[]).map((event) => event.action),
+    ).toEqual(['payment.succeeded', 'payment.succeeded']);
+    const refundAudit = audit.recordMany.mock.calls[1]![0] as {
       action: string;
       metadata: object;
     }[];

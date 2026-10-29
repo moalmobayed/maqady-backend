@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
 import { CatalogReadService } from '../catalog/catalog-read.service';
+import type { MovieRef } from '../catalog/types';
 import { ShowtimeReadService } from '../showtimes/showtime-read.service';
 import type { ShowtimeView } from '../showtimes/types';
 import { TheaterReadService } from '../theaters/theater-read.service';
-import type { ShowtimeContext } from './types';
+import type { TheaterDetails } from '../theaters/types';
+import type { BookingShowtime, ShowtimeContext } from './types';
 
 /**
  * The showtime around a hold or a booking, read through the exported services of showtimes,
@@ -49,12 +51,28 @@ export class BookingShowtimeService {
     return this.contextOf(view);
   }
 
-  /** The context of a booking's showtime, whatever its theater's status now. */
-  async bookingContext(showtimeId: number): Promise<ShowtimeContext> {
-    const view = await this.showtimes.findById(showtimeId);
-    if (!view)
-      throw new AppError('INTERNAL', 'A booking references a showtime that does not exist.');
-    return this.contextOf(view);
+  /**
+   * The headers of many bookings' showtimes, by showtime id, whatever their theaters' status now
+   * (My Bookings, U12): three batched reads whatever their number.
+   */
+  async headersOf(showtimeIds: readonly number[]): Promise<ReadonlyMap<number, BookingShowtime>> {
+    if (showtimeIds.length === 0) return new Map();
+    // One after the other: inside a transaction they would share one connection.
+    const views = await this.showtimes.findByIds(showtimeIds);
+    const theaters = await this.theaters.findByIds([...views.values()].map((v) => v.theaterId));
+    const movies = await this.catalog.findMoviesByIds([...views.values()].map((v) => v.movieId));
+    const headers = new Map<number, BookingShowtime>();
+    for (const id of new Set(showtimeIds)) {
+      const view = views.get(id);
+      if (!view) {
+        throw new AppError('INTERNAL', 'A booking references a showtime that does not exist.');
+      }
+      const theater = theaters.get(view.theaterId);
+      const movie = movies.get(view.movieId);
+      if (!theater || !movie) throw missingParts();
+      headers.set(id, headerOf(view, theater, movie));
+    }
+    return headers;
   }
 
   private visible(context: ShowtimeContext): ShowtimeContext | null {
@@ -65,31 +83,43 @@ export class BookingShowtimeService {
     // One after the other: inside a transaction they would share one connection.
     const theater = await this.theaters.findById(view.theaterId);
     const movie = (await this.catalog.findMoviesByIds([view.movieId])).get(view.movieId);
-    if (!theater || !movie) {
-      throw new AppError(
-        'INTERNAL',
-        'A showtime references a theater or movie that does not exist.',
-      );
-    }
+    if (!theater || !movie) throw missingParts();
     return {
       view,
       theaterStatus: theater.status,
       movieStatus: movie.status,
-      header: {
-        id: view.id,
-        startsAt: view.startsAt,
-        endsAt: view.endsAt,
-        cinemaDate: view.cinemaDate,
-        movie: {
-          id: movie.id,
-          title: movie.title,
-          ageRating: movie.ageRating,
-          runtimeMinutes: movie.runtimeMinutes,
-          poster: movie.poster,
-        },
-        theater: { id: theater.id, name: theater.name },
-        hall: { id: view.hallId, name: view.hallName },
-      },
+      header: headerOf(view, theater, movie),
     };
   }
+}
+
+/** A showtime's header: movie, theater with its location, hall and times. */
+function headerOf(view: ShowtimeView, theater: TheaterDetails, movie: MovieRef): BookingShowtime {
+  return {
+    id: view.id,
+    startsAt: view.startsAt,
+    endsAt: view.endsAt,
+    cinemaDate: view.cinemaDate,
+    movie: {
+      id: movie.id,
+      title: movie.title,
+      ageRating: movie.ageRating,
+      runtimeMinutes: movie.runtimeMinutes,
+      poster: movie.poster,
+    },
+    theater: {
+      id: theater.id,
+      name: theater.name,
+      address: theater.address,
+      district: theater.district,
+      city: theater.city,
+      latitude: theater.latitude,
+      longitude: theater.longitude,
+    },
+    hall: { id: view.hallId, name: view.hallName },
+  };
+}
+
+function missingParts(): AppError {
+  return new AppError('INTERNAL', 'A showtime references a theater or movie that does not exist.');
 }

@@ -12,14 +12,16 @@ import type {
   HoldOwner,
   PaymentStatusDisplay,
 } from '../types';
+import { BookingRefundResponse } from './booking-refund.response';
 import { BookingSeatResponse } from './booking-seat.response';
 import { BookingShowtimeResponse } from './booking-showtime.response';
 import { PaymentResponse } from './payment.response';
+import { SeatLineResponse } from './seat-line.response';
 import { TicketResponse } from './ticket.response';
 
 /**
  * A booking as its holder sees it (design §7.4, §7.9, §11): the checkout summary, the
- * confirmation and the booking page. My Bookings (U12) adds its fields to this schema.
+ * confirmation and the booking page, with the seat lines and the refund (U12).
  */
 @ApiSchema({ name: 'Booking' })
 export class BookingResponse {
@@ -155,4 +157,21 @@ export class BookingResponse {
       'The ticket with its QR code while the booking is `confirmed` or `completed`; null otherwise. The PDF and the calendar file come from `GET /bookings/{ref}/ticket.pdf` and `/calendar.ics`.',
   })
   ticket!: TicketResponse | null;
+
+  @ApiProperty({
+    type: () => SeatLineResponse,
+    isArray: true,
+    nullable: false,
+    description:
+      'The payment table (PRD C8, C11): one line per zone and price, front to back, each with its seats in seat order, the count, the unit price and the amount.',
+  })
+  seatLines!: SeatLineResponse[];
+
+  @ApiProperty({
+    type: () => BookingRefundResponse,
+    nullable: true,
+    description:
+      'The refund of a `refunded` booking: the amount (the full total) and the date. Null otherwise.',
+  })
+  refund!: BookingRefundResponse | null;
 }
