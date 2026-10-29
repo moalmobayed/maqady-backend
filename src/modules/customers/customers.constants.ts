@@ -41,3 +41,10 @@ export const RESET_PASSWORD_PATH = '/reset-password';
 
 /** The message `PUT /me/password` gives under `currentPassword` when it does not match. */
 export const CURRENT_PASSWORD_WRONG_MESSAGE = 'currentPassword is not correct';
+
+/** The admin customers search needs 2 to 100 characters (design §13.2). */
+export const CUSTOMER_SEARCH_MIN_LENGTH = 2;
+export const CUSTOMER_SEARCH_MAX_LENGTH = 100;
+
+/** The live-email unique index a concurrent admin email change can still meet (U15). */
+export const LIVE_EMAIL_UNIQUE_INDEX = 'uq_customers_email_live';

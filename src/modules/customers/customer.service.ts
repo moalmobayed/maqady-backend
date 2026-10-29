@@ -3,6 +3,9 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { AuditActor } from '../../common/audit/types';
 import { TransactionRepository } from '../../common/database/transaction.repository';
 import { AppError } from '../../common/errors/app-error';
+import { toPage, toPageRequest } from '../../common/pagination/cursor';
+import { INVALID_CURSOR_MESSAGE } from '../../common/pagination/pagination.constants';
+import type { Page, PageQueryInput } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
 import { ONE_TIME_TOKEN_LIFETIME_SECONDS } from '../auth/auth.constants';
 import { OneTimeTokenService } from '../auth/one-time-token.service';
@@ -11,12 +14,19 @@ import { MessagingService } from '../messaging/messaging.service';
 import { toCustomer } from './customer.mapper';
 import { CustomersRepository } from './customers.repository';
 import { customerPasswordResetTemplate } from './templates/customer-password-reset.template';
-import type { Customer, CustomerStatus } from './types';
+import type {
+  AdminCustomerFilter,
+  Customer,
+  CustomerDetailsChanges,
+  CustomerDetailsUpdate,
+  CustomerStatus,
+} from './types';
 
 /**
  * Customer accounts as other modules use them (design §5): reading a customer, locking one (the
- * booking lock order, §7.1), blocking and unblocking (U15's admin route), and sending a password
- * reset link (forgot password here, the admin's "send a reset email" in U15).
+ * booking lock order, §7.1), blocking and unblocking (U15's admin route), sending a password
+ * reset link (forgot password here, the admin's "send a reset email" in U15), and for the admin
+ * Customers screen (U15) the list, an edit of the account and the anonymisation of the row.
  *
  * Every method joins the open transaction, so the change, its revocations, its audit event and
  * its email commit or roll back together.
@@ -76,6 +86,95 @@ export class CustomerService {
       });
       return toCustomer(updated);
     });
+  }
+
+  /**
+   * `GET /admin/customers` (U15): live customers, newest account first, cursor-paginated, with
+   * `total` under the same filters. Anonymised customers are never listed.
+   */
+  async list(filter: AdminCustomerFilter, query: PageQueryInput): Promise<Page<Customer>> {
+    const request = toPageRequest(query, 'instant');
+    if (request.after !== null && request.after.sortKey === null) {
+      throw new AppError('VALIDATION_FAILED', undefined, {
+        fields: [{ field: 'cursor', messages: [INVALID_CURSOR_MESSAGE] }],
+      });
+    }
+    // One after the other: inside a transaction they would share one connection.
+    const rows = await this.customers.pageForAdmin(filter, request);
+    const total = await this.customers.countForAdmin(filter);
+    return toPage(
+      rows,
+      request,
+      total,
+      (row) => ({ sortKey: row.created_at.toISOString(), id: row.id }),
+      toCustomer,
+    );
+  }
+
+  /**
+   * An admin edit of the account (PRD A7 "edit details"): the fields sent and different from the
+   * stored ones change; nothing else is written, and nothing at all when nothing differs.
+   *
+   * - Missing or anonymised: `NOT_FOUND`.
+   * - A new address (not only a change of letter case) must be free among live accounts
+   *   (`EMAIL_TAKEN`). It is unverified from now on, and the customer's unused one-time links are
+   *   deleted: a verification link sent to the old address must not verify the new one, nor a
+   *   reset link hand the account back to the old mailbox.
+   * - Audited as `customer.updated` with the names of the changed fields, never their values.
+   */
+  async updateDetails(
+    actor: AuditActor,
+    id: number,
+    changes: CustomerDetailsChanges,
+  ): Promise<Customer> {
+    return this.transactions.run(async () => {
+      const row = await this.customers.findByIdForUpdate(id);
+      if (!row || row.deleted_at !== null || row.email === null) throw new AppError('NOT_FOUND');
+
+      const changedFields: string[] = [];
+      let update: CustomerDetailsUpdate = { updated_at: this.clock.now() };
+      if (changes.fullName !== undefined && changes.fullName !== row.full_name) {
+        update = { ...update, full_name: changes.fullName };
+        changedFields.push('fullName');
+      }
+      const newAddress =
+        changes.email !== undefined && changes.email.toLowerCase() !== row.email.toLowerCase();
+      if (changes.email !== undefined && changes.email !== row.email) {
+        if (newAddress) {
+          const holder = await this.customers.findLiveByEmail(changes.email);
+          if (holder && holder.id !== row.id) throw new AppError('EMAIL_TAKEN');
+          update = { ...update, email_verified_at: null };
+        }
+        update = { ...update, email: changes.email };
+        changedFields.push('email');
+      }
+      if (changes.phone !== undefined && changes.phone !== row.phone) {
+        update = { ...update, phone: changes.phone };
+        changedFields.push('phone');
+      }
+      if (changedFields.length === 0) return toCustomer(row);
+
+      const updated = await this.customers.updateDetails(id, update);
+      if (newAddress) await this.oneTimeTokens.invalidateAllFor({ kind: 'customer', id });
+      await this.audit.record({
+        actor,
+        action: 'customer.updated',
+        entity: { type: 'customer', id },
+        changedFields,
+      });
+      return toCustomer(updated);
+    });
+  }
+
+  /**
+   * Clears the row of a live customer (design §21): no email, name, phone or password hash, and
+   * `deleted_at` set. Only the row: the caller has locked it (`findByIdForUpdate`) in the open
+   * transaction and removes what points at it first (U15's `CustomerAnonymisationService`).
+   */
+  async anonymise(id: number): Promise<Customer> {
+    return this.transactions.run(async () =>
+      toCustomer(await this.customers.anonymise(id, this.clock.now())),
+    );
   }
 
   /**
