@@ -167,10 +167,12 @@ export class SettlementService {
       }
     }
 
+    // The charges' results first, so a booking's History reads "Payment received" before the
+    // "Refunded" of an immediate refund recorded at the same instant (U12).
+    await this.audit.recordMany(finished.map(paymentEvent));
     await this.confirmation.confirm(toConfirm, SYSTEM);
     await this.refundAtOnce(toRefund, seats, now);
     await this.bookings.markDeclined(declined, now);
-    await this.audit.recordMany(finished.map(paymentEvent));
     return { confirmed: toConfirm.length, declined: declined.length, refunded: toRefund.length };
   }
 
