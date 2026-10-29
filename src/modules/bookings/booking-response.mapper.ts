@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
 import { MoneyResponse } from '../../common/money/dto/money-response.dto';
 import type { Money } from '../../common/money/types';
+import type { Page } from '../../common/pagination/types';
 import { formatCairoIso } from '../../common/time/time';
 import { toHallLayoutResponse } from '../halls/hall-response.mapper';
 import { MediaService } from '../media/media.service';
@@ -48,7 +49,6 @@ import type {
   ShowtimeSeatMap,
   TicketDelivery,
 } from './types';
-import type { Page } from '../../common/pagination/types';
 
 /**
  * Response DTOs of holds, bookings and the seat page: times in Cairo ISO with their offset,
