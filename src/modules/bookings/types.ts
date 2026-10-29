@@ -1018,6 +1018,16 @@ export interface EditSeatEvents {
   readonly booked: ShowtimeSeats;
 }
 
+/** A booking's refunds as messages show them: the whole, and its online and counter parts. */
+export interface RefundSplit {
+  /** `formatMoneyDisplay` of the whole refund. */
+  readonly amount: string;
+  /** The part given back to the card or wallet, or null. */
+  readonly onlineAmount: string | null;
+  /** The part to collect at the box office, or null. */
+  readonly counterAmount: string | null;
+}
+
 /** The parameters of the "booking cancelled and refunded" email (PRD "Email and SMS"). */
 export interface BookingRefundedParams {
   readonly reference: string;

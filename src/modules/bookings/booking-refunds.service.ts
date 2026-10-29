@@ -38,6 +38,7 @@ import type {
   BookingShowtime,
   RefundContext,
   RefundedBooking,
+  RefundSplit,
 } from './types';
 
 /**
@@ -248,10 +249,7 @@ function totalOf(refunds: readonly LedgerEntry[], row: BookingRow): Money {
 }
 
 /** The online and counter parts of a booking's refunds, as messages show them. */
-export function refundSplitOf(
-  refunds: readonly LedgerEntry[],
-  row: BookingRow,
-): { amount: string; onlineAmount: string | null; counterAmount: string | null } {
+export function refundSplitOf(refunds: readonly LedgerEntry[], row: BookingRow): RefundSplit {
   const online = refunds.filter((refund) => refund.method === 'card' || refund.method === 'wallet');
   const counter = refunds.filter((refund) => !online.includes(refund));
   const display = (part: readonly LedgerEntry[]) =>
