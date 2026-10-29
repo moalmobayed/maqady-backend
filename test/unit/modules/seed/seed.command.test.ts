@@ -2,9 +2,26 @@ import type { AppConfig } from '../../../../src/common/config/types';
 import {
   remoteSeedPlan,
   runRemoteSeed,
+  seedDataset,
   seedRefusals,
 } from '../../../../src/modules/seed/seed.command';
 import { buildTestConfig } from '../../../support/test-config';
+
+describe('seedDataset', () => {
+  it('picks the demo dataset unless SEED_DATASET names another', () => {
+    expect(seedDataset({}).name).toBe('demo');
+    expect(seedDataset({ SEED_DATASET: '' }).name).toBe('demo');
+    expect(seedDataset({ SEED_DATASET: ' egypt-2026 ' }).name).toBe('egypt-2026');
+  });
+
+  it('refuses a dataset it does not have, naming the ones it has', () => {
+    for (const name of ['egypt-2025', 'toString']) {
+      expect(() => seedDataset({ SEED_DATASET: name })).toThrow(
+        'The seed refuses to run: SEED_DATASET must be one of demo, egypt-2026',
+      );
+    }
+  });
+});
 
 describe('seedRefusals', () => {
   const local = buildTestConfig();

@@ -6,6 +6,7 @@ import { Clock } from '../../common/time/clock';
 import { cinemaDateOf } from '../../common/time/time';
 import { StaffService } from '../staff/staff.service';
 import { SeedApiClient } from './seed-api.client';
+import { DEMO_DATASET, SEED_DATASETS } from './datasets';
 import {
   DEFAULT_SEED_ADMIN_PASSWORD,
   LOCAL_DATABASE_HOSTS,
@@ -13,6 +14,7 @@ import {
   SEED_ADMIN_NAME,
   SEED_ADMIN_PASSWORD_VARIABLE,
   SEED_API_URL_VARIABLE,
+  SEED_DATASET_VARIABLE,
   SEED_REMOTE_ADMIN_EMAIL_VARIABLE,
 } from './seed.constants';
 import { SEED_STEPS } from './seed.steps';
@@ -21,6 +23,7 @@ import type {
   RemoteSeedPlan,
   SeedApi,
   SeedContext,
+  SeedDataset,
   SeedHomeDate,
   SeedRefusals,
   SeedStep,
@@ -72,6 +75,20 @@ function isLocalDatabase(url: string): boolean {
 }
 
 /**
+ * The dataset `SEED_DATASET` names: `demo` (the default, invented data with generated pictures)
+ * or `egypt-2026` (real films, people and cinemas, with their pictures downloaded).
+ */
+export function seedDataset(env: Readonly<Record<string, string | undefined>>): SeedDataset {
+  const name = env[SEED_DATASET_VARIABLE]?.trim() || DEMO_DATASET.name;
+  const dataset = Object.hasOwn(SEED_DATASETS, name) ? SEED_DATASETS[name] : undefined;
+  if (dataset === undefined) {
+    const names = Object.keys(SEED_DATASETS).join(', ');
+    throw new Error(`The seed refuses to run: ${SEED_DATASET_VARIABLE} must be one of ${names}`);
+  }
+  return dataset;
+}
+
+/**
  * `npm run seed`: fills a development database with realistic data through the real admin API of
  * the running `app` at `baseUrl`, signed in as the seed admin (created through `StaffService`
  * when missing). Each step is idempotent, so the seed can run again. `write` receives one line
@@ -84,6 +101,7 @@ export async function runSeed(
   write: (line: string) => void,
   steps: readonly SeedStep[] = SEED_STEPS,
 ): Promise<void> {
+  const dataset = seedDataset(env);
   const refusals = seedRefusals(env, app.get<AppConfig>(APP_CONFIG));
   if (refusals.length > 0) throw new Error(`The seed refuses to run:\n- ${refusals.join('\n- ')}`);
 
@@ -100,7 +118,7 @@ export async function runSeed(
   }
   const api = new SeedApiClient(baseUrl);
   await api.signIn(SEED_ADMIN_EMAIL, password);
-  await runSeedSteps(api, cinemaDateOf(app.get(Clock).now()), write, steps);
+  await runSeedSteps(api, dataset, cinemaDateOf(app.get(Clock).now()), write, steps);
   write(`Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`);
 }
 
@@ -167,6 +185,7 @@ export async function runRemoteSeed(
   write: (line: string) => void,
   steps: readonly SeedStep[] = SEED_STEPS,
 ): Promise<void> {
+  const dataset = seedDataset(env);
   const { refusals, target } = remoteSeedPlan(env);
   if (target === null) {
     throw new Error(`The remote seed refuses to run:\n- ${refusals.join('\n- ')}`);
@@ -174,25 +193,28 @@ export async function runRemoteSeed(
   const api = new SeedApiClient(target.baseUrl);
   await api.signIn(target.email, target.password);
   const { cinemaDate } = await api.get<SeedHomeDate>('/home');
-  await runSeedSteps(api, cinemaDate, write, steps);
+  await runSeedSteps(api, dataset, cinemaDate, write, steps);
   write('Done.');
 }
 
 /** Runs each step in order with a fresh context, writing one line per step. */
 async function runSeedSteps(
   api: SeedApi,
+  dataset: SeedDataset,
   today: CalendarDate,
   write: (line: string) => void,
   steps: readonly SeedStep[],
 ): Promise<void> {
   const context: SeedContext = {
     api,
+    dataset,
     today,
     theaterIds: new Map(),
     hallIds: new Map(),
     personIds: new Map(),
     movieIds: new Map(),
   };
+  write(`Dataset: ${dataset.name}`);
   for (const step of steps) {
     const { created, kept } = await step.run(context);
     write(`${step.name}: ${created} created, ${kept} already there`);

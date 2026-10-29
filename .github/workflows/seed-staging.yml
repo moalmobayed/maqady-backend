@@ -10,6 +10,11 @@ on:
       api_url:
         description: The staging API's base URL, ending in /api/v1
         default: https://maqady-backend.vercel.app/api/v1
+      dataset:
+        description: The seed dataset (README "Development seed"); seed an empty database
+        type: choice
+        options: [demo, egypt-2026]
+        default: demo
   push:
     branches: [main-jf8hqi]
     paths: ['.github/workflows/seed-staging.yml']
@@ -29,6 +34,7 @@ jobs:
       SEED_API_URL: ${{ inputs.api_url || 'https://maqady-backend.vercel.app/api/v1' }}
       SEED_ADMIN_EMAIL: staging-admin@maqady.local
       SEED_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SEED_DATASET: ${{ inputs.dataset || 'demo' }}
     steps:
       - uses: actions/checkout@v6
 
