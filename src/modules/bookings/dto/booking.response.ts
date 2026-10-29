@@ -57,7 +57,7 @@ export class BookingResponse {
     nullable: false,
     example: 'customer',
     description:
-      '`guest`: held while signed out, reachable only with its hold code until a customer claims it (`POST /holds/{ref}/claims`). `customer`: owned by a customer account.',
+      "`guest`: held while signed out, reachable only with its hold code until a customer claims it (`POST /holds/{ref}/claims`). `customer`: owned by a customer account (online, or sold at the counter to an existing customer). `staff`: a counter booking with no customer account: the box office member's hold, then a walk-in or typed-contact sale.",
   })
   owner!: HoldOwner;
 

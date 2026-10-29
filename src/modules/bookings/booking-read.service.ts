@@ -13,6 +13,7 @@ import type { Booking, BookingRow, HoldAccess } from './types';
  * a guest whose hold ended, gets `NOT_FOUND`, never `FORBIDDEN`, and the check comes before
  * anything else is read. Exported for checkout and My Bookings (U11, U12). Due payments are
  * settled before the route runs (`@SettleFirst('booking')`), so the status read here is current.
+ * Staff read any booking through `getForStaff()` (U13).
  */
 @Injectable()
 export class BookingReadService {
@@ -26,6 +27,17 @@ export class BookingReadService {
     const now = this.clock.now();
     const row = await this.bookings.findByReference(reference);
     if (!row || !mayRead(row, access, now)) throw new AppError('NOT_FOUND');
+    return this.views.of(row, now);
+  }
+
+  /**
+   * Any booking, as staff read it (design §10.4: box office staff read every booking); only an
+   * unknown reference is `NOT_FOUND`. The box office answers its writes with it (U13).
+   */
+  async getForStaff(reference: string): Promise<Booking> {
+    const now = this.clock.now();
+    const row = await this.bookings.findByReference(reference);
+    if (!row) throw new AppError('NOT_FOUND');
     return this.views.of(row, now);
   }
 }

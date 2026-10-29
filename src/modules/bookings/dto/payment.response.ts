@@ -25,7 +25,7 @@ export class PaymentCardResponse {
   last4!: string;
 }
 
-/** A booking's sale charge as the customer sees it (PRD C8, C9, C11). */
+/** A booking's sale charge as the customer and the box office see it (PRD C8, C9, C11, A6). */
 @ApiSchema({ name: 'Payment' })
 export class PaymentResponse {
   @ApiProperty({
@@ -34,7 +34,7 @@ export class PaymentResponse {
     nullable: false,
     example: 'succeeded',
     description:
-      '`succeeded`: paid, the booking is confirmed. `declined`: show "declined" and offer to try again or switch method while the hold lasts (a new `Idempotency-Key`). `cancelled`: the wallet was closed; not a decline. `processing`: show "Confirming your payment" and read `GET /bookings/{ref}` again after `settlesAt`.',
+      '`succeeded`: paid, the booking is confirmed (a counter payment is always `succeeded`: it is recorded once the money is taken). `declined`: show "declined" and offer to try again or switch method while the hold lasts (a new `Idempotency-Key`). `cancelled`: the wallet was closed; not a decline. `processing`: show "Confirming your payment" and read `GET /bookings/{ref}` again after `settlesAt`.',
   })
   status!: ChargeStatus;
 
@@ -53,6 +53,15 @@ export class PaymentResponse {
     description: "The amount charged: exactly the booking's total.",
   })
   amount!: MoneyResponse;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description:
+      "The card terminal's receipt reference staff typed, for a `card_terminal` payment at the counter; null otherwise.",
+  })
+  receiptReference!: string | null;
 
   @ApiProperty({
     type: () => PaymentCardResponse,

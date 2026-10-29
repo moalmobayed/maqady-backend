@@ -19,6 +19,7 @@ import { BookingResponse } from './dto/booking.response';
 import { HoldResponse } from './dto/hold.response';
 import { PaymentResultResponse } from './dto/payment-result.response';
 import { PaymentCardResponse, PaymentResponse } from './dto/payment.response';
+import { ScannedBookingResponse, ScanResultResponse } from './dto/scan-result.response';
 import { TicketResponse } from './dto/ticket.response';
 import { PublicShowtimeResponse } from './dto/public-showtime.response';
 import { SeatSnapshotResponse, TakenSeatResponse } from './dto/seat-snapshot.response';
@@ -27,6 +28,7 @@ import type {
   BookingShowtime,
   CheckoutResult,
   CreatedHold,
+  ScanOutcome,
   SeatMapAvailability,
   ShowtimeSeatMap,
 } from './types';
@@ -82,6 +84,29 @@ export class BookingResponseMapper {
 
   showtime(showtime: BookingShowtime): BookingShowtimeResponse {
     return Object.assign(new BookingShowtimeResponse(), this.showtimeFields(showtime));
+  }
+
+  /** `POST /admin/scans` (U13): the result, and the booking presented, if any. */
+  scanResult(outcome: ScanOutcome): ScanResultResponse {
+    const { booking } = outcome;
+    return Object.assign(new ScanResultResponse(), {
+      result: outcome.result,
+      reason: outcome.reason,
+      admits: outcome.admits,
+      checkedInAt: outcome.checkedInAt === null ? null : formatCairoIso(outcome.checkedInAt),
+      scannedAt: formatCairoIso(outcome.scannedAt),
+      booking:
+        booking === null
+          ? null
+          : Object.assign(new ScannedBookingResponse(), {
+              reference: booking.reference,
+              status: booking.status,
+              seats: [...booking.seats],
+              seatCount: booking.seatCount,
+              contactName: booking.contactName,
+              showtime: this.showtime(booking.showtime),
+            }),
+    });
   }
 
   private bookingFields(booking: Booking): BookingResponse {
@@ -148,6 +173,7 @@ export function toPaymentResponse(payment: Payment): PaymentResponse {
     status: payment.status,
     method: payment.method,
     amount: toMoney(payment.amount),
+    receiptReference: payment.method === 'card_terminal' ? payment.providerReference : null,
     card:
       payment.card === null
         ? null

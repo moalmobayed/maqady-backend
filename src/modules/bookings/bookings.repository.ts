@@ -7,6 +7,7 @@ import type {
   BookingOwnerColumns,
   BookingRow,
   BookingSeatRow,
+  CounterCustomerColumns,
   NewBookingRow,
   SqlPredicate,
   TicketHolderRow,
@@ -32,6 +33,8 @@ const BOOKING_COLUMNS = [
   'confirmed_at',
   'refunded_at',
   'qr_version',
+  'checked_in_at',
+  'checked_in_by_staff_id',
   'created_at',
   'updated_at',
 ] as const;
@@ -99,6 +102,20 @@ export class BookingsRepository {
     return rows.map((row) => row.id);
   }
 
+  /**
+   * The ids of the staff member's live counter holds at `now`, in id order (at most one is
+   * expected, U13), through `idx_bookings_created_by_staff_id_status_hold_expires_at`.
+   */
+  async liveCounterHoldIdsOfStaff(staffUserId: number, now: Date): Promise<number[]> {
+    const live = liveHold(now);
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where({ created_by_staff_id: staffUserId, channel: 'counter' })
+      .andWhereRaw(live.sql, [...live.bindings])
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
   /** The id of the live, unowned hold stored under this code hash at `now`, if any. */
   async liveUnownedHoldIdByCodeHash(hash: string, now: Date): Promise<number | undefined> {
     const live = liveHold(now);
@@ -150,6 +167,36 @@ export class BookingsRepository {
       .returning<BookingRow[]>(BOOKING_COLUMNS);
     if (!updated) throw new AppError('INTERNAL', 'The booking update returned no row.');
     return updated;
+  }
+
+  /** Gives a counter hold the customer and contact of its sale (U13); the row as it now is. */
+  async setCounterCustomer(id: number, columns: CounterCustomerColumns): Promise<BookingRow> {
+    const [updated] = await this.bookings()
+      .where({ id, channel: 'counter', status: 'held' })
+      .update(columns)
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The counter hold to sell is no longer held.');
+    return updated;
+  }
+
+  /**
+   * Admits a confirmed booking at the entrance (design §7.9), atomically: only while it is still
+   * `confirmed`, never admitted, and (for a QR code) of the presented QR version. Two scans of one
+   * ticket serialize on the row; the second re-checks the condition after the first commits and
+   * changes nothing. Returns the admission time, or undefined when nothing changed.
+   */
+  async checkIn(
+    id: number,
+    qrVersion: number | null,
+    staffUserId: number,
+    now: Date,
+  ): Promise<Date | undefined> {
+    const query = this.bookings().where({ id, status: 'confirmed' }).whereNull('checked_in_at');
+    if (qrVersion !== null) query.andWhere({ qr_version: qrVersion });
+    const [row] = await query
+      .update({ checked_in_at: now, checked_in_by_staff_id: staffUserId, updated_at: now })
+      .returning<{ checked_in_at: Date }[]>('checked_in_at');
+    return row?.checked_in_at;
   }
 
   /** These bookings in any status, in id order; unknown ids are absent. */
