@@ -139,11 +139,14 @@ export class AdminActivityEventResponse {
 
   @ApiProperty({
     type: 'object',
-    additionalProperties: { oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }] },
+    additionalProperties: {
+      oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }],
+      nullable: true,
+    },
     nullable: false,
     example: { reason: 'customer_request', difference: -4000 },
     description:
-      'Non-personal facts of the event (for example an edit reason, a seat count, a method, an amount in piastres). Never a name, email or phone.',
+      'Non-personal facts of the event, each a string, number, boolean or null (for example an edit reason, a seat count, a method, an amount in piastres). Never a name, email or phone.',
   })
   metadata!: Record<string, AuditMetadataValue>;
 }
