@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration --runInBand",
+    "test:integration": "jest --selectProjects integration --maxWorkers=1 --workerIdleMemoryLimit=1GB",
     "migrate": "nest build && node --enable-source-maps dist/cli/migrate.js",
     "contract": "nest build && node --enable-source-maps dist/cli/contract.js",
     "admin:create": "nest build && node --enable-source-maps dist/cli/admin-create.js",
