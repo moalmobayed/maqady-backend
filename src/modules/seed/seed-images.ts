@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { SEED_IMAGE_TIMEOUT_MS, SEED_IMAGE_USER_AGENT } from './seed.constants';
 
 /**
  * Placeholder pictures for the development seed, generated with sharp so no binary is committed:
@@ -32,6 +33,29 @@ export async function placeholderImage(
     ${circles}
   </svg>`;
   return sharp(Buffer.from(svg)).jpeg({ quality: 80 }).toBuffer();
+}
+
+/**
+ * A real picture for a dataset that names one: downloaded from `url`, turned upright, then
+ * cropped to exactly `width` × `height` around its most salient part (faces, the title), as a
+ * JPEG that then goes through the real image pipeline like any upload. A failed download throws,
+ * naming the URL, so the seed stops rather than store a broken picture; it can run again.
+ */
+export async function downloadedImage(url: string, width: number, height: number): Promise<Buffer> {
+  const response = await fetch(url, {
+    headers: { 'User-Agent': SEED_IMAGE_USER_AGENT },
+    signal: AbortSignal.timeout(SEED_IMAGE_TIMEOUT_MS),
+  });
+  const type = response.headers.get('content-type') ?? '';
+  if (!response.ok || !type.startsWith('image/')) {
+    throw new Error(`Seed: the picture ${url} answered ${response.status} ${type}`.trim());
+  }
+  const original = Buffer.from(await response.arrayBuffer());
+  return sharp(original)
+    .rotate()
+    .resize(width, height, { fit: 'cover', position: sharp.strategy.attention })
+    .jpeg({ quality: 88 })
+    .toBuffer();
 }
 
 /** A colour a third darker, for the far end of the gradient. */

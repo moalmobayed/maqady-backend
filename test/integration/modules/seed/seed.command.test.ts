@@ -84,6 +84,7 @@ describe('npm run seed', () => {
     await runSeed(testApp.app, baseUrl, {}, (line) => first.push(line));
     expect(first).toEqual([
       `Created the seed admin ${SEED_ADMIN_EMAIL}.`,
+      'Dataset: demo',
       'theaters: 6 created, 0 already there',
       'halls: 5 created, 0 already there',
       'publish-theaters: 5 created, 0 already there',
@@ -111,6 +112,7 @@ describe('npm run seed', () => {
     const second: string[] = [];
     await runSeed(testApp.app, baseUrl, {}, (line) => second.push(line));
     expect(second).toEqual([
+      'Dataset: demo',
       'theaters: 0 created, 6 already there',
       'halls: 0 created, 5 already there',
       'publish-theaters: 0 created, 5 already there',
@@ -136,6 +138,7 @@ describe('npm run seed', () => {
     );
     // The server's cinema date (from GET /home, on the test Clock) picks the same 7 days.
     expect(lines).toEqual([
+      'Dataset: demo',
       'theaters: 0 created, 6 already there',
       'halls: 0 created, 5 already there',
       'publish-theaters: 0 created, 5 already there',

@@ -39,5 +39,14 @@ export const SEED_LIST_LIMIT = 100;
 /** The hall the seed adds to each theater it publishes (the standard 12 × 16 layout). */
 export const SEED_HALL_NAME = 'Hall 1';
 
+/** How long one picture download of a real dataset may take. */
+export const SEED_IMAGE_TIMEOUT_MS = 60_000;
+
+/** Sent with picture downloads; some image hosts refuse requests without a browser-like agent. */
+export const SEED_IMAGE_USER_AGENT = 'Mozilla/5.0 (compatible; MaqadySeed/1.0)';
+
+/** Picks the dataset `npm run seed` and `npm run seed:remote` load (`SEED_DATASETS`). */
+export const SEED_DATASET_VARIABLE = 'SEED_DATASET';
+
 /** The seed schedules showtimes on today's cinema date and the 6 after. */
 export const SEED_SHOWTIME_DAYS = 7;

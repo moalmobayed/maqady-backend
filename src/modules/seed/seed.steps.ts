@@ -6,8 +6,7 @@ import {
   SEED_PRICES,
   SEED_SHOWTIME_DAYS,
 } from './seed.constants';
-import { SEED_MOVIES, SEED_PEOPLE, SEED_SHOWTIMES, SEED_THEATERS } from './seed-data';
-import { placeholderImage } from './seed-images';
+import { downloadedImage, placeholderImage } from './seed-images';
 import type {
   SeedAdminMovie,
   SeedAdminTheater,
@@ -16,6 +15,7 @@ import type {
   SeedCreatedRow,
   SeedGenreRow,
   SeedHallRow,
+  SeedImageSize,
   SeedMovie,
   SeedNamedRow,
   SeedPage,
@@ -32,8 +32,9 @@ import type {
 /**
  * The steps of `npm run seed`, in order. Each finds what exists through the admin list routes
  * and creates only what is missing, so the seed can run again (or resume after a failure)
- * without duplicating anything. `halls` gives each theater to publish an active hall (its
- * `active_hall` publish requirement, U5) before `publish-theaters`; `showtimes` (U8b) schedules
+ * without duplicating anything. Every step reads `context.dataset`. `halls` gives each theater
+ * to publish its active halls (the `active_hall` publish requirement, U5) before
+ * `publish-theaters`; `showtimes` (U8b) schedules
  * the next 7 cinema days last, once the movies are Now showing.
  */
 export const SEED_STEPS: readonly SeedStep[] = [
@@ -71,6 +72,36 @@ function filename(text: string): string {
   return `${text.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.jpg`;
 }
 
+/**
+ * The picture to upload: downloaded from `url` when the dataset names one, or generated from
+ * `colour` and `seed` when it leaves the picture out.
+ */
+function image(
+  url: string | undefined,
+  { width, height }: SeedImageSize,
+  colour: string,
+  seed: string,
+): Promise<Buffer> {
+  return url === undefined
+    ? placeholderImage(width, height, colour, seed)
+    : downloadedImage(url, width, height);
+}
+
+/** `image()`, or none when the dataset says the picture is `null`. */
+async function picture(
+  url: string | null | undefined,
+  size: SeedImageSize,
+  colour: string,
+  seed: string,
+): Promise<Buffer | null> {
+  return url === null ? null : image(url, size, colour, seed);
+}
+
+/** Where `context.hallIds` keeps a theater's hall. */
+function hallKey(theater: string, hall: string): string {
+  return `${theater}|${hall}`;
+}
+
 // --- Theaters -------------------------------------------------------------------------------
 
 async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
@@ -81,8 +112,9 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
       row.id,
     ]),
   );
+  const { theaters } = context.dataset;
   let created = 0;
-  for (const theater of SEED_THEATERS) {
+  for (const theater of theaters) {
     let id = existing.get(theater.name.toLowerCase());
     if (id === undefined) {
       const body = withoutNulls({
@@ -103,7 +135,7 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
     context.theaterIds.set(theater.name, id);
     await completeTheater(context, id, theater);
   }
-  return { created, kept: SEED_THEATERS.length - created };
+  return { created, kept: theaters.length - created };
 }
 
 /** Sets whatever of the theater is still missing: hours, phones, facilities, prices, photos. */
@@ -122,7 +154,9 @@ async function completeTheater(
   if (current.facilities.length === 0 && theater.facilities.length > 0) {
     await api.write('PUT', `${path}/facilities`, { facilities: theater.facilities });
   }
-  if (current.defaultPrices === null) await api.write('PUT', `${path}/prices`, SEED_PRICES);
+  if (current.defaultPrices === null) {
+    await api.write('PUT', `${path}/prices`, theater.prices ?? SEED_PRICES);
+  }
   if (theater.specialDate && current.specialDates.length === 0) {
     const { daysFromToday, ...hours } = theater.specialDate;
     await api.write('POST', `${path}/special-dates`, {
@@ -130,11 +164,19 @@ async function completeTheater(
       ...hours,
     });
   }
-  if (current.cover === null) {
-    const { width, height } = SEED_IMAGE_SIZES.backdrop;
+  const cover =
+    current.cover === null
+      ? await picture(
+          theater.coverUrl,
+          SEED_IMAGE_SIZES.backdrop,
+          theater.colour,
+          `${theater.name} cover`,
+        )
+      : null;
+  if (cover !== null) {
     await api.upload('POST', `${path}/photos`, {
       fields: { usage: 'cover' },
-      file: await placeholderImage(width, height, theater.colour, `${theater.name} cover`),
+      file: cover,
       filename: filename(`${theater.name} cover`),
     });
   }
@@ -150,28 +192,31 @@ async function completeTheater(
   }
 }
 
-/** Each theater to publish gets the standard-layout hall `SEED_HALL_NAME`, made active. */
+/**
+ * Each theater to publish gets its halls (left out, only `SEED_HALL_NAME`), each with the
+ * standard layout and made active.
+ */
 async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
   const { api } = context;
   let created = 0;
   let kept = 0;
-  for (const theater of SEED_THEATERS) {
+  for (const theater of context.dataset.theaters) {
     const id = context.theaterIds.get(theater.name);
     if (id === undefined || !theater.publish) continue;
-    const halls = await listAll<SeedHallRow>(api, `/admin/theaters/${id}/halls`);
-    let hall = halls.find((row) => row.name === SEED_HALL_NAME);
-    if (hall === undefined) {
-      hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, {
-        name: SEED_HALL_NAME,
-      });
-      created += 1;
-    } else {
-      kept += 1;
+    const existing = await listAll<SeedHallRow>(api, `/admin/theaters/${id}/halls`);
+    for (const name of theater.halls ?? [SEED_HALL_NAME]) {
+      let hall = existing.find((row) => row.name === name);
+      if (hall === undefined) {
+        hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, { name });
+        created += 1;
+      } else {
+        kept += 1;
+      }
+      if (hall.status !== 'active') {
+        await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
+      }
+      context.hallIds.set(hallKey(theater.name, name), hall.id);
     }
-    if (hall.status !== 'active') {
-      await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
-    }
-    context.hallIds.set(theater.name, hall.id);
   }
   return { created, kept };
 }
@@ -179,7 +224,7 @@ async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
 async function publishTheaters(context: SeedContext): Promise<SeedStepResult> {
   let created = 0;
   let kept = 0;
-  for (const theater of SEED_THEATERS) {
+  for (const theater of context.dataset.theaters) {
     const id = context.theaterIds.get(theater.name);
     if (id === undefined || !theater.publish) continue;
     const current = await context.api.get<SeedAdminTheater>(`/admin/theaters/${id}`);
@@ -200,8 +245,9 @@ async function seedPeople(context: SeedContext): Promise<SeedStepResult> {
   const existing = new Map(
     (await listAll<SeedPersonRow>(api, '/admin/people')).map((row) => [row.fullName, row]),
   );
+  const { people } = context.dataset;
   let created = 0;
-  for (const person of SEED_PEOPLE) {
+  for (const person of people) {
     let row = existing.get(person.fullName);
     if (row === undefined) {
       const body = withoutNulls({
@@ -216,16 +262,19 @@ async function seedPeople(context: SeedContext): Promise<SeedStepResult> {
       created += 1;
     }
     context.personIds.set(person.fullName, row.id);
-    if (row.photo === null) {
-      const { width, height } = SEED_IMAGE_SIZES.person;
+    const photo =
+      row.photo === null
+        ? await picture(person.photoUrl, SEED_IMAGE_SIZES.person, person.colour, person.fullName)
+        : null;
+    if (photo !== null) {
       await api.upload('PUT', `/admin/people/${row.id}/photo`, {
         fields: {},
-        file: await placeholderImage(width, height, person.colour, person.fullName),
+        file: photo,
         filename: filename(person.fullName),
       });
     }
   }
-  return { created, kept: SEED_PEOPLE.length - created };
+  return { created, kept: people.length - created };
 }
 
 // --- Movies ---------------------------------------------------------------------------------
@@ -238,15 +287,16 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
   const existing = new Map(
     (await listAll<SeedTitledRow>(api, '/admin/movies')).map((row) => [row.title, row.id]),
   );
+  const { movies } = context.dataset;
   let created = 0;
-  for (const movie of SEED_MOVIES) {
+  for (const movie of movies) {
     let id = existing.get(movie.title);
     if (id === undefined) {
       const body = withoutNulls({
         title: movie.title,
         synopsis: movie.synopsis,
         runtimeMinutes: movie.runtimeMinutes,
-        releaseDate: addDays(context.today, movie.releaseInDays),
+        releaseDate: movie.releaseDate ?? addDays(context.today, movie.releaseInDays),
         ageRating: movie.ageRating,
         language: movie.language,
         country: movie.country,
@@ -265,7 +315,7 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
     context.movieIds.set(movie.title, id);
     await completeMovie(context, id, movie);
   }
-  return { created, kept: SEED_MOVIES.length - created };
+  return { created, kept: movies.length - created };
 }
 
 /** Sets whatever of the movie is still missing: poster, photos, videos, credits, status. */
@@ -273,25 +323,28 @@ async function completeMovie(context: SeedContext, id: number, movie: SeedMovie)
   const { api } = context;
   const path = `/admin/movies/${id}`;
   let current = await api.get<SeedAdminMovie>(path);
-  if (current.poster === null) {
-    const { width, height } = SEED_IMAGE_SIZES.poster;
+  const poster =
+    current.poster === null
+      ? await picture(
+          movie.posterUrl,
+          SEED_IMAGE_SIZES.poster,
+          movie.colour,
+          `${movie.title} poster`,
+        )
+      : null;
+  if (poster !== null) {
     await api.upload('PUT', `${path}/poster`, {
       fields: {},
-      file: await placeholderImage(width, height, movie.colour, `${movie.title} poster`),
+      file: poster,
       filename: filename(`${movie.title} poster`),
     });
   }
   if (current.photos.length === 0) {
-    const { width, height } = SEED_IMAGE_SIZES.still;
     for (const photo of movie.photos) {
+      const seed = `${movie.title} ${photo.caption}`;
       await api.upload('POST', `${path}/photos`, {
         fields: { kind: photo.kind, caption: photo.caption },
-        file: await placeholderImage(
-          width,
-          height,
-          movie.colour,
-          `${movie.title} ${photo.caption}`,
-        ),
+        file: await image(photo.url, SEED_IMAGE_SIZES.still, movie.colour, seed),
         filename: filename(photo.caption),
       });
     }
@@ -332,7 +385,7 @@ async function completeMovie(context: SeedContext, id: number, movie: SeedMovie)
 async function seedFeatured(context: SeedContext): Promise<SeedStepResult> {
   let created = 0;
   let kept = 0;
-  for (const movie of SEED_MOVIES) {
+  for (const movie of context.dataset.movies) {
     const id = context.movieIds.get(movie.title);
     if (id === undefined || movie.featuredPosition === null) continue;
     const current = await context.api.get<SeedAdminMovie>(`/admin/movies/${id}`);
@@ -351,7 +404,7 @@ async function seedFeatured(context: SeedContext): Promise<SeedStepResult> {
 // --- Showtimes ------------------------------------------------------------------------------
 
 /**
- * Schedules `SEED_SHOWTIMES` on today's cinema date and the 6 after, through the admin API so
+ * Schedules the dataset's showtime slots on today's cinema date and the 6 after, through the admin API so
  * every U7 rule applies. A date that already has a scheduled showtime in the slot's hall at its
  * start time is kept; the others are dry-run first and only the `available` ones are created, so
  * a slot that has started, a closed night or a night whose hours don't fit is left out, and a
@@ -365,9 +418,9 @@ async function seedShowtimes(context: SeedContext): Promise<SeedStepResult> {
   const scheduled = new Map<string, Set<string>>();
   let created = 0;
   let kept = 0;
-  for (const slot of SEED_SHOWTIMES) {
+  for (const slot of context.dataset.showtimes) {
     const theaterId = context.theaterIds.get(slot.theater);
-    const hallId = context.hallIds.get(slot.theater);
+    const hallId = context.hallIds.get(hallKey(slot.theater, slot.hall ?? SEED_HALL_NAME));
     const movieId = context.movieIds.get(slot.movie);
     if (theaterId === undefined || hallId === undefined || movieId === undefined) {
       throw new Error(

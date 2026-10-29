@@ -81,6 +81,7 @@ but never prints its value. `.env` is for local runs only; real environment vari
 | `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_SIGN_IN_EMAIL`, … | yes, optional | `<count>/<window>` (window in `s`, `m` or `h`), for example `300/1m`. Unset means the design §10.6 default; `.env.example` lists all twelve |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` | `npm run admin:create` only | The first admin. The password must be 8 to 128 characters with a digit. Set them for the one run, then remove them; the service never reads them |
 | `SEED_ADMIN_PASSWORD` | `npm run seed` only, optional | The seed admin's password (default `Maqady-seed-2026`, development only); it must meet the password policy |
+| `SEED_DATASET` | `npm run seed` and `seed:remote`, optional | `demo` (default: invented data, generated pictures) or `egypt-2026` (real films, people and cinemas; pictures downloaded). See "Development seed" |
 | `TEST_DATABASE_URL` | tests | Default `postgres://postgres:postgres@localhost:5432/maqady_test` |
 
 ### Email and SMS
@@ -138,16 +139,15 @@ pages and the admin dashboard.
   `POST /api/v1/admin/auth/sessions` and drives the admin routes: validation, transactions,
   idempotency, audit rows and the image pipeline all apply. Sign in to the dashboard with the
   same account (password `SEED_ADMIN_PASSWORD`, default `Maqady-seed-2026`).
-- What it adds: 6 theaters (5 published, Dokki left a draft) with weekly hours, some past
-  midnight, a special date, prices, phones, facilities, a cover and gallery photos; 18 people with
-  photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the first is the
-  backdrop), two YouTube videos each and credits; 5 of them in the home carousel; showtimes over
-  the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00 and 21:45,
-  plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
-  nights), so the ticker, the movie and theater showtime lists and the show-date filter have
-  data. Names, phones
-  and emails are invented; release dates are relative to the day you run it. Pictures are
-  generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
+- What the default `demo` dataset adds: 6 theaters (5 published, Dokki left a draft) with weekly
+  hours, some past midnight, a special date, prices, phones, facilities, a cover and gallery photos;
+  18 people with photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the
+  first is the backdrop), two YouTube videos each and credits; 5 of them in the home carousel;
+  showtimes over the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00
+  and 21:45, plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
+  nights), so the ticker, the movie and theater showtime lists and the show-date filter have data.
+  Names, phones and emails are invented; release dates are relative to the day you run it. Pictures
+  are generated placeholders that go through the real image pipeline into `LOCAL_STORAGE_DIR`; the
   videos are Blender Foundation open movies on YouTube, so the embeds play.
 - It is idempotent: each step finds what exists by name or title and adds only what is missing,
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
@@ -156,6 +156,44 @@ pages and the admin dashboard.
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,
   keeps the slots already scheduled, dry-runs the missing dates and creates only the `available`
   ones, so a started slot or a night whose hours don't fit is simply skipped.
+
+### The real dataset: `SEED_DATASET=egypt-2026`
+
+```bash
+SEED_DATASET=egypt-2026 npm run seed          # this machine
+SEED_DATASET=egypt-2026 npm run seed:remote   # a deployed environment (below)
+```
+
+Real Egyptian cinema as it stood on 2026-10-29, instead of the invented demo. Seed it into an
+empty database: the two datasets don't share names, so seeding one over the other mixes them.
+
+- **13 Egyptian films of 2026**: 9 Now showing (Naseeb, Matloub Aaeleyan, Wala Kan Ala El-Bal,
+  Saqr w Kanarya, El Gawahergy in the carousel; Mahmoud El Tany, Red Flag, Shish Doo, Khally
+  Balak Min Nafsak) and 4 Coming soon (Hadoota, Leila Bazet Khales, Crypto, Mamsos), with their
+  real synopsis, genres, censor rating, release date, official poster, stills, official YouTube
+  trailers and teasers (checked by hand), cast and crew.
+- **118 people** credited on them, with their photo, bio, birthplace and nationality where
+  elCinema publishes them. It publishes no birth dates.
+- **8 cinemas** in Cairo and Giza (VOX City Centre Almaza, City Stars, Cairo Festival Scene,
+  Cosmos, Galaxy El Manyal, VOX Mall of Egypt, Galaxy Cineplex Mall of Arabia, Cairo Mall),
+  with their address, map position, phones, standard ticket price, as many halls as they ran at
+  once, and the 238 showtimes they actually ran that day, repeated on each of the 7 days.
+- **Sources**: elCinema.com for the films, people, cinemas, showtimes and pictures; YouTube for
+  the videos; The Numbers and Arabic Wikipedia for two runtimes; the Egyptian press for two
+  release dates. Each movie's comment in `src/modules/seed/datasets/egypt-2026.ts` names its
+  sources.
+- **Estimates**: runtimes are mostly unpublished, so five are estimated from how often the
+  cinemas repeat the film, and Shish Doo, El Gawahergy and the Coming soon films have a 110
+  minute placeholder. Mamsos's release date is estimated (the press says December 2026).
+  Opening hours run from each cinema's first show to its last; facilities are by venue type;
+  zone prices all equal the standard ticket.
+- **Pictures** are downloaded from their sources when the seed runs (allow a few minutes, and
+  network access to `media0106.elcinema.com` and `i.ytimg.com`). Each is cropped to the
+  pipeline's size around its most salient part. They belong to their owners: use this dataset
+  for staging and demos, not for a public launch.
+- To refresh it, add a dataset beside it in `src/modules/seed/datasets/` and register it in
+  `SEED_DATASETS`. `test/unit/modules/seed/datasets/index.test.ts` checks every dataset against
+  the catalog limits, its own references, the opening hours and the 20-minute cleaning gap.
 
 ## Dependencies
 
@@ -491,10 +529,12 @@ machine:
 SEED_API_URL=https://<service>.onrender.com/api/v1 \
 SEED_ADMIN_EMAIL=staging-admin@maqady.local \
 SEED_ADMIN_PASSWORD='<BOOTSTRAP_ADMIN_PASSWORD>' \
+SEED_DATASET=egypt-2026 \
 npm run seed:remote
 ```
 
-It is idempotent, so it can run again. Never run it against production.
+It is idempotent, so it can run again. Never run it against production. The **Seed staging**
+workflow runs it from Actions, with the dataset as an input.
 
 ## Layout
 
