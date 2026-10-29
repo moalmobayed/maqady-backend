@@ -470,6 +470,38 @@ curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket-deliveries \
   -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)"
 ```
 
+## Box office and ticket scanning
+
+Both staff roles sell at the counter and scan tickets (U13, `docs/gh-14-box-office/spec.md`).
+
+- `POST /api/v1/admin/counter-holds` (`{ showtimeId, seats }`, `Idempotency-Key` required) holds
+  seats for 5 minutes exactly like an online hold, through the same claim statement, so a seat is
+  never sold twice across the website and the counter. A member has one live counter hold; a new
+  one releases the previous one, and `DELETE /api/v1/admin/counter-holds/{ref}` releases it.
+- `POST /api/v1/admin/bookings/{ref}/counter-payments` (`Idempotency-Key` required) records `cash`
+  or `card_terminal` with the terminal's `receiptReference`, and the customer: `walk_in`,
+  `existing` (`customerId`) or `contact` (`fullName`, optional `email` and `phone`). It confirms
+  the booking at once and sends the tickets to any email or phone given. Only the member who made
+  the hold can sell or release it.
+- `GET /api/v1/admin/bookings/{ref}/ticket.pdf` gives staff any booking's PDF ticket (a walk-in
+  has no email); each download is recorded in the activity log.
+- `POST /api/v1/admin/scans` takes `{ theaterId, code }` (the QR text) or
+  `{ theaterId, reference, confirm }` (typed by hand) and always answers `200` with a `result`:
+  `VALID`, `ALREADY_USED` (with the first `checkedInAt`), `WRONG_SHOWTIME`, `NOT_VALID`,
+  `NOT_FOUND` or `CONFIRM_REQUIRED`. Scanning opens 60 minutes before the start and closes at the
+  end. A typed reference admits only on a second request with `confirm: true`.
+
+```bash
+curl -s -X POST localhost:3000/api/v1/admin/counter-holds -H "Authorization: Bearer $STAFF" \
+  -H "Idempotency-Key: $(uuidgen)" -H 'Content-Type: application/json' \
+  -d '{"showtimeId":81,"seats":["F7","F8"]}'
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/counter-payments \
+  -H "Authorization: Bearer $STAFF" -H "Idempotency-Key: $(uuidgen)" -H 'Content-Type: application/json' \
+  -d '{"method":"card_terminal","receiptReference":"TRX-0042817","customer":{"kind":"walk_in"}}'
+curl -s -X POST localhost:3000/api/v1/admin/scans -H "Authorization: Bearer $STAFF" \
+  -H 'Content-Type: application/json' -d '{"theaterId":3,"code":"MQ1.MQ-7K3P9Q.1.…"}'
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets

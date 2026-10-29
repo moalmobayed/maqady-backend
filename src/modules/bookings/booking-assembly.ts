@@ -38,7 +38,7 @@ export function toBooking({
     reference: row.reference,
     status,
     channel: row.channel,
-    owner: row.customer_id === null ? 'guest' : 'customer',
+    owner: row.customer_id !== null ? 'customer' : row.channel === 'counter' ? 'staff' : 'guest',
     customerId: row.customer_id,
     showtime,
     seats: ownSeats,

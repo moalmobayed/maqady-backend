@@ -87,3 +87,22 @@ export const HISTORY_LABELS: Readonly<Record<BookingHistoryKind, string>> = {
   changed_by_cinema: 'Changed by the cinema',
   tickets_resent: 'Tickets resent',
 };
+
+// --- Box office (U13) -----------------------------------------------------------------------
+
+/** Scanning opens this many minutes before a showtime starts and closes at its end (PRD call 14). */
+export const SCAN_OPENS_MINUTES_BEFORE_START = 60;
+
+/**
+ * A card terminal's receipt reference as staff type it (PRD Payments 2): up to 64 letters, digits,
+ * spaces and `. / _ -`, starting with a letter or digit. `chk_payments_receipt_reference` repeats it.
+ */
+export const RECEIPT_REFERENCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ./_-]{0,63}$/;
+export const RECEIPT_REFERENCE_MAX_LENGTH = 64;
+
+/** The longest scanned code accepted: a camera reads any QR code, and anything else is NOT_FOUND. */
+export const SCAN_CODE_MAX_LENGTH = 512;
+
+/** Audit actions of the box office that U10 and U11 do not already name. */
+export const BOOKING_CHECKED_IN_ACTION = 'booking.checked_in';
+export const TICKET_DOWNLOADED_ACTION = 'booking.ticket_downloaded';

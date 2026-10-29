@@ -18,8 +18,12 @@ export const BOOKING_DISPLAY_STATUSES = [
 /** Where a booking was made (design §6.2 `bookings.channel`). Counter sales come with U13. */
 export const BOOKING_CHANNELS = ['online', 'counter'] as const;
 
-/** Who holds an online booking: a guest with a hold code, or a signed-in customer. */
-export const HOLD_OWNERS = ['guest', 'customer'] as const;
+/**
+ * Who acts on a booking: a guest with a hold code, a signed-in customer (who owns it), or staff
+ * (a counter booking with no customer account: the box office member's hold, then a walk-in or
+ * typed-contact sale, U13).
+ */
+export const HOLD_OWNERS = ['guest', 'customer', 'staff'] as const;
 
 /**
  * Why a showtime cannot be held right now (design §7.3 steps 2–3), in order of precedence: the
@@ -54,6 +58,12 @@ export const PAYMENT_STATUS_DISPLAYS = [
  */
 export const SETTLE_FIRST_KINDS = ['booking', 'showtime', 'customer'] as const;
 
+/**
+ * Where `@SettleFirst()` reads the booking reference or showtime id: the path (`{ref}`, `{id}`),
+ * or the JSON body's `showtimeId` (`POST /admin/counter-holds`, U13).
+ */
+export const SETTLE_FIRST_SOURCES = ['params', 'body'] as const;
+
 /** The booking statuses that have a ticket: a QR code, a PDF and a calendar file. */
 export const TICKET_STATUSES = ['confirmed', 'completed'] as const;
 
@@ -80,3 +90,40 @@ export const BOOKING_HISTORY_KINDS = [
 
 /** How "Email again" sends the tickets: by email only (PRD "Email and SMS"). */
 export const TICKET_DELIVERY_CHANNELS = ['email'] as const;
+
+// --- Box office (U13) -----------------------------------------------------------------------
+
+/**
+ * Who a counter sale is for (PRD A6 "New booking"): a walk-in (no details), an existing customer
+ * account, or contact details typed at the counter.
+ */
+export const COUNTER_CUSTOMER_KINDS = ['walk_in', 'existing', 'contact'] as const;
+
+/**
+ * What a scan answers (design §7.9; PRD "Scan tickets"): `VALID` admits the booking now;
+ * `ALREADY_USED` it was admitted before; `WRONG_SHOWTIME` another theater, a cancelled showtime or
+ * outside the scan window; `NOT_VALID` unpaid, refunded or an old QR code; `NOT_FOUND` not a
+ * Maqady ticket; `CONFIRM_REQUIRED` a typed reference, waiting for the second request.
+ */
+export const SCAN_RESULTS = [
+  'VALID',
+  'ALREADY_USED',
+  'WRONG_SHOWTIME',
+  'NOT_VALID',
+  'NOT_FOUND',
+  'CONFIRM_REQUIRED',
+] as const;
+
+/** Why a scan is `WRONG_SHOWTIME` (the first four) or `NOT_VALID` (the last three). */
+export const SCAN_REASONS = [
+  'other_theater',
+  'cancelled',
+  'not_open_yet',
+  'ended',
+  'not_paid',
+  'refunded',
+  'replaced',
+] as const;
+
+/** How a ticket was presented at the entrance: its QR code, or its reference typed by hand. */
+export const SCAN_VIA = ['qr', 'reference'] as const;

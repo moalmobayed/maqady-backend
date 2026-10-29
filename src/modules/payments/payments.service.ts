@@ -7,6 +7,7 @@ import { PaymentProvider } from './payment-provider';
 import { PaymentsRepository } from './payments.repository';
 import type {
   ChargeOutcome,
+  CounterChargeInput,
   DueCharge,
   DueCursor,
   FinishedChargeRow,
@@ -18,7 +19,7 @@ import type {
 } from './types';
 
 /**
- * The payments ledger and the provider behind it (design §6.2, §7.5). Exported for checkout and
+ * The payments ledger and the provider behind it (design §6.2, §7.5, §7.6). Exported for checkout and
  * settlement (U11), counter sales (U13), refunds and payouts (U14) and the Payments screen (U16).
  *
  * Writes join the open transaction and need one (`INTERNAL` otherwise): the caller holds the
@@ -82,6 +83,37 @@ export class PaymentsService {
       updated_at: now,
     });
     return toPayment(recorded);
+  }
+
+  /**
+   * Records money taken at the counter (design §7.6; PRD Payments 2, "Statuses": counter payments
+   * are never Processing or Declined): a `succeeded` charge at once, collected by the signed-in
+   * member, the card terminal's receipt reference kept in `provider_reference` (NULL for cash). No
+   * provider is called. The partial unique index refuses a second live sale charge of a booking.
+   * Exported for counter sales (U13) and the higher total of an edit (U14).
+   */
+  async recordCounterCharge(input: CounterChargeInput): Promise<Payment> {
+    this.requireTransaction();
+    const receipt = input.method === 'card_terminal' ? input.receiptReference : null;
+    if (input.method === 'card_terminal' && receipt === null) {
+      throw new AppError('INTERNAL', 'A card terminal payment needs its receipt reference.');
+    }
+    const now = this.clock.now();
+    const inserted = await this.payments.insertCounterCharge({
+      booking_id: input.bookingId,
+      kind: 'charge',
+      purpose: input.purpose,
+      method: input.method,
+      status: 'succeeded',
+      amount: input.amount.amount,
+      currency: input.amount.currency,
+      provider_reference: receipt,
+      collected_by_staff_id: input.collectedByStaffId,
+      completed_at: now,
+      created_at: now,
+      updated_at: now,
+    });
+    return toPayment(inserted);
   }
 
   /**

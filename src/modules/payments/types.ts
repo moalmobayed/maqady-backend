@@ -2,6 +2,7 @@ import type { Currency, Money } from '../../common/money/types';
 import type {
   CARD_BRANDS,
   CHARGE_STATUSES,
+  COUNTER_PAYMENT_METHODS,
   ONLINE_PAYMENT_METHODS,
   PAYMENT_KINDS,
   PAYMENT_METHODS,
@@ -18,6 +19,8 @@ export type PaymentPurpose = (typeof PAYMENT_PURPOSES)[number];
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export type OnlinePaymentMethod = (typeof ONLINE_PAYMENT_METHODS)[number];
+
+export type CounterPaymentMethod = (typeof COUNTER_PAYMENT_METHODS)[number];
 
 export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
 
@@ -73,6 +76,26 @@ export interface NewPaymentRow {
   readonly wallet_type: WalletType | null;
   readonly settles_at: Date | null;
   readonly completed_at: Date | null;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+/**
+ * The columns of a counter charge (U13): recorded once the money is taken, so it is `succeeded`
+ * at once, with the member who collected it and, for a card terminal, the receipt reference in
+ * `provider_reference`. No provider call, so no provider key and no `settles_at`.
+ */
+export interface NewCounterChargeRow {
+  readonly booking_id: number;
+  readonly kind: 'charge';
+  readonly purpose: 'sale' | 'edit_difference';
+  readonly method: CounterPaymentMethod;
+  readonly status: 'succeeded';
+  readonly amount: number;
+  readonly currency: Currency;
+  readonly provider_reference: string | null;
+  readonly collected_by_staff_id: number;
+  readonly completed_at: Date;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
@@ -186,6 +209,20 @@ export interface OnlineChargeInput {
   readonly amount: Money;
   readonly method: OnlinePaymentMethod;
   readonly token: SimulatedPaymentToken;
+}
+
+/**
+ * Money taken at the counter (PRD Payments 2), as the box office records it: a `sale` (U13) or
+ * the higher total of an edit (`edit_difference`, U14). The receipt reference is required for a
+ * card terminal and absent for cash.
+ */
+export interface CounterChargeInput {
+  readonly bookingId: number;
+  readonly amount: Money;
+  readonly method: CounterPaymentMethod;
+  readonly receiptReference: string | null;
+  readonly purpose: 'sale' | 'edit_difference';
+  readonly collectedByStaffId: number;
 }
 
 /** A succeeded online charge to give back in full, as settlement asks for it. */

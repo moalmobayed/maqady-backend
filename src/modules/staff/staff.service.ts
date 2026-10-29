@@ -45,6 +45,16 @@ export class StaffService {
     return row ? toStaffMember(row) : null;
   }
 
+  /**
+   * The member, locked `FOR NO KEY UPDATE` until the open transaction ends (design §7.1 step 4,
+   * §10.1): a counter hold (U13) locks its member to keep "one live counter hold per member" while
+   * a staff change waits for it, and a sessions insert or an audit row naming the member does not.
+   */
+  async findByIdForUpdate(id: number): Promise<StaffMember | null> {
+    const row = await this.staff.findByIdForUpdate(id);
+    return row ? toStaffMember(row) : null;
+  }
+
   async findByEmail(email: string): Promise<StaffMember | null> {
     const row = await this.staff.findByEmail(email.trim());
     return row ? toStaffMember(row) : null;

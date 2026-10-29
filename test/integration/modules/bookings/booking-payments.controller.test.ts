@@ -108,6 +108,7 @@ describe('Paying for a hold (integration)', () => {
         status: 'succeeded',
         method: 'card',
         amount: { amount: 38000, currency: 'EGP' },
+        receiptReference: null,
         card: { brand: 'visa', last4: '4242' },
         walletType: null,
         createdAt: '2026-10-10T10:00:00+03:00',

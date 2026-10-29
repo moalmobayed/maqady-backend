@@ -3,9 +3,11 @@ import type { Currency, Money } from '../../common/money/types';
 import type { Page } from '../../common/pagination/types';
 import type { CalendarDate } from '../../common/time/types';
 import type { AgeRating, MovieStatus } from '../catalog/types';
+import type { Customer } from '../customers/types';
 import type { HallLayout, HallStatus, Zone } from '../halls/types';
 import type { StoredImage } from '../media/types';
 import type {
+  CounterPaymentMethod,
   OnlinePaymentMethod,
   Payment,
   PaymentStatus,
@@ -13,6 +15,7 @@ import type {
 } from '../payments/types';
 import type { ReleasedClaims, SeatSnapshot } from '../seating/types';
 import type { ShowtimeStatus, ShowtimeView } from '../showtimes/types';
+import type { StaffMember } from '../staff/types';
 import type { TheaterStatus, ZonePrices } from '../theaters/types';
 import type {
   AUTOMATIC_REFUND_REASONS,
@@ -20,12 +23,17 @@ import type {
   BOOKING_DISPLAY_STATUSES,
   BOOKING_HISTORY_KINDS,
   BOOKING_STATUSES,
+  COUNTER_CUSTOMER_KINDS,
   HOLD_OWNERS,
   MY_BOOKINGS_TABS,
   NOT_BOOKABLE_REASONS,
   PAYMENT_STATUS_DISPLAYS,
   RELEASE_REASONS,
+  SCAN_REASONS,
+  SCAN_RESULTS,
+  SCAN_VIA,
   SETTLE_FIRST_KINDS,
+  SETTLE_FIRST_SOURCES,
   TICKET_DELIVERY_CHANNELS,
   TICKET_STATUSES,
 } from './enums';
@@ -46,6 +54,16 @@ export type PaymentStatusDisplay = (typeof PAYMENT_STATUS_DISPLAYS)[number];
 
 export type SettleFirstKind = (typeof SETTLE_FIRST_KINDS)[number];
 
+export type SettleFirstSource = (typeof SETTLE_FIRST_SOURCES)[number];
+
+export type CounterCustomerKind = (typeof COUNTER_CUSTOMER_KINDS)[number];
+
+export type ScanResult = (typeof SCAN_RESULTS)[number];
+
+export type ScanReason = (typeof SCAN_REASONS)[number];
+
+export type ScanVia = (typeof SCAN_VIA)[number];
+
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 export type AutomaticRefundReason = (typeof AUTOMATIC_REFUND_REASONS)[number];
@@ -58,7 +76,7 @@ export type TicketDeliveryChannel = (typeof TICKET_DELIVERY_CHANNELS)[number];
 
 // --- Rows -----------------------------------------------------------------------------------
 
-/** A `bookings` row as the repository reads it (the check-in columns come with U13). */
+/** A `bookings` row as the repository reads it. */
 export interface BookingRow {
   readonly id: number;
   readonly reference: string;
@@ -80,17 +98,21 @@ export interface BookingRow {
   readonly refunded_at: Date | null;
   /** Set to 1 on confirmation; an edit (U14) increments it, which voids the older QR codes. */
   readonly qr_version: number | null;
+  /** The first admission at the entrance and who scanned it (U13); null until then. */
+  readonly checked_in_at: Date | null;
+  readonly checked_in_by_staff_id: number | null;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
 
-/** The columns of a new online hold. */
+/** The columns of a new hold: online (a guest or a customer) or at the counter (U13). */
 export interface NewBookingRow {
   readonly showtime_id: number;
   readonly status: 'held';
-  readonly channel: 'online';
+  readonly channel: BookingChannel;
   readonly customer_id: number | null;
-  readonly created_by_staff_id: null;
+  /** The box office member of a counter hold; null online. */
+  readonly created_by_staff_id: number | null;
   readonly hold_token_hash: string | null;
   readonly hold_expires_at: Date;
   readonly has_declined_payment: false;
@@ -161,10 +183,14 @@ export interface BookabilityInput {
 
 // --- Holds ----------------------------------------------------------------------------------
 
-/** Who asks for a hold: a guest, or a signed-in customer; either may present an earlier code. */
+/**
+ * Who asks for a hold: a guest, or a signed-in customer, either of whom may present an earlier
+ * code; or a staff member at the counter (U13), whose hold has no code and no customer.
+ */
 export type HoldHolder =
   | { readonly kind: 'guest'; readonly holdCode?: string }
-  | { readonly kind: 'customer'; readonly customerId: number; readonly holdCode?: string };
+  | { readonly kind: 'customer'; readonly customerId: number; readonly holdCode?: string }
+  | { readonly kind: 'staff'; readonly staffUserId: number };
 
 /** `POST /showtimes/{id}/holds`, as validated. */
 export interface CreateHoldInput {
@@ -176,17 +202,28 @@ export interface CreateHoldInput {
 
 /**
  * What a caller proves about a booking: the signed-in customer, and the hold code from
- * `X-Hold-Token`. Either may be absent.
+ * `X-Hold-Token`, or the staff member acting on their own counter hold (U13). Any may be absent.
  */
 export interface HoldAccess {
   readonly customerId?: number;
   readonly holdCode?: string;
+  readonly staffUserId?: number;
 }
 
 /** A new hold code: the code, returned once, and its SHA-256, which is all that is stored. */
 export interface NewHoldCode {
   readonly code: string;
   readonly hash: string;
+}
+
+/**
+ * Who a new hold's row is written for, locked by the caller: the customer, or the staff member of
+ * a counter hold (U13), or neither (a guest, who gets the hold code).
+ */
+export interface HoldRowHolder {
+  readonly customer: Customer | null;
+  readonly member: StaffMember | null;
+  readonly code: NewHoldCode | null;
 }
 
 /** A customer's contact, copied onto a booking they hold. */
@@ -573,4 +610,116 @@ export interface HistoryAuditEvent {
 export interface TicketDelivery {
   readonly channel: TicketDeliveryChannel;
   readonly queuedAt: Date;
+}
+
+// --- Box office (U13) -----------------------------------------------------------------------
+
+/** `POST /admin/counter-holds`, as validated. */
+export interface CounterHoldInput {
+  readonly showtimeId: number;
+  /** 1 to 8 distinct seat labels. */
+  readonly labels: readonly string[];
+}
+
+/** Who a counter sale is for (PRD A6): a walk-in, an existing customer, or typed contact details. */
+export type CounterCustomer =
+  | { readonly kind: 'walk_in' }
+  | { readonly kind: 'existing'; readonly customerId: number }
+  | {
+      readonly kind: 'contact';
+      readonly fullName: string;
+      readonly email: string | null;
+      readonly phone: string | null;
+    };
+
+/** `POST /admin/bookings/{ref}/counter-payments`, as validated. */
+export interface CounterPaymentInput {
+  readonly method: CounterPaymentMethod;
+  /** Required with `card_terminal`, null with `cash`. */
+  readonly receiptReference: string | null;
+  readonly customer: CounterCustomer;
+}
+
+/** What a counter sale writes onto the booking it confirms: its customer and contact, if any. */
+export interface CounterCustomerColumns {
+  readonly customer_id: number | null;
+  readonly contact_name: string | null;
+  readonly contact_email: string | null;
+  readonly contact_phone: string | null;
+  readonly updated_at: Date;
+}
+
+/** `POST /admin/scans`, as validated: a QR payload, or a typed reference with its confirmation. */
+export type ScanInput =
+  | { readonly theaterId: number; readonly via: 'qr'; readonly code: string }
+  | {
+      readonly theaterId: number;
+      readonly via: 'reference';
+      readonly reference: string;
+      readonly confirm: boolean;
+    };
+
+/** The booking a scan admits, as the scan judged it: on this showtime, of this QR version. */
+export interface CheckInTarget {
+  readonly id: number;
+  readonly showtimeId: number;
+  /** The presented QR code's version; null for a typed reference. */
+  readonly qrVersion: number | null;
+}
+
+/** What a scan's verdict is decided from, read at the scan (design §7.9). */
+export interface ScanVerdictInput {
+  /** The theater the scanner stands in. */
+  readonly theaterId: number;
+  readonly showtime: {
+    readonly theaterId: number;
+    readonly status: ShowtimeStatus;
+    readonly startsAt: Date;
+    readonly endsAt: Date;
+  };
+  readonly booking: {
+    readonly status: BookingStatus;
+    readonly qrVersion: number | null;
+    readonly checkedInAt: Date | null;
+  };
+  /** The QR code's version; null for a typed reference. */
+  readonly presentedVersion: number | null;
+  readonly via: ScanVia;
+  /** A typed reference's second request (`confirm: true`); ignored for a QR code. */
+  readonly confirm: boolean;
+}
+
+/** A scan's verdict: admit the booking now, or answer this result and reason. */
+export type ScanVerdict =
+  | { readonly admit: true }
+  | { readonly admit: false; readonly result: ScanResult; readonly reason: ScanReason | null };
+
+/** The booking a scan found, as the scanner screen shows it. */
+export interface ScannedBooking {
+  readonly reference: string;
+  readonly status: BookingDisplayStatus;
+  /** In label order. */
+  readonly seats: readonly string[];
+  readonly seatCount: number;
+  readonly contactName: string | null;
+  readonly showtime: BookingShowtime;
+}
+
+/** What a scan answers (design §7.9): every outcome is a result, never an error. */
+export interface ScanOutcome {
+  readonly result: ScanResult;
+  readonly reason: ScanReason | null;
+  /** The seats it admits, for `VALID`, `ALREADY_USED` and `CONFIRM_REQUIRED`; null otherwise. */
+  readonly admits: number | null;
+  /** When it was admitted: now for `VALID`, the first scan for `ALREADY_USED`; null otherwise. */
+  readonly checkedInAt: Date | null;
+  readonly scannedAt: Date;
+  /** Null for `NOT_FOUND`. */
+  readonly booking: ScannedBooking | null;
+}
+
+/** `@SettleFirst()`'s metadata: what to settle, and where the route names it. */
+export interface SettleFirstOptions {
+  readonly kind: SettleFirstKind;
+  readonly source: SettleFirstSource;
 }

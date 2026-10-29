@@ -7,6 +7,7 @@ import type {
   ChargeResultColumns,
   DueCursor,
   FinishedChargeRow,
+  NewCounterChargeRow,
   NewPaymentRow,
   PaymentKind,
   PaymentRow,
@@ -46,6 +47,13 @@ export class PaymentsRepository {
   constructor(private readonly db: TransactionContext) {}
 
   async insert(row: NewPaymentRow): Promise<PaymentRow> {
+    const [inserted] = await this.payments().insert(row).returning<PaymentRow[]>(PAYMENT_COLUMNS);
+    if (!inserted) throw new AppError('INTERNAL', 'The payment insert returned no row.');
+    return inserted;
+  }
+
+  /** A counter charge (U13), already `succeeded`. */
+  async insertCounterCharge(row: NewCounterChargeRow): Promise<PaymentRow> {
     const [inserted] = await this.payments().insert(row).returning<PaymentRow[]>(PAYMENT_COLUMNS);
     if (!inserted) throw new AppError('INTERNAL', 'The payment insert returned no row.');
     return inserted;
