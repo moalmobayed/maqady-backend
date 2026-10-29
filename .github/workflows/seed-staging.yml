@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 30
     env:
       SEED_API_URL: ${{ inputs.api_url || 'https://maqady-backend.vercel.app/api/v1' }}
-      SEED_ADMIN_EMAIL: staging-admin@maqady.local
+      SEED_ADMIN_EMAIL: eng.mohamedalmobayed@gmail.com
       SEED_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
       SEED_DATASET: ${{ inputs.dataset || 'demo' }}
     steps:
