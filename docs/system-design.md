@@ -134,7 +134,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `payments` | `payments`; the payment-provider interface and the simulated provider. *Deviation (U11, `docs/gh-12-checkout/spec.md`):* `SettlementService`, confirmation and the tickets live in `bookings`, which writes the bookings, claims and messages they change | — |
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
-| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read |
+| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService` |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
 Rules:
@@ -1191,6 +1191,17 @@ paginated route of their own and no customer route reads them. The staff resend
 booking's contact (`NO_CONTACT_DETAILS` with neither). `POST /admin/bookings/{ref}/edit-previews`
 answers `200`.
 
+Payments screen (U16, `docs/gh-17-payments-screen/spec.md`), admins only, both after
+`settleAllDue()`: `GET /admin/payments` lists every `payments` row (charges and refunds) newest
+first by `occurredAt` (`COALESCE(completed_at, created_at)`: when the money moved, or the row was
+written while nothing has), cursor-paged with `total`, with the shown status of §13.3, a refund's
+amount negative, a charge's succeeded and pending refunds, the booking reference and the
+showtime's theater; filters `kind`, `method`, `channel`, `status` (shown), `theaterId`,
+`dateFrom` / `dateTo` (cinema dates of `occurredAt`). `GET /admin/payments/summary?dateFrom&dateTo`
+(default the last 7 cinema days, at most 366) answers the four cards, totals by channel and method,
+the period's failed charges, and the reconciliation by theater, against the provider and of each
+touched booking's balance (§13.3).
+
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
@@ -1350,6 +1361,19 @@ generated contract (§19).
   | Charge `declined`, or `cancelled` by the customer | Failed, with the reason |
   | Refund `pending` | Pending |
   | Refund `succeeded` | Succeeded, with a negative amount |
+- **As built (U16, `docs/gh-17-payments-screen/spec.md`).** One file
+  (`analytics/transaction-status.sql.ts`) owns the table above in code and SQL. "Fully refunded"
+  counts succeeded refunds, so a charge whose counter refund waits at the counter stays Succeeded
+  (its refund row is Pending); "with the reason" is `failureReason` `declined` or `cancelled`. The
+  KPIs count by `completed_at` in the period's cinema days: gross (succeeded charges), refunds
+  (succeeded refunds), net (Collected), by channel and method; `refundRate` = refunds ÷ gross;
+  "Failed today" counts declined and cancelled charges on today's cinema day. The reconciliation
+  folds the same aggregates by the booking's showtime's theater (Online, Cash, Terminal, Refunds,
+  Net), retrieves every final online charge of the period from the `PaymentProvider` and compares
+  its status (`provider_status`, `provider_unknown`, `missing_provider_reference`), and checks
+  each booking touched in the period: succeeded charges minus refunds (pending included) must equal
+  its total while confirmed and 0 otherwise (`booking_balance`), and no charge may be refunded
+  beyond its amount (`over_refunded`).
 - **Alerts.** Computed on read, each with a stable key:
   - failed online payments today (`failed-payments:<date>:<count>`);
   - showtimes later today under 35% sold (`low-sales:<showtimeId>`);
