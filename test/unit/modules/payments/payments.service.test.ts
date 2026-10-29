@@ -308,3 +308,211 @@ describe('PaymentsService', () => {
     expect(repository.due).toHaveBeenCalledWith(NOW, 100, after);
   });
 });
+
+describe('PaymentsService refunds per charge and payouts (U14)', () => {
+  let repository: Record<
+    | 'countsOf'
+    | 'insertRefunds'
+    | 'ledgerOf'
+    | 'findLedgerEntry'
+    | 'markPaidOut'
+    | 'moneyMovedBetween'
+    | 'refundTotalOf',
+    jest.Mock
+  >;
+  let provider: Record<'charge' | 'retrieve' | 'refund', jest.Mock>;
+  let active: boolean;
+  let service: PaymentsService;
+
+  const ledgerRow = (overrides: Partial<PaymentRow> & Record<string, unknown> = {}) => ({
+    ...paymentRow({
+      status: 'succeeded',
+      provider_reference: 'sim.sim_card_visa.1.0123456789abcdef',
+      completed_at: NOW,
+    }),
+    collected_by_staff_id: null,
+    paid_out_at: null,
+    paid_out_by_staff_id: null,
+    refunded_amount: 0,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    active = true;
+    repository = {
+      countsOf: jest.fn().mockResolvedValue([{ booking_id: 100, count: 1 }]),
+      insertRefunds: jest.fn((rows: Record<string, unknown>[]) =>
+        Promise.resolve(rows.map((row, index) => ledgerRow({ ...row, id: 60 + index }))),
+      ),
+      ledgerOf: jest.fn().mockResolvedValue([]),
+      findLedgerEntry: jest.fn().mockResolvedValue(undefined),
+      markPaidOut: jest.fn().mockResolvedValue(undefined),
+      moneyMovedBetween: jest.fn().mockResolvedValue({ collected: -1500, declined: 2 }),
+      refundTotalOf: jest.fn().mockResolvedValue(30000),
+    };
+    provider = {
+      charge: jest.fn(),
+      retrieve: jest.fn(),
+      refund: jest.fn().mockResolvedValue({ status: 'succeeded', providerReference: 'simr.abc' }),
+    };
+    service = new PaymentsService(
+      repository as unknown as PaymentsRepository,
+      provider,
+      { isActive: () => active } as unknown as TransactionContext,
+      new TestClock(NOW),
+    );
+  });
+
+  it('reads a charge’s remaining refundable amount from the refunds naming it', async () => {
+    repository.ledgerOf.mockResolvedValue([
+      ledgerRow({ refunded_amount: 8000 }),
+      ledgerRow({ id: 8, kind: 'refund', refund_of_payment_id: 7, amount: 8000 }),
+      ledgerRow({ id: 9, status: 'declined' }),
+    ]);
+    const [charge, refund, declined] = await service.ledgerOf([100]);
+    expect(charge?.refundable).toEqual(money(30000));
+    expect(refund?.refundable).toBeNull();
+    expect(declined?.refundable).toBeNull();
+  });
+
+  it('refunds online through the provider and at the counter as pending, in one insert', async () => {
+    const card = {
+      ...toPayment(
+        paymentRow({
+          status: 'succeeded',
+          provider_reference: 'sim.sim_card_visa.1.0123456789abcdef',
+        }),
+      ),
+      collectedByStaffId: null,
+      paidOutAt: null,
+      paidOutByStaffId: null,
+      refundable: money(38000),
+    };
+    const cash = {
+      ...toPayment(
+        paymentRow({
+          id: 8,
+          method: 'cash',
+          status: 'succeeded',
+          provider_idempotency_key: null,
+          amount: 8000,
+        }),
+      ),
+      collectedByStaffId: 5,
+      paidOutAt: null,
+      paidOutByStaffId: null,
+      refundable: money(8000),
+    };
+    const refunds = await service.refund(
+      [
+        { charge: card, amount: money(30000), reference: 'MQ-7K3P9Q' },
+        { charge: cash, amount: money(8000), reference: 'MQ-7K3P9Q' },
+      ],
+      'edit_difference',
+    );
+    expect(provider.refund).toHaveBeenCalledTimes(1);
+    expect(provider.refund).toHaveBeenCalledWith({
+      chargeReference: 'sim.sim_card_visa.1.0123456789abcdef',
+      amount: money(30000),
+      idempotencyKey: 'MQ-7K3P9Q-r2',
+    });
+    const [rows] = repository.insertRefunds.mock.calls[0] as [Record<string, unknown>[]];
+    expect(rows).toEqual([
+      expect.objectContaining({
+        kind: 'refund',
+        purpose: 'edit_difference',
+        method: 'card',
+        status: 'succeeded',
+        amount: 30000,
+        refund_of_payment_id: 7,
+        provider_idempotency_key: 'MQ-7K3P9Q-r2',
+        provider_reference: 'simr.abc',
+        completed_at: NOW,
+      }),
+      expect.objectContaining({
+        method: 'cash',
+        status: 'pending',
+        amount: 8000,
+        refund_of_payment_id: 8,
+        provider_idempotency_key: null,
+        provider_reference: null,
+        completed_at: null,
+      }),
+    ]);
+    expect(refunds.map((refund) => refund.id)).toEqual([60, 61]);
+  });
+
+  it('refuses more than is left, a charge named twice, a declined charge and no transaction', async () => {
+    const charge = {
+      ...toPayment(paymentRow({ status: 'succeeded', provider_reference: 'sim.a' })),
+      collectedByStaffId: null,
+      paidOutAt: null,
+      paidOutByStaffId: null,
+      refundable: money(10000),
+    };
+    const internal = expect.objectContaining({ code: 'INTERNAL' });
+    await expect(
+      service.refund([{ charge, amount: money(10001), reference: 'MQ-7K3P9Q' }], 'cancellation'),
+    ).rejects.toEqual(internal);
+    await expect(
+      service.refund(
+        [
+          { charge, amount: money(1), reference: 'MQ-7K3P9Q' },
+          { charge, amount: money(1), reference: 'MQ-7K3P9Q' },
+        ],
+        'cancellation',
+      ),
+    ).rejects.toEqual(internal);
+    await expect(
+      service.refund(
+        [
+          {
+            charge: { ...charge, status: 'declined', refundable: null },
+            amount: money(1),
+            reference: 'MQ-7K3P9Q',
+          },
+        ],
+        'cancellation',
+      ),
+    ).rejects.toEqual(internal);
+    await expect(
+      service.refund([{ charge, amount: money(0), reference: 'MQ-7K3P9Q' }], 'cancellation'),
+    ).rejects.toEqual(internal);
+    active = false;
+    await expect(
+      service.refund([{ charge, amount: money(1), reference: 'MQ-7K3P9Q' }], 'cancellation'),
+    ).rejects.toEqual(internal);
+    expect(provider.refund).not.toHaveBeenCalled();
+    expect(repository.insertRefunds).not.toHaveBeenCalled();
+  });
+
+  it('pays out a pending refund, or answers null when it was not pending', async () => {
+    expect(await service.markPaidOut(61, 3)).toBeNull();
+    repository.markPaidOut.mockResolvedValue(
+      ledgerRow({
+        id: 61,
+        kind: 'refund',
+        method: 'cash',
+        paid_out_at: NOW,
+        paid_out_by_staff_id: 3,
+      }),
+    );
+    expect(await service.markPaidOut(61, 3)).toMatchObject({
+      id: 61,
+      paidOutAt: NOW,
+      paidOutByStaffId: 3,
+    });
+    expect(repository.markPaidOut).toHaveBeenCalledWith(61, 3, NOW);
+    active = false;
+    await expect(service.markPaidOut(61, 3)).rejects.toMatchObject({ code: 'INTERNAL' });
+  });
+
+  it('reports the money moved in a period, which can be negative, and refund totals', async () => {
+    const range = { from: NOW, to: new Date(NOW.getTime() + 1000) };
+    expect(await service.moneyMovedBetween(range)).toEqual({
+      collected: money(-1500),
+      declinedCount: 2,
+    });
+    expect(await service.refundTotalOf([100], 'cancellation')).toEqual(money(30000));
+  });
+});
