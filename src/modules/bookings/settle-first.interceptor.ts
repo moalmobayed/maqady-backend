@@ -19,7 +19,8 @@ const SHOWTIME_ID_PARAM = /^[1-9][0-9]{0,15}$/;
  * after the guards (the caller is known) and before the request transaction opens: settlement
  * commits in its own transaction first, and the request then takes its own locks in order.
  *
- * The scope is the path's booking reference or showtime id (or the body's `showtimeId`, U13),
+ * The scope is the path's booking reference or showtime id (or the body's typed `reference` or
+ * `showtimeId`, U13),
  * plus the calling customer. Pipes have not run yet, so a malformed parameter settles nothing and
  * the route's validation answers it. Other routes, and contexts other than HTTP, pass straight through. A settlement error fails
  * the request (`SERVICE_UNAVAILABLE` when the database is down).
@@ -52,7 +53,7 @@ export function scopeOf(
   const customer =
     request.principal?.kind === 'customer' ? { customerId: request.principal.id } : {};
   if (kind === 'booking') {
-    const ref = request.params?.ref;
+    const ref = source === 'body' ? bodyReference(request) : request.params?.ref;
     return typeof ref === 'string' && REFERENCE_PATTERN.test(ref)
       ? { bookingReference: ref, ...customer }
       : undefined;
@@ -65,6 +66,17 @@ function paramShowtimeId(request: Request): number | undefined {
   const id = request.params?.id;
   const showtimeId = typeof id === 'string' && SHOWTIME_ID_PARAM.test(id) ? Number(id) : NaN;
   return Number.isSafeInteger(showtimeId) ? showtimeId : undefined;
+}
+
+/**
+ * The raw JSON body's typed `reference` (`POST /admin/scans`, U13), as validation normalises it:
+ * trimmed and upper-cased. Anything else settles nothing.
+ */
+function bodyReference(request: Request): string | undefined {
+  const body: unknown = request.body;
+  if (typeof body !== 'object' || body === null) return undefined;
+  const value = (body as Record<string, unknown>).reference;
+  return typeof value === 'string' ? value.trim().toUpperCase() : undefined;
 }
 
 /** The raw JSON body's `showtimeId`: a positive safe integer, or nothing to settle. */

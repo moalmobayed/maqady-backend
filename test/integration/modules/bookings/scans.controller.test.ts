@@ -305,6 +305,76 @@ describe('Ticket scanning (integration)', () => {
       });
     });
 
+    it('settles a due online payment before judging a typed reference, so a paid customer is admitted', async () => {
+      clock.set(SALE_TIME);
+      const online = await customerHold(testApp, showtime.showtimeId, ['C6']);
+      const paying = await pay(testApp, online.customer.authorization, online.reference, {
+        method: 'card',
+        token: 'sim_card_slow',
+      });
+      expect(paying.body.payment.status).toBe('processing');
+      await at(AT_DOOR);
+
+      const admitted = await scan({
+        theaterId: showtime.theaterId,
+        reference: online.reference,
+        confirm: true,
+      });
+      expect(admitted.body).toMatchObject({
+        result: 'VALID',
+        reason: null,
+        admits: 1,
+        booking: { reference: online.reference, status: 'confirmed' },
+      });
+      expect((await checkIn(online.reference)).checked_in_by_staff_id).toBe(scanner.staffUserId);
+    });
+
+    it('never admits a booking an edit moved to another showtime while the scan waited', async () => {
+      const { reference } = await sold(['D4']);
+      await at(AT_DOOR);
+      const booking = (await testApp
+        .knex('bookings')
+        .select('id')
+        .where({ reference })
+        .first()) as { id: number };
+
+      // Hold the showtime so the scan reads the booking, then waits for its FOR SHARE lock.
+      const blocker = await testApp.knex.transaction();
+      try {
+        await blocker.raw('SELECT id FROM showtimes WHERE id = ? FOR UPDATE', [
+          showtime.showtimeId,
+        ]);
+        const scanning = scan({ theaterId: showtime.theaterId, reference, confirm: true }).then(
+          (response) => response,
+        );
+        for (let waited = 0; ; waited += 1) {
+          const [{ n }] = (
+            await testApp.knex.raw<{ rows: { n: number }[] }>(
+              "SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+            )
+          ).rows as [{ n: number }];
+          if (n > 0) break;
+          if (waited > 200) throw new Error('the scan never waited for the showtime lock');
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        // An edit (U14) moves the booking to a showtime of another theater, keeping its QR version.
+        await testApp.knex.transaction(async (trx) => {
+          await trx('seat_claims').where({ booking_id: booking.id }).delete();
+          await trx('bookings')
+            .where({ id: booking.id })
+            .update({ showtime_id: elsewhere.showtimeId });
+        });
+        await blocker.commit();
+
+        const response = await scanning;
+        expect(response.body).toMatchObject({ result: 'WRONG_SHOWTIME', reason: 'other_theater' });
+        expect(response.body.booking.showtime.id).toBe(elsewhere.showtimeId);
+        expect((await checkIn(reference)).checked_in_at).toBeNull();
+      } finally {
+        if (!blocker.isCompleted()) await blocker.rollback();
+      }
+    });
+
     it('refuses a wrong reference, an unpaid hold and a reference of another theater', async () => {
       const there = await sold(['B1'], elsewhere);
       const fresh = await signInStaff(testApp, seller.email, seller.password);

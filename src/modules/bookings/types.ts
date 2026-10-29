@@ -564,6 +564,14 @@ export type ScanInput =
       readonly confirm: boolean;
     };
 
+/** The booking a scan admits, as the scan judged it: on this showtime, of this QR version. */
+export interface CheckInTarget {
+  readonly id: number;
+  readonly showtimeId: number;
+  /** The presented QR code's version; null for a typed reference. */
+  readonly qrVersion: number | null;
+}
+
 /** What a scan's verdict is decided from, read at the scan (design §7.9). */
 export interface ScanVerdictInput {
   /** The theater the scanner stands in. */

@@ -22693,7 +22693,7 @@ paths:
         - `WRONG_SHOWTIME` with `reason`: `other_theater`, `cancelled`, `not_open_yet` (scanning opens 60 minutes before the start) or `ended` (it closes when the showtime ends).
         - `NOT_VALID` with `reason`: `refunded`, `not_paid` (a hold), or `replaced` (an older QR code, voided by an edit).
         - `NOT_FOUND`: not a Maqady ticket (another QR code, a tampered or forged one: the signature is verified) or no such reference.
-        - `CONFIRM_REQUIRED`: a typed reference. The booking is shown (showtime, seats, contact name) but nobody is admitted: compare it with the customer, then send the same reference with `confirm: true` to check it in. The reference alone admits nobody.
+        - `CONFIRM_REQUIRED`: a typed reference. The booking is shown (showtime, seats, contact name) but nobody is admitted: compare it with the customer, then send the same reference with `confirm: true` to check it in. The reference alone admits nobody. A typed reference's due online payment is settled first, so a booking paid with a slow method reads as paid.
 
         The checks run in that order: theater, cancellation, payment, QR version, window, then the earlier scan. Two scans of one ticket at once admit it exactly once. A check-in is recorded in the activity log with the member who scanned it. An unknown `theaterId`: `NOT_FOUND` (an error).
       operationId: scan

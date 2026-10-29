@@ -671,7 +671,7 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   `404`. The rules apply in that order (theater, cancellation, payment, QR version, window, the
   earlier scan, confirmation), so a refunded ticket is never told to come back later. Admission is
   one conditional update after the showtime's `FOR SHARE`; when it changes nothing the row is read
-  again and its verdict answered. `0140_02` lets only a confirmed or refunded booking carry a
+  again and its verdict answered. The check-in also names the showtime it judged, so a booking an edit moved meanwhile is judged again under its new showtime's lock, and a typed reference's due payments are settled first (`@SettleFirst('booking', 'body')`). `0140_02` lets only a confirmed or refunded booking carry a
   check-in. `GET /admin/bookings/{ref}/ticket.pdf` serves any booking with a ticket and records
   `booking.ticket_downloaded`.
 

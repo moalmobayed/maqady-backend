@@ -7,6 +7,7 @@ import type {
   BookingOwnerColumns,
   BookingRow,
   BookingSeatRow,
+  CheckInTarget,
   CounterCustomerColumns,
   NewBookingRow,
   SqlPredicate,
@@ -181,18 +182,20 @@ export class BookingsRepository {
 
   /**
    * Admits a confirmed booking at the entrance (design §7.9), atomically: only while it is still
-   * `confirmed`, never admitted, and (for a QR code) of the presented QR version. Two scans of one
-   * ticket serialize on the row; the second re-checks the condition after the first commits and
-   * changes nothing. Returns the admission time, or undefined when nothing changed.
+   * `confirmed`, never admitted, on the showtime the scan judged (an edit may move it, U14) and,
+   * for a QR code, of the presented QR version. Two scans of one ticket serialize on the row; the
+   * second re-checks the condition after the first commits and changes nothing. Returns the
+   * admission time, or undefined when nothing changed.
    */
   async checkIn(
-    id: number,
-    qrVersion: number | null,
+    presented: CheckInTarget,
     staffUserId: number,
     now: Date,
   ): Promise<Date | undefined> {
-    const query = this.bookings().where({ id, status: 'confirmed' }).whereNull('checked_in_at');
-    if (qrVersion !== null) query.andWhere({ qr_version: qrVersion });
+    const query = this.bookings()
+      .where({ id: presented.id, showtime_id: presented.showtimeId, status: 'confirmed' })
+      .whereNull('checked_in_at');
+    if (presented.qrVersion !== null) query.andWhere({ qr_version: presented.qrVersion });
     const [row] = await query
       .update({ checked_in_at: now, checked_in_by_staff_id: staffUserId, updated_at: now })
       .returning<{ checked_in_at: Date }[]>('checked_in_at');

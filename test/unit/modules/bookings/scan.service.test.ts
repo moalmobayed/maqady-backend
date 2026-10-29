@@ -108,7 +108,11 @@ describe('ScanService', () => {
       'seats',
     ]);
     expect(qrCodes.verify).toHaveBeenCalledWith('MQ1.x');
-    expect(bookings.checkIn).toHaveBeenCalledWith(100, 1, 7, NOW);
+    expect(bookings.checkIn).toHaveBeenCalledWith(
+      { id: 100, showtimeId: 81, qrVersion: 1 },
+      7,
+      NOW,
+    );
     expect(audit.record).toHaveBeenCalledWith({
       actor: { kind: 'staff', id: 7 },
       action: 'booking.checked_in',
@@ -200,7 +204,11 @@ describe('ScanService', () => {
       confirm: true,
     });
     expect(admitted.result).toBe('VALID');
-    expect(bookings.checkIn).toHaveBeenCalledWith(100, null, 7, NOW);
+    expect(bookings.checkIn).toHaveBeenCalledWith(
+      { id: 100, showtimeId: 81, qrVersion: null },
+      7,
+      NOW,
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { theaterId: 3, via: 'reference' } }),
     );
@@ -213,6 +221,33 @@ describe('ScanService', () => {
       .mockResolvedValueOnce(row({ checked_in_at: EARLIER, checked_in_by_staff_id: 8 }));
     const outcome = await service.scan(STAFF, { theaterId: 3, via: 'qr', code: 'MQ1.x' });
     expect(outcome).toMatchObject({ result: 'ALREADY_USED', checkedInAt: EARLIER });
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('judges a booking an edit moved meanwhile again, under its new showtime lock', async () => {
+    const moved = {
+      ...CONTEXT,
+      view: { ...CONTEXT.view, id: 82, theaterId: 4 },
+      header: { id: 82, theater: { id: 4, name: 'Cairo Festival' } },
+    } as unknown as ShowtimeContext;
+    bookings.checkIn.mockResolvedValue(undefined);
+    bookings.findByReference
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ showtime_id: 82 }));
+    showtimes.lockedBookingContext.mockResolvedValueOnce(CONTEXT).mockResolvedValueOnce(moved);
+    const outcome = await service.scan(STAFF, {
+      theaterId: 3,
+      via: 'reference',
+      reference: 'MQ-7K3P9Q',
+      confirm: true,
+    });
+    expect(showtimes.lockedBookingContext.mock.calls).toEqual([[81], [82]]);
+    expect(bookings.checkIn).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({
+      result: 'WRONG_SHOWTIME',
+      reason: 'other_theater',
+      booking: { showtime: { id: 82 } },
+    });
     expect(audit.record).not.toHaveBeenCalled();
   });
 

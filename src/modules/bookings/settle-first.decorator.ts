@@ -7,7 +7,8 @@ import type { SettleFirstKind, SettleFirstOptions, SettleFirstSource } from './t
  * transaction committed before the request's: those of the booking `{ref}` (`'booking'`) or of
  * bookings on the showtime `{id}` (`'showtime'`), and those of the calling customer's bookings.
  * With `source: 'body'` the showtime is the JSON body's `showtimeId` instead of the path's
- * (`POST /admin/counter-holds`, U13). `SettleFirstInterceptor` reads it. Exported for the box
+ * (`POST /admin/counter-holds`, U13), and the booking the body's typed `reference`
+ * (`POST /admin/scans`, U13). `SettleFirstInterceptor` reads it. Exported for the box
  * office and admin routes (U13, U14).
  */
 export const SettleFirst = (

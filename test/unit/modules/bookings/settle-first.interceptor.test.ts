@@ -15,6 +15,9 @@ class Routes {
   @SettleFirst('showtime', 'body')
   showtimeInBody(): void {}
 
+  @SettleFirst('booking', 'body')
+  bookingInBody(): void {}
+
   plain(): void {}
 }
 
@@ -102,6 +105,25 @@ describe('SettleFirstInterceptor', () => {
       { showtimeId: Number.MAX_SAFE_INTEGER + 1 },
     ]) {
       await run('showtimeInBody', { params: { id: '5' }, body });
+    }
+    expect(settlement.settleDue).not.toHaveBeenCalled();
+  });
+
+  it("settles the body's typed reference for a route that names it there (U13), and nothing else", async () => {
+    await run('bookingInBody', { params: {}, body: { reference: '  mq-7k3p9q ' } });
+    expect(settlement.settleDue).toHaveBeenLastCalledWith({ bookingReference: 'MQ-7K3P9Q' });
+    settlement.settleDue.mockClear();
+    for (const body of [
+      undefined,
+      null,
+      'text',
+      {},
+      { code: 'MQ1.MQ-7K3P9Q.1.x' },
+      { reference: 42 },
+      { reference: 'MQ-0OIL11' },
+      { reference: 'MQ-7K3P9QQ' },
+    ]) {
+      await run('bookingInBody', { params: { ref: 'MQ-7K3P9Q' }, body });
     }
     expect(settlement.settleDue).not.toHaveBeenCalled();
   });

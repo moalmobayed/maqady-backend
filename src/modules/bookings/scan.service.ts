@@ -21,6 +21,9 @@ import type {
   ShowtimeContext,
 } from './types';
 
+/** How many times a scan judges a booking that edits keep moving to another showtime. */
+const SCAN_ATTEMPTS = 3;
+
 /** The results that show how many people the booking admits. */
 const ADMITTING_RESULTS: readonly ScanResult[] = ['VALID', 'ALREADY_USED', 'CONFIRM_REQUIRED'];
 
@@ -59,33 +62,50 @@ export class ScanService {
       const found = presented && (await this.bookings.findByReference(presented.reference));
       if (!presented || !found) return notFound(now);
 
-      const context = await this.showtimes.lockedBookingContext(found.showtime_id);
-      const verdict = this.verdictOf(input, found, presented.version, context, now);
-      if (!verdict.admit) {
-        return this.outcome(found, context, verdict.result, verdict.reason, null, now);
-      }
+      let row = found;
+      for (let attempt = 1; ; attempt += 1) {
+        const context = await this.showtimes.lockedBookingContext(row.showtime_id);
+        const verdict = this.verdictOf(input, row, presented.version, context, now);
+        if (!verdict.admit) {
+          return this.outcome(row, context, verdict.result, verdict.reason, null, now);
+        }
 
-      const checkedInAt = await this.bookings.checkIn(found.id, presented.version, staff.id, now);
-      if (checkedInAt) {
-        await this.audit.record({
-          actor: { kind: 'staff', id: staff.id },
-          action: BOOKING_CHECKED_IN_ACTION,
-          entity: { type: BOOKING_ENTITY, id: found.id },
-          bookingId: found.id,
-          metadata: { theaterId: input.theaterId, via: input.via },
-        });
-        return this.outcome(found, context, 'VALID', null, checkedInAt, now);
-      }
+        const checkedInAt = await this.bookings.checkIn(
+          { id: row.id, showtimeId: row.showtime_id, qrVersion: presented.version },
+          staff.id,
+          now,
+        );
+        if (checkedInAt) {
+          await this.audit.record({
+            actor: { kind: 'staff', id: staff.id },
+            action: BOOKING_CHECKED_IN_ACTION,
+            entity: { type: BOOKING_ENTITY, id: row.id },
+            bookingId: row.id,
+            metadata: { theaterId: input.theaterId, via: input.via },
+          });
+          return this.outcome(row, context, 'VALID', null, checkedInAt, now);
+        }
 
-      // Another scan, a refund or an edit changed the row while this one waited on it: answer
-      // what the row says now. Its verdict can no longer admit.
-      const fresh = await this.bookings.findByReference(found.reference);
-      if (!fresh) throw new AppError('INTERNAL', 'A scanned booking disappeared.');
-      const again = this.verdictOf(input, fresh, presented.version, context, now);
-      if (again.admit) {
-        throw new AppError('INTERNAL', 'A booking refused admission still reads as admissible.');
+        // Another scan, a refund or an edit changed the row while this one waited on it: answer
+        // what the row says now. Its verdict can no longer admit, unless an edit moved it to
+        // another showtime, which is then judged again under that showtime's lock.
+        const fresh = await this.bookings.findByReference(row.reference);
+        if (!fresh) throw new AppError('INTERNAL', 'A scanned booking disappeared.');
+        if (fresh.showtime_id === row.showtime_id) {
+          const again = this.verdictOf(input, fresh, presented.version, context, now);
+          if (again.admit) {
+            throw new AppError(
+              'INTERNAL',
+              'A booking refused admission still reads as admissible.',
+            );
+          }
+          return this.outcome(fresh, context, again.result, again.reason, null, now);
+        }
+        if (attempt >= SCAN_ATTEMPTS) {
+          throw new AppError('INTERNAL', 'A scanned booking kept moving between showtimes.');
+        }
+        row = fresh;
       }
-      return this.outcome(fresh, context, again.result, again.reason, null, now);
     });
   }
 
