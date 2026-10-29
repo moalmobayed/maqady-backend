@@ -1450,7 +1450,7 @@ paths:
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '409':
-          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password".'
+          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password". On an admin edit of a customer (U15): another live customer account already uses this email, whatever the letter case.'
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -6918,7 +6918,7 @@ paths:
                               - label must be a string
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
         '409':
-          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password".'
+          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password". On an admin edit of a customer (U15): another live customer account already uses this email, whatever the letter case.'
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -23681,7 +23681,7 @@ paths:
         Staff (box office or admin): the Bookings table (PRD A6), newest first, cursor-paged, with `total` under the same filters. Due slow payments are settled first, so nothing shows a stale `processing`.
 
         - `q` searches a booking reference exactly (any case), else part of the contact name, email or phone (case-insensitive; a local Egyptian mobile such as `01012345678` also finds `+201012345678`).
-        - Filters combine: `theaterId`, `movieId`, `status` (decided now from stored times), `channel`, `method` (a sale payment of that method), `dateFrom` / `dateTo` (cinema dates the booking was made on, inclusive).
+        - Filters combine: `theaterId`, `movieId`, `status` (decided now from stored times), `channel`, `method` (a sale payment of that method), `dateFrom` / `dateTo` (cinema dates the booking was made on, inclusive), `customerId` (one customer's bookings, the Customers drawer).
         - Each row carries the contact, the showtime header, the seats, the total, the latest payment and the check-in.
       operationId: listAdminBookings
       parameters:
@@ -23769,6 +23769,15 @@ paths:
             nullable: false
             example: '2026-10-16'
             type: string
+        - name: customerId
+          required: false
+          in: query
+          description: Only this customer's bookings, whatever the channel (the Customers drawer's bookings, `GET /admin/customers/{id}`). An unknown or anonymised customer simply has none.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
       responses:
         '200':
           description: One page of bookings
@@ -26584,6 +26593,1344 @@ paths:
         - 'Admin: showtimes'
       security:
         - staff: []
+  /admin/customers:
+    get:
+      description: |-
+        Staff (box office or admin): the Customers table (PRD A7), newest account first, cursor-paged, with `total` under the same filters. Deleted (anonymised) accounts are never listed. Due slow payments are settled first, so the numbers match the Bookings screen.
+
+        - `q` matches part of the name, email or phone, case-insensitively (a local Egyptian mobile such as `01012345678` also finds `+201012345678`).
+        - `status` keeps only `active` or only `blocked` customers.
+        - Each row carries `stats`: Bookings (paid and not refunded), Spent, No-shows (shows that ended, never scanned) and Last booking.
+      operationId: listAdminCustomers
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: q
+          required: false
+          in: query
+          description: Search, 2 to 100 characters (surrounding spaces dropped), matched case-insensitively anywhere in the customer's name, email or phone ("Name, email or phone"). An Egyptian mobile typed locally (`01012345678`) also finds its stored `+201012345678`. `%` and `_` match only themselves.
+          schema:
+            minLength: 2
+            maxLength: 100
+            nullable: false
+            example: layla
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: 'The status radio: only `active` or only `blocked` customers. Omit for All.'
+          schema:
+            $ref: '#/components/schemas/CustomerStatus'
+      responses:
+        '200':
+          description: One page of customers
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCustomerResponsePage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: List customers
+      tags:
+        - 'Admin: customers'
+      security:
+        - staff: []
+  /admin/customers/{id}:
+    get:
+      description: |-
+        Staff (box office or admin): the customer drawer (PRD A7): the details, the Bookings, Spent and No-shows stats, and "Recent bookings" (the 4 newest, any status, as the Bookings table shows them; all of them with `GET /admin/bookings?customerId=`). Box office sees it read-only.
+
+        - A deleted (anonymised) or unknown customer is `NOT_FOUND`; the booking detail's customer card says `anonymised: true` for those.
+        - Due slow payments are settled first.
+      operationId: getAdminCustomer
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Customer id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+      responses:
+        '200':
+          description: The customer
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCustomerDetail'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: A customer's drawer
+      tags:
+        - 'Admin: customers'
+      security:
+        - staff: []
+    patch:
+      description: |-
+        Admin only: "Save details", Block and Unblock in the drawer (PRD A7, Accounts 5). Send any of `fullName`, `email`, `phone` (`null` removes it) and `status`; fields not sent stay, and values equal to the stored ones change nothing. All of it applies together or not at all.
+
+        - A new email must not belong to another live account (`EMAIL_TAKEN`). It is unverified from then on, and the customer's unused verification and reset links stop working.
+        - `status: blocked` signs the customer out everywhere at once (their next request is `401`), and their sign-in and refresh answer `ACCOUNT_BLOCKED`; paid tickets stay valid. `status: active` unblocks: they sign in and book again right away.
+        - Bookings keep the contact they were made with; edit a booking's contact on the booking.
+        - A deleted (anonymised) or unknown customer is `NOT_FOUND`.
+        - Recorded in the activity log with the names of the changed fields, never their values.
+        - Answers the customer with their stats (without `recentBookings`, which an edit does not change).
+      operationId: updateAdminCustomer
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Customer id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: The customer after the change
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCustomer'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`EMAIL_TAKEN`: Sign in instead, or use "Forgot password". On an admin edit of a customer (U15): another live customer account already uses this email, whatever the letter case.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                EMAIL_TAKEN:
+                  summary: EMAIL_TAKEN
+                  value:
+                    error:
+                      code: EMAIL_TAKEN
+                      message: An account with this email already exists.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Edit a customer, block or unblock them
+      tags:
+        - 'Admin: customers'
+      security:
+        - staff: []
+    delete:
+      description: |-
+        Admin only: "Delete account" (PRD Accounts 6, A7). The customer is anonymised in one transaction, never hard-deleted:
+
+        - their name, email, phone and password are removed, and the account is marked deleted: it disappears from the list, its sign-in and tokens stop working, and the email can register again;
+        - the name, email and phone copied onto their bookings are cleared;
+        - their sessions, verification and reset links, stored request results and messages are deleted, and so are the internal notes on their bookings;
+        - their bookings and payments stay for accounting (`bookingsKept`), with their seats and totals; a paid ticket stays valid.
+
+        A deleted or unknown customer is `NOT_FOUND`, so a repeated delete answers `NOT_FOUND`. Recorded in the activity log with the counts only.
+      operationId: anonymiseAdminCustomer
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Customer id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '200':
+          description: The customer was anonymised
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAnonymisation'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Delete (anonymise) a customer
+      tags:
+        - 'Admin: customers'
+      security:
+        - staff: []
+  /admin/customers/{id}/password-reset-requests:
+    post:
+      description: |-
+        Admin only: "Send password reset email" in the drawer (PRD "Email and SMS": admin sends a reset). Emails the account email a link to `/reset-password` that works once, for 1 hour; an earlier unused reset link stops working. The link is only in the email: the response and the Message log never show it.
+
+        - A blocked customer is `CUSTOMER_BLOCKED` and nothing is sent (the link would be refused); unblock first.
+        - A deleted (anonymised) or unknown customer is `NOT_FOUND`.
+        - Requires `Idempotency-Key`: a retry with the same key sends no second email.
+        - Recorded in the activity log.
+      operationId: requestAdminCustomerPasswordReset
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: Customer id.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      responses:
+        '202':
+          description: The reset email is queued
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPasswordReset'
+        '400':
+          description: |-
+            `VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.
+
+            `IDEMPOTENCY_KEY_REQUIRED`: The route changes something that must not happen twice, so it requires an `Idempotency-Key` header: a new UUID per user action, reused when retrying that same action.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                IDEMPOTENCY_KEY_REQUIRED:
+                  summary: IDEMPOTENCY_KEY_REQUIRED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REQUIRED
+                      message: This request needs an Idempotency-Key header.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '409':
+          description: '`CUSTOMER_BLOCKED`: A password reset link is not sent to a blocked customer (U15): the link would be refused with `ACCOUNT_BLOCKED` when used. Unblock the customer (`PATCH /admin/customers/{id}` with `status: active`), then send it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                CUSTOMER_BLOCKED:
+                  summary: CUSTOMER_BLOCKED
+                  value:
+                    error:
+                      code: CUSTOMER_BLOCKED
+                      message: This customer is blocked; unblock them first.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Send the customer a password reset email
+      tags:
+        - 'Admin: customers'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -26622,6 +27969,8 @@ tags:
     description: Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset
   - name: 'Admin: bookings'
     description: 'The Bookings page: search and filters, the summary cards, a booking''s detail, internal notes, resending tickets (both roles); cancel and refund, payouts and edits (admins only)'
+  - name: 'Admin: customers'
+    description: 'The Customers page: search, the status filter and a customer''s drawer with Bookings, Spent and No-shows (both roles); edit, block and unblock, the reset email and Delete account (admins only)'
   - name: Profile
     description: 'The signed-in customer: details and password'
   - name: My bookings
@@ -34687,6 +36036,345 @@ components:
         - liveHoldCount
         - emailCount
         - smsCount
+    CustomerStats:
+      type: object
+      properties:
+        bookings:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 6
+          description: 'Paid bookings the customer holds: Confirmed and Completed (online or at the counter). A refunded booking no longer counts.'
+        spent:
+          nullable: false
+          description: 'The totals of those bookings (after any edit): what the customer has paid and kept. Zero with none.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        noShows:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 1
+          description: 'No-shows: those bookings whose showtime has ended and that were never scanned at the entrance. A show not yet over is never a no-show.'
+        lastBookingAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T19:02:00+03:00'
+          description: When the newest of those bookings was made; null with none.
+      required:
+        - bookings
+        - spent
+        - noShows
+        - lastBookingAt
+    AdminCustomer:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 42
+          description: Customer id.
+        fullName:
+          type: string
+          nullable: false
+          example: Layla Hassan
+          description: Full name.
+        email:
+          type: string
+          format: email
+          nullable: false
+          example: layla.hassan@example.com
+          description: The sign-in email.
+        phone:
+          type: string
+          nullable: true
+          example: '+201012345678'
+          description: Mobile number in international (E.164) form, or null when none is on file.
+        status:
+          nullable: false
+          example: active
+          description: '`active`, or `blocked` (signed out everywhere, refused at sign-in; paid tickets stay valid).'
+          allOf:
+            - $ref: '#/components/schemas/CustomerStatus'
+        emailVerified:
+          type: boolean
+          nullable: false
+          example: true
+          description: Whether the customer has verified the email.
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-02T21:10:00+02:00'
+          description: When the email was verified, or null while it is not.
+        joinedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-03-02T21:05:00+02:00'
+          description: When the account was created (the JOINED column).
+        lastSignInAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T18:40:00+03:00'
+          description: The latest sign-in, or null when the customer never signed in.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T18:40:00+03:00'
+          description: When the account last changed.
+        stats:
+          nullable: false
+          description: Bookings, Spent, No-shows and Last booking.
+          allOf:
+            - $ref: '#/components/schemas/CustomerStats'
+      required:
+        - id
+        - fullName
+        - email
+        - phone
+        - status
+        - emailVerified
+        - emailVerifiedAt
+        - joinedAt
+        - lastSignInAt
+        - updatedAt
+        - stats
+    AdminCustomerResponsePage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, in list order. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCustomer'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 42
+          description: How many items the whole list has, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
+    AdminCustomerDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 42
+          description: Customer id.
+        fullName:
+          type: string
+          nullable: false
+          example: Layla Hassan
+          description: Full name.
+        email:
+          type: string
+          format: email
+          nullable: false
+          example: layla.hassan@example.com
+          description: The sign-in email.
+        phone:
+          type: string
+          nullable: true
+          example: '+201012345678'
+          description: Mobile number in international (E.164) form, or null when none is on file.
+        status:
+          nullable: false
+          example: active
+          description: '`active`, or `blocked` (signed out everywhere, refused at sign-in; paid tickets stay valid).'
+          allOf:
+            - $ref: '#/components/schemas/CustomerStatus'
+        emailVerified:
+          type: boolean
+          nullable: false
+          example: true
+          description: Whether the customer has verified the email.
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-03-02T21:10:00+02:00'
+          description: When the email was verified, or null while it is not.
+        joinedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-03-02T21:05:00+02:00'
+          description: When the account was created (the JOINED column).
+        lastSignInAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-16T18:40:00+03:00'
+          description: The latest sign-in, or null when the customer never signed in.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T18:40:00+03:00'
+          description: When the account last changed.
+        stats:
+          nullable: false
+          description: Bookings, Spent, No-shows and Last booking.
+          allOf:
+            - $ref: '#/components/schemas/CustomerStats'
+        recentBookings:
+          nullable: false
+          maxItems: 4
+          description: '"Recent bookings": the customer''s 4 newest bookings in any status, newest first, as the Bookings table shows them. Page through all of them with `GET /admin/bookings?customerId=`.'
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBookingListItem'
+      required:
+        - id
+        - fullName
+        - email
+        - phone
+        - status
+        - emailVerified
+        - emailVerifiedAt
+        - joinedAt
+        - lastSignInAt
+        - updatedAt
+        - stats
+        - recentBookings
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          nullable: false
+          minLength: 1
+          maxLength: 100
+          example: Layla Hassan
+          description: Full name; surrounding spaces are dropped. It can be changed, never emptied.
+        email:
+          type: string
+          format: email
+          nullable: false
+          maxLength: 320
+          example: layla.hassan@example.com
+          description: The sign-in email. Another live account with it, whatever the letter case, is `EMAIL_TAKEN`. A new address is unverified from then on (the customer resends the link from their Profile), and their unused verification and reset links stop working.
+        phone:
+          type: string
+          nullable: true
+          pattern: ^(\+[1-9][0-9]{7,14}|01[0125][0-9]{8})$
+          example: '+201012345678'
+          description: 'Mobile number for ticket SMS: international form (`+201012345678`), or an Egyptian mobile as typed locally (`01012345678`), stored and returned as `+201012345678`. `null` removes it.'
+        status:
+          nullable: false
+          example: blocked
+          description: '`blocked` signs the customer out everywhere at once and refuses their sign-in with `ACCOUNT_BLOCKED`; their paid tickets stay valid. `active` unblocks them: they can sign in and book again right away.'
+          allOf:
+            - $ref: '#/components/schemas/CustomerStatus'
+    CustomerAnonymisationRemovals:
+      type: object
+      properties:
+        sessions:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 3
+          description: 'Sign-in sessions deleted: the customer is signed out everywhere.'
+        oneTimeTokens:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 2
+          description: Verification and password reset links deleted, used or not.
+        idempotencyKeys:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: Stored results of the customer's requests (idempotency keys) deleted.
+        messages:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 7
+          description: Emails and SMS about the customer deleted from the Message log.
+        bookingNotes:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 1
+          description: Internal staff notes on the customer's bookings deleted.
+        bookingContacts:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 6
+          description: Bookings whose contact name, email and phone were cleared.
+      required:
+        - sessions
+        - oneTimeTokens
+        - idempotencyKeys
+        - messages
+        - bookingNotes
+        - bookingContacts
+    CustomerAnonymisation:
+      type: object
+      properties:
+        customerId:
+          type: integer
+          nullable: false
+          example: 42
+          description: The anonymised customer; their id stays on the kept bookings.
+        anonymisedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-29T14:05:00+03:00'
+          description: When the account was deleted.
+        bookingsKept:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 6
+          description: Bookings kept for accounting, with their seats, totals and payments, without the name or contact details ("{n} past bookings are kept").
+        removed:
+          nullable: false
+          description: What was removed, counted.
+          allOf:
+            - $ref: '#/components/schemas/CustomerAnonymisationRemovals'
+      required:
+        - customerId
+        - anonymisedAt
+        - bookingsKept
+        - removed
+    CustomerPasswordReset:
+      type: object
+      properties:
+        channel:
+          type: string
+          enum:
+            - email
+          nullable: false
+          example: email
+          description: The reset link always goes by email, to the account email.
+        queuedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-29T14:05:00+03:00'
+          description: When the email was queued; it leaves within moments (see the Message log, where the link is hidden).
+      required:
+        - channel
+        - queuedAt
     ErrorResponse:
       type: object
       properties:
