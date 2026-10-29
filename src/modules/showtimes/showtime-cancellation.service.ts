@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AppError } from '../../common/errors/app-error';
 import type { ShowtimeCancellationInput, ShowtimeCancellationOutcome } from './types';
 
 /**
@@ -8,20 +9,51 @@ import type { ShowtimeCancellationInput, ShowtimeCancellationOutcome } from './t
  * once, in the request transaction, with the showtime locked `FOR UPDATE` and before its status
  * changes, so an in-flight payment has committed and a later one sees the cancellation.
  *
- * `ShowtimesModule` binds `NoBookingsShowtimeCancellation` until bookings exist. U14 replaces that
- * binding in `ShowtimesModule`'s own `providers` (importing the module that owns bookings, then
- * `{ provide: ShowtimeCancellationService, useExisting: … }`). Binding the token only in the
- * owning module changes nothing: a module's own provider wins over an imported one, so
- * `ShowtimesService` would keep the no-bookings default and refund nobody.
+ * `ShowtimesModule` binds the token to `RegisteredShowtimeCancellation` (U14): bookings imports
+ * showtimes, so showtimes cannot import bookings, and bookings registers its implementation there
+ * at boot instead (the registry pattern of `RegisteredTicketHolders`, U11).
  */
 export abstract class ShowtimeCancellationService {
   abstract cancelBookings(input: ShowtimeCancellationInput): Promise<ShowtimeCancellationOutcome>;
 }
 
-/** Before bookings exist, a showtime has nothing to refund, release or notify. */
+/**
+ * Before bookings existed, a showtime had nothing to refund, release or notify (U7). Kept for
+ * suites that build showtimes without bookings; the app binds `RegisteredShowtimeCancellation`.
+ */
 @Injectable()
 export class NoBookingsShowtimeCancellation extends ShowtimeCancellationService {
   cancelBookings(): Promise<ShowtimeCancellationOutcome> {
     return Promise.resolve({ refundedBookingCount: 0, releasedHoldCount: 0, notifiedCount: 0 });
+  }
+}
+
+/**
+ * The binding of `ShowtimeCancellationService` (U14): it calls the implementation bookings
+ * registered at boot (`BookingsShowtimeCancellation`). Cancelling without one is `INTERNAL`,
+ * never a silent "nobody refunded": a showtime with paid bookings must not be cancelled by a
+ * wiring mistake. A second registration is a wiring bug and fails the start.
+ */
+@Injectable()
+export class RegisteredShowtimeCancellation extends ShowtimeCancellationService {
+  private implementation: ShowtimeCancellationService | undefined;
+
+  register(implementation: ShowtimeCancellationService): void {
+    if (this.implementation) {
+      throw new AppError('INTERNAL', 'A showtime cancellation is registered twice.');
+    }
+    this.implementation = implementation;
+  }
+
+  cancelBookings(input: ShowtimeCancellationInput): Promise<ShowtimeCancellationOutcome> {
+    if (!this.implementation) {
+      return Promise.reject(
+        new AppError(
+          'INTERNAL',
+          'No showtime cancellation is registered; bookings must be loaded.',
+        ),
+      );
+    }
+    return this.implementation.cancelBookings(input);
   }
 }
