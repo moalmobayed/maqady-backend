@@ -16,6 +16,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
+import { AdminCustomersModule } from './modules/admin-customers/admin-customers.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
 import { SettleFirstInterceptor } from './modules/bookings/settle-first.interceptor';
 import { CatalogModule } from './modules/catalog/catalog.module';
@@ -82,6 +83,7 @@ export class AppModule {
         SeatingModule,
         PaymentsModule,
         BookingsModule,
+        AdminCustomersModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
