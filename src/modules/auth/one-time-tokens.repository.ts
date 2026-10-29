@@ -49,6 +49,11 @@ export class OneTimeTokensRepository {
     return query.delete();
   }
 
+  /** Deletes every token of the owner, used or not; returns how many. */
+  async deleteAll(owner: OneTimeTokenOwner): Promise<number> {
+    return this.db.executor()('one_time_tokens').where(OWNER_COLUMN[owner.kind], owner.id).delete();
+  }
+
   /**
    * Marks a live, unused token of the purpose as used and returns its owner, in one statement, so
    * two concurrent uses can't both succeed. Undefined when nothing matched.

@@ -81,6 +81,12 @@ describe('adminBookingConditions', () => {
     ]);
   });
 
+  it("keeps one customer's bookings with customerId (the Customers drawer, U15)", () => {
+    expect(adminBookingConditions({ customerId: 42 }, NOW)).toEqual([
+      { sql: 'b.customer_id = ?', bindings: [42] },
+    ]);
+  });
+
   it('matches a reference on its own column', () => {
     expect(adminBookingConditions({ q: 'MQ-7K3P9Q' }, NOW)).toEqual([
       { sql: 'b.reference = ?', bindings: ['MQ-7K3P9Q'] },

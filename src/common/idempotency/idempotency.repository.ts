@@ -59,6 +59,11 @@ export class IdempotencyRepository {
       .update({ response_status: status, response_ciphertext: ciphertext });
   }
 
+  /** Deletes every key of the scope (`uq_idempotency_keys_scope_key` leads with it). */
+  async deleteScope(scope: string): Promise<number> {
+    return this.db.executor()('idempotency_keys').where({ scope }).delete();
+  }
+
   /**
    * Deletes up to `limit` keys created before `expiredBefore`, skipping rows another transaction
    * holds. Postgres `DELETE` has no `LIMIT`, hence the sub-select. This only tidies up: expiry is

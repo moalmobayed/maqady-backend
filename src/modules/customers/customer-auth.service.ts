@@ -10,6 +10,7 @@ import { ONE_TIME_TOKEN_LIFETIME_SECONDS, SESSION_LIFETIME_SECONDS } from '../au
 import { OneTimeTokenService } from '../auth/one-time-token.service';
 import { PasswordService } from '../auth/password.service';
 import { SessionService } from '../auth/session.service';
+import type { OneTimeTokenPurpose } from '../auth/types';
 import { MessagingService } from '../messaging/messaging.service';
 import { toCustomer } from './customer.mapper';
 import { CustomerService } from './customer.service';
@@ -130,6 +131,7 @@ export class CustomerAuthService {
    */
   async verifyEmail(token: string): Promise<void> {
     await this.transactions.run(async () => {
+      await this.lockOwnerOf(token, 'verify_email');
       const consumed = await this.oneTimeTokens.consume({ purpose: 'verify_email', token });
       await this.customers.markEmailVerified(consumed.owner.id, this.clock.now());
     });
@@ -151,11 +153,19 @@ export class CustomerAuthService {
   /**
    * "Forgot password": sends a reset link to a live, active customer with this email, and does
    * nothing otherwise. The route answers `202` either way, so the answer reveals nothing.
+   *
+   * The customer row is locked (`FOR NO KEY UPDATE`) and re-checked before the link is issued, as
+   * every change of the account does (U15 review): an admin email change or anonymisation in
+   * flight is waited for, then nothing is sent to the address it replaced; one that starts later
+   * waits for this link and deletes it.
    */
   async requestPasswordReset(email: string): Promise<void> {
     await this.transactions.run(async () => {
-      const row = await this.customers.findLiveByEmail(email);
-      if (!row || row.status !== 'active') return;
+      const found = await this.customers.findLiveByEmail(email);
+      if (!found) return;
+      const row = await this.customers.findByIdForUpdate(found.id);
+      if (!row || row.deleted_at !== null || row.status !== 'active') return;
+      if (row.email === null || row.email.toLowerCase() !== email.toLowerCase()) return;
       await this.customerService.issuePasswordReset(row.id);
     });
   }
@@ -173,12 +183,9 @@ export class CustomerAuthService {
   async resetPassword(input: ResetPasswordInput): Promise<void> {
     const passwordHash = await this.passwords.hash(input.password);
     await this.transactions.run(async () => {
-      const consumed = await this.oneTimeTokens.consume({
-        purpose: 'customer_password_reset',
-        token: input.token,
-      });
-      const row = await this.customers.findByIdForUpdate(consumed.owner.id);
-      if (!row || row.deleted_at !== null) throw new AppError('INVALID_TOKEN');
+      const row = await this.lockOwnerOf(input.token, 'customer_password_reset');
+      await this.oneTimeTokens.consume({ purpose: 'customer_password_reset', token: input.token });
+      if (row.deleted_at !== null) throw new AppError('INVALID_TOKEN');
       if (row.status !== 'active') throw new AppError('ACCOUNT_BLOCKED');
 
       const now = this.clock.now();
@@ -186,6 +193,23 @@ export class CustomerAuthService {
       await this.customers.markEmailVerified(row.id, now);
       await this.sessions.revokeAllFor({ audience: 'customer', id: row.id }, 'password_changed');
     });
+  }
+
+  /**
+   * Locks the customer a live link of this purpose belongs to, before the link is used: every
+   * change of the account locks the customer row before their links (an admin email edit, an
+   * anonymisation, U15), so using a link in the other order could deadlock with them (U15 review,
+   * as for staff, design §10.1). The link is read without a lock; one used or deleted meanwhile
+   * then fails `consume()`. Unknown, malformed, used, expired or another purpose: `INVALID_TOKEN`.
+   */
+  private async lockOwnerOf(token: string, purpose: OneTimeTokenPurpose): Promise<CustomerRow> {
+    const live = await this.oneTimeTokens.findLive(token);
+    if (!live || live.purpose !== purpose || live.owner.kind !== 'customer') {
+      throw new AppError('INVALID_TOKEN');
+    }
+    const row = await this.customers.findByIdForUpdate(live.owner.id);
+    if (!row) throw new AppError('INVALID_TOKEN');
+    return row;
   }
 
   /** Issues a 24-hour verification link and queues its email, in the open transaction. */

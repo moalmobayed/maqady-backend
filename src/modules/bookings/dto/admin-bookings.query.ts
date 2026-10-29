@@ -20,7 +20,7 @@ import { BOOKING_CHANNELS, BOOKING_DISPLAY_STATUSES } from '../enums';
 import type { BookingChannel, BookingDisplayStatus } from '../types';
 
 /**
- * `GET /admin/bookings?q=&theaterId=&movieId=&status=&channel=&method=&dateFrom=&dateTo=&cursor=&limit=`
+ * `GET /admin/bookings?q=&theaterId=&movieId=&status=&channel=&method=&dateFrom=&dateTo=&customerId=&cursor=&limit=`
  * (PRD A6 search and filters). Every filter is optional and they combine (AND).
  */
 export class AdminBookingsQuery extends PageQuery {
@@ -126,4 +126,19 @@ export class AdminBookingsQuery extends PageQuery {
   @IsOptional()
   @IsCinemaDate()
   dateTo?: string;
+
+  @ApiPropertyOptional({
+    type: 'integer',
+    nullable: false,
+    minimum: 1,
+    example: 42,
+    description:
+      "Only this customer's bookings, whatever the channel (the Customers drawer's bookings, `GET /admin/customers/{id}`). An unknown or anonymised customer simply has none.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(Number.MAX_SAFE_INTEGER)
+  customerId?: number;
 }

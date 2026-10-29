@@ -53,6 +53,11 @@ export const API_TAGS = [
       "The Bookings page: search and filters, the summary cards, a booking's detail, internal notes, resending tickets (both roles); cancel and refund, payouts and edits (admins only)",
   },
   {
+    name: 'Admin: customers',
+    description:
+      "The Customers page: search, the status filter and a customer's drawer with Bookings, Spent and No-shows (both roles); edit, block and unblock, the reset email and Delete account (admins only)",
+  },
+  {
     name: 'Admin: payments',
     description:
       'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)',

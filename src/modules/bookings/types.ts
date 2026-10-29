@@ -751,6 +751,8 @@ export interface AdminBookingFilter {
   readonly dateFrom?: CalendarDate;
   /** …until 06:00 after this one (inclusive cinema dates). */
   readonly dateTo?: CalendarDate;
+  /** Only this customer's bookings (the admin Customers drawer, U15). */
+  readonly customerId?: number;
 }
 
 /** What an admin search looks for: one reference exactly, or a substring of the contact fields. */
@@ -1062,4 +1064,39 @@ export interface AdminBookingListItem {
   readonly booking: Booking;
   readonly contact: BookingContact;
   readonly checkedInAt: Date | null;
+}
+
+// --- Admin customers (U15) -------------------------------------------------------------------
+
+/**
+ * A customer's booking numbers on the admin Customers screen (PRD A7, "Dashboard numbers"), over
+ * their paid bookings still held (stored `confirmed`: Confirmed and Completed).
+ */
+export interface CustomerBookingStats {
+  readonly customerId: number;
+  /** How many paid bookings they hold. A refunded one is no longer counted. */
+  readonly bookings: number;
+  /** The totals of those bookings (after any edit). */
+  readonly spent: Money;
+  /** Those whose showtime has ended (Completed) and that were never checked in. */
+  readonly noShows: number;
+  /** When the newest of them was made; null with none. */
+  readonly lastBookingAt: Date | null;
+}
+
+/** One grouped row of the numbers query. */
+export interface CustomerBookingStatsRow {
+  readonly customer_id: number;
+  readonly bookings: number;
+  readonly spent: number;
+  readonly no_shows: number;
+  readonly last_booking_at: Date | null;
+}
+
+/** What clearing a customer's booking contacts did (anonymisation, design §21). */
+export interface ClearedBookingContacts {
+  /** Every booking of the customer, kept for accounting. */
+  readonly bookings: number;
+  /** Those that still had a contact name, email or phone, now cleared. */
+  readonly cleared: number;
 }

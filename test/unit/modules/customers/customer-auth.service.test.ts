@@ -81,6 +81,11 @@ describe('CustomerAuthService', () => {
     oneTimeTokens = {
       issue: jest.fn().mockResolvedValue({ id: 5, token: LINK_TOKEN, expiresAt: NOW }),
       consume: jest.fn().mockResolvedValue({ id: 5, owner: { kind: 'customer', id: 7 } }),
+      findLive: jest.fn().mockResolvedValue({
+        id: 5,
+        purpose: 'customer_password_reset',
+        owner: { kind: 'customer', id: 7 },
+      }),
     } as unknown as jest.Mocked<OneTimeTokenService>;
     accessTokens = {
       sign: jest.fn().mockReturnValue('a.b.c'),
@@ -255,7 +260,13 @@ describe('CustomerAuthService', () => {
   });
 
   it('verifies the email of the link’s owner', async () => {
+    oneTimeTokens.findLive.mockResolvedValueOnce({
+      id: 5,
+      purpose: 'verify_email',
+      owner: { kind: 'customer', id: 7 },
+    });
     await service.verifyEmail(LINK_TOKEN);
+    expect(customers.findByIdForUpdate).toHaveBeenCalledWith(7);
     expect(oneTimeTokens.consume).toHaveBeenCalledWith({
       purpose: 'verify_email',
       token: LINK_TOKEN,
@@ -284,15 +295,26 @@ describe('CustomerAuthService', () => {
   });
 
   describe('requestPasswordReset', () => {
-    it('sends a reset link to an active customer', async () => {
-      await service.requestPasswordReset('layla@example.com');
+    it('sends a reset link to an active customer, after locking their row', async () => {
+      await service.requestPasswordReset('LAYLA@example.com');
+      expect(customers.findByIdForUpdate).toHaveBeenCalledWith(7);
       expect(customerService.issuePasswordReset).toHaveBeenCalledWith(7);
     });
 
     it('sends nothing for an unknown email or a blocked customer', async () => {
       customers.findLiveByEmail.mockResolvedValueOnce(undefined);
       await service.requestPasswordReset('nobody@example.com');
-      customers.findLiveByEmail.mockResolvedValueOnce(customer({ status: 'blocked' }));
+      customers.findByIdForUpdate.mockResolvedValueOnce(customer({ status: 'blocked' }));
+      await service.requestPasswordReset('layla@example.com');
+      expect(customerService.issuePasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the locked row lost the email or was anonymised meanwhile (U15 review)', async () => {
+      customers.findByIdForUpdate.mockResolvedValueOnce(customer({ email: 'new@example.com' }));
+      await service.requestPasswordReset('layla@example.com');
+      customers.findByIdForUpdate.mockResolvedValueOnce(
+        customer({ email: null, full_name: null, password_hash: null, deleted_at: NOW }),
+      );
       await service.requestPasswordReset('layla@example.com');
       expect(customerService.issuePasswordReset).not.toHaveBeenCalled();
     });
@@ -315,6 +337,27 @@ describe('CustomerAuthService', () => {
         'password_changed',
       );
       expect(sessions.open).not.toHaveBeenCalled();
+    });
+
+    it('locks the customer before using the link, as every account change does (U15 review)', async () => {
+      await service.resetPassword(input);
+      expect(oneTimeTokens.findLive).toHaveBeenCalledWith(LINK_TOKEN);
+      expect(customers.findByIdForUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+        oneTimeTokens.consume.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('answers INVALID_TOKEN for an unknown link or one of another purpose, locking nothing', async () => {
+      oneTimeTokens.findLive.mockResolvedValueOnce(null);
+      await expect(service.resetPassword(input)).rejects.toMatchObject({ code: 'INVALID_TOKEN' });
+      oneTimeTokens.findLive.mockResolvedValueOnce({
+        id: 5,
+        purpose: 'verify_email',
+        owner: { kind: 'customer', id: 7 },
+      });
+      await expect(service.resetPassword(input)).rejects.toMatchObject({ code: 'INVALID_TOKEN' });
+      expect(customers.findByIdForUpdate).not.toHaveBeenCalled();
+      expect(oneTimeTokens.consume).not.toHaveBeenCalled();
     });
 
     it('answers ACCOUNT_BLOCKED for a blocked customer and writes nothing', async () => {

@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { Knex } from 'knex';
+import { isPostgresError, SQLSTATE } from '../../common/database/postgres-errors';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
+import type { PageRequest } from '../../common/pagination/types';
+import { customerListConditions } from './customer-search';
+import { LIVE_EMAIL_UNIQUE_INDEX } from './customers.constants';
 import type {
+  AdminCustomerFilter,
+  CustomerDetailsUpdate,
   CustomerPrincipalRow,
   CustomerProfileUpdate,
   CustomerRow,
@@ -132,7 +138,91 @@ export class CustomersRepository {
     return this.updateOne(id, { status, updated_at: at });
   }
 
-  private async updateOne(id: number, changes: CustomerRowChanges): Promise<CustomerRow> {
+  // --- Admin customers (U15) ----------------------------------------------------------------
+
+  /**
+   * One page of the admin customers list (PRD A7), `limit + 1` live rows, newest account first
+   * (`created_at DESC, id DESC`, `idx_customers_created_at`). The cursor's sort key is the
+   * account's `created_at` as an ISO instant, bound as a `Date`.
+   */
+  async pageForAdmin(filter: AdminCustomerFilter, page: PageRequest): Promise<CustomerRow[]> {
+    const query = this.adminCustomers(filter)
+      .select<CustomerRow[]>(CUSTOMER_COLUMNS)
+      .orderBy([
+        { column: 'created_at', order: 'desc' },
+        { column: 'id', order: 'desc' },
+      ])
+      .limit(page.limit + 1);
+    if (page.after) {
+      query.andWhereRaw('(created_at, id) < (?, ?)', [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
+    }
+    return query;
+  }
+
+  /** How many live customers the admin list has with these filters. */
+  async countForAdmin(filter: AdminCustomerFilter): Promise<number> {
+    const row = await this.adminCustomers(filter)
+      .count<{ count: number }[]>({ count: 'id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  /**
+   * An admin edit of a live row (U15). A new email that a concurrent edit or registration took
+   * first meets `uq_customers_email_live`, which is answered `EMAIL_TAKEN`; the transaction is
+   * rolled back with it.
+   */
+  async updateDetails(id: number, changes: CustomerDetailsUpdate): Promise<CustomerRow> {
+    try {
+      return await this.updateOne(id, changes);
+    } catch (error) {
+      if (
+        isPostgresError(error) &&
+        error.code === SQLSTATE.UNIQUE_VIOLATION &&
+        error.constraint === LIVE_EMAIL_UNIQUE_INDEX
+      ) {
+        throw new AppError('EMAIL_TAKEN');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Anonymises a live row (design §21): nulls the email, name, phone and password hash and sets
+   * `deleted_at`; `chk_customers_live_or_anonymised` holds the row to exactly that.
+   */
+  async anonymise(id: number, at: Date): Promise<CustomerRow> {
+    const [updated] = await this.customers()
+      .update({
+        email: null,
+        full_name: null,
+        phone: null,
+        password_hash: null,
+        deleted_at: at,
+        updated_at: at,
+      })
+      .where({ id })
+      .whereNull('deleted_at')
+      .returning<CustomerRow[]>(CUSTOMER_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The customer to anonymise is gone.');
+    return updated;
+  }
+
+  private adminCustomers(filter: AdminCustomerFilter): Knex.QueryBuilder {
+    const query = this.customers().whereNull('deleted_at');
+    for (const condition of customerListConditions(filter)) {
+      query.andWhereRaw(condition.sql, [...condition.bindings]);
+    }
+    return query;
+  }
+
+  private async updateOne(
+    id: number,
+    changes: CustomerRowChanges | CustomerDetailsUpdate,
+  ): Promise<CustomerRow> {
     const [updated] = await this.customers()
       .update(changes)
       .where({ id })

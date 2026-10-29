@@ -89,6 +89,14 @@ export class OneTimeTokenService {
   async invalidateAllFor(owner: OneTimeTokenOwner): Promise<number> {
     return this.transactions.run(() => this.tokens.deleteUnused(owner));
   }
+
+  /**
+   * Deletes every token of an account, used ones included (anonymisation, U15, design §21);
+   * returns how many went.
+   */
+  async deleteAllFor(owner: OneTimeTokenOwner): Promise<number> {
+    return this.transactions.run(() => this.tokens.deleteAll(owner));
+  }
 }
 
 /** The one owner a row names (the table's CHECK guarantees exactly one). */
