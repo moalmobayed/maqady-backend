@@ -46,6 +46,15 @@ export class StaffService {
   }
 
   /**
+   * These members by id, in one query (U14: the authors of booking notes, the staff named in a
+   * booking's activity log, the counter seller); unknown ids are absent.
+   */
+  async findByIds(ids: readonly number[]): Promise<ReadonlyMap<number, StaffMember>> {
+    const rows = await this.staff.findByIds(ids);
+    return new Map(rows.map((row) => [row.id, toStaffMember(row)]));
+  }
+
+  /**
    * The member, locked `FOR NO KEY UPDATE` until the open transaction ends (design §7.1 step 4,
    * §10.1): a counter hold (U13) locks its member to keep "one live counter hold per member" while
    * a staff change waits for it, and a sessions insert or an audit row naming the member does not.
