@@ -290,6 +290,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   booking paid by card).
 - `test/support/payments-screen.ts` (U16): `listTransactions()` and `paymentsSummary()` through
   the real admin Payments routes.
+- `test/support/search.ts` (U18): `searchPublic()`, `searchStaff()`, `groupIds(response, 'movies')`
+  and `theaterWithStatus(testApp, admin, 'active' | 'draft' | 'sales_paused', overrides)`.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -593,6 +595,29 @@ curl -s "localhost:3000/api/v1/admin/payments?status=pending&kind=refund" -H "Au
 curl -s "localhost:3000/api/v1/admin/payments/summary?dateFrom=2026-10-10&dateTo=2026-10-16" -H "Authorization: Bearer $ADMIN"
 ```
 
+## Search
+
+Search (U18, `docs/gh-19-search/spec.md`), in the read-only `search` module. Both routes take `q`
+(2–100 characters, trimmed) and answer groups of hits, best first, each with `hasMore`.
+
+- `GET /api/v1/search?q=` (public, 60 a minute per IP: `RATE_LIMIT_SEARCH`) answers up to 5
+  Coming soon and Now showing movies (by title, or by a credited person's name: `matchedPerson`),
+  people credited on them, and `active` theaters (by name or district). Drafts, archived movies and
+  unpublished or paused theaters never appear.
+- `GET /api/v1/admin/search?q=` (staff) answers up to 10 bookings (a whole reference, or the contact
+  name, email or phone; U14's list rows) and live customers for both roles, and for admins up to 10
+  movies, people and theaters in any status; for box office those three are `null`. An anonymised
+  customer is never found, nor are their bookings by their old details.
+- Matching is a case-insensitive substring (`%` and `_` are plain characters) or, from 3
+  characters, a typo-tolerant pg_trgm word-similarity match on names and titles (`q <% column`,
+  the default 0.6 threshold). Ranking: the whole value, a prefix, a substring, then a typo, the
+  closest first.
+
+```bash
+curl -s "localhost:3000/api/v1/search?q=Lighthose"
+curl -s "localhost:3000/api/v1/admin/search?q=01012345678" -H "Authorization: Bearer $STAFF"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -696,7 +721,8 @@ src/
                                          customers, halls, discovery, showtimes, seating (seat
                                          claims and the /ws seat map), bookings (holds,
                                          checkout, box office, admin bookings), analytics
-                                         (the Payments screen), seed (the development seed)
+                                         (the Payments screen), search (public and staff
+                                         search), seed (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

@@ -135,7 +135,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `admin-customers` | No table: the admin Customers screen and anonymisation (U15, `docs/gh-16-admin-customers/spec.md`). *Deviation:* a module of its own, since its routes need `bookings` (the numbers, booking contacts and notes) and `bookings` imports `customers`; it changes each table through the module that owns it | customers, bookings, auth, idempotency, messaging, audit |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
-| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService` |
+| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService`. *As built (U18, `docs/gh-19-search/spec.md`):* `search` ranks across a table's columns with the trigram operators, which only SQL can do in one query per group, so its repository reads `movies`, `movie_credits`, `people`, `person_roles`, `theaters`, `customers` and `bookings` in its own queries (the `analytics` deviation); booking rows come from bookings' `AdminBookingsService.itemsByIds()` after `SettlementService.settleAllDue()`, images from `MediaService` |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
 Rules:
@@ -1225,6 +1225,14 @@ showtime's theater; filters `kind`, `method`, `channel`, `status` (shown), `thea
 the period's failed charges, and the reconciliation by theater, against the provider and of each
 touched booking's balance (§13.3).
 
+Search (U18, `docs/gh-19-search/spec.md`): `GET /search?q=` and `GET /admin/search?q=` (2–100
+characters, trimmed) answer groups `{ items, hasMore }`, best first (§13.2): publicly 5 movies,
+people and theaters each; for staff 10 bookings (U14's `AdminBookingListItem`) and customers, and
+for admins only 10 movies, people and theaters in any status (`null` for box office). The public
+route is rate limited by `search` and cacheable for 60 seconds; the staff route is
+`private, no-store` and has the default limit. A customer token on the staff route is
+`UNAUTHENTICATED`.
+
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
@@ -1364,6 +1372,30 @@ generated contract (§19).
 - Queries need at least 2 characters and are case-insensitive substring matches, ranked by
   similarity.
 - Customer search returns up to 5 hits per group; admin search up to 10, filtered by role.
+
+*As built (U18, `docs/gh-19-search/spec.md`):*
+
+- A hit is a case-insensitive substring (`ILIKE`, `%` and `_` escaped) or, from 3 characters and
+  on names and titles only, a typo-tolerant match: `q <% column`, pg_trgm word similarity at the
+  default `pg_trgm.word_similarity_threshold` (0.6). Emails, phones and references are never
+  fuzzy. The same trigram GIN indexes serve both; migration `0190_01` adds theater names
+  (`name::text`, CITEXT) and districts.
+- Ranking: each matched column's tier (the whole value 0, for a phone also the E.164 form of a
+  local mobile; a prefix 1, a substring 2, a typo only 3), the entity's earlier column first
+  within a tier (a title before a cast name, a theater name before its district, a name before
+  an email before a phone), then word similarity, then a stable order (title or name; bookings
+  and customers newest first).
+- `GET /search` (public, the `search` rate limit, cacheable 60 s): Coming soon and Now showing
+  movies by title or cast (`matchedPerson`), people credited on them, `active` theaters by name or
+  district. Nothing else is visible, also not through a cast match.
+- `GET /admin/search` (staff, `private, no-store`): bookings (a whole reference exactly through
+  `uq_bookings_reference`, else contact name, email or phone; U14's list rows, after
+  `settleAllDue()`) and live customers for both roles; movies, people and theaters in any status
+  for admins only, `null` for box office, whose screens are Bookings, Customers and Scan tickets.
+- An anonymised customer is never found (excluded and emptied, §21), and their bookings' cleared
+  contacts match nothing; such a booking is still found by its reference.
+- Each group answers `{ items, hasMore }` (`LIMIT n + 1`); one query per group plus one image
+  lookup, whatever matches.
 
 ### 13.3 Analytics and alerts
 
