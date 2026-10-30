@@ -20,7 +20,7 @@ const COLUMNS: readonly CsvColumn<Row>[] = [
   { header: 'Paid', value: (row) => row.paid },
 ];
 
-const BOM = '﻿';
+const BOM = String.fromCharCode(0xfeff);
 
 async function textOf(stream: Readable): Promise<string> {
   let text = '';
