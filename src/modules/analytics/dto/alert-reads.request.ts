@@ -19,7 +19,7 @@ export class AlertReadsRequest {
     minItems: 1,
     maxItems: MAX_ALERT_READ_KEYS,
     example: ['failed-payments:2026-10-16:6', 'low-sales:81'],
-    description: `The \`key\`s to mark read, 1 to ${MAX_ALERT_READ_KEYS}, as \`GET /admin/alerts\` gave them. Omit to mark every current alert read ("Mark all as read"). A key that is not a current alert any more is ignored.`,
+    description: `The \`key\`s to mark read, 1 to ${MAX_ALERT_READ_KEYS}, as \`GET /admin/alerts\` gave them. Omit to mark every alert current at this call read ("Mark all as read"), including one that appeared after the panel was drawn; send the panel's keys to mark only what it shows. A key that is not a current alert any more is ignored.`,
   })
   // Omitted means every current alert; a sent `null` is refused, not read as "none" or "all".
   @ValidateIf((_: object, value: unknown) => value !== undefined)

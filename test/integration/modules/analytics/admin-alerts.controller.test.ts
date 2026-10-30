@@ -241,6 +241,24 @@ describe('Admin alerts (integration)', () => {
     ).toEqual({ markedCount: 0, unreadCount: 1, total: 8 });
   });
 
+  it("marks only the panel's keys when sent, every current alert when omitted", async () => {
+    await failedPayment('sim_card_declined');
+    const panel = keysOf(await bell(admin));
+    // Another failure after the panel was drawn: its new key was never shown.
+    await failedPayment('sim_card_declined');
+
+    const shown = await markAlertsRead(testApp, admin.authorization, { keys: panel });
+    expect(shown.body).toEqual({ markedCount: 7, unreadCount: 1, total: 8 });
+    expect((await bell(admin)).body.items[0]).toMatchObject({
+      key: 'failed-payments:2026-10-10:2',
+      read: false,
+    });
+
+    // "Mark all as read" marks what is current now, the unseen key included.
+    const all = await markAlertsRead(testApp, admin.authorization);
+    expect(all.body).toEqual({ markedCount: 1, unreadCount: 0, total: 8 });
+  });
+
   it('drops a low-sales alert once 35% is sold or the show starts, and a gap once filled', async () => {
     // 10 of 31 seats (32%) is still under 35%; 11 (35.5%) is not.
     await counterSale(testApp, admin.authorization, first.showtimeId, [

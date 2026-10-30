@@ -53,7 +53,7 @@ export class AdminAlertsController {
   @ApiOperation({
     summary: 'Mark alerts read',
     description:
-      'Staff (box office or admin): marks alerts read for the signed-in member only, the alerts whose `key` is in `keys` (opening one) or every current alert when `keys` is omitted ("Mark all as read"). Answers the badge after it.\n\n- A key that is not a current alert (resolved since, or replaced by a newer failed-payments count) is ignored, so a stale panel never hides a newer alert.\n- Marking a key twice is harmless: it keeps the first time it was read. No `Idempotency-Key` is needed; one is accepted.\n- A malformed key, an empty list or more than 200 keys: `VALIDATION_FAILED`.',
+      'Staff (box office or admin): marks alerts read for the signed-in member only, the alerts whose `key` is in `keys` (opening one) or every current alert when `keys` is omitted ("Mark all as read"). Answers the badge after it.\n\n- A key that is not a current alert (resolved since, or replaced by a newer failed-payments count) is ignored, so the keys of a stale panel never hide a newer alert. Without `keys`, every alert current at this call is marked, one that appeared after the panel was drawn included; to mark only what the panel shows, send its keys.\n- Marking a key twice is harmless: it keeps the first time it was read. No `Idempotency-Key` is needed; one is accepted.\n- A malformed key, an empty list or more than 200 keys: `VALIDATION_FAILED`.',
   })
   @ApiBody({ type: AlertReadsRequest, required: false })
   @ApiOkResponse({

@@ -28837,7 +28837,7 @@ paths:
       description: |-
         Staff (box office or admin): marks alerts read for the signed-in member only, the alerts whose `key` is in `keys` (opening one) or every current alert when `keys` is omitted ("Mark all as read"). Answers the badge after it.
 
-        - A key that is not a current alert (resolved since, or replaced by a newer failed-payments count) is ignored, so a stale panel never hides a newer alert.
+        - A key that is not a current alert (resolved since, or replaced by a newer failed-payments count) is ignored, so the keys of a stale panel never hide a newer alert. Without `keys`, every alert current at this call is marked, one that appeared after the panel was drawn included; to mark only what the panel shows, send its keys.
         - Marking a key twice is harmless: it keeps the first time it was read. No `Idempotency-Key` is needed; one is accepted.
         - A malformed key, an empty list or more than 200 keys: `VALIDATION_FAILED`.
       operationId: markAlertsRead
@@ -39214,7 +39214,7 @@ components:
           example:
             - failed-payments:2026-10-16:6
             - low-sales:81
-          description: The `key`s to mark read, 1 to 200, as `GET /admin/alerts` gave them. Omit to mark every current alert read ("Mark all as read"). A key that is not a current alert any more is ignored.
+          description: The `key`s to mark read, 1 to 200, as `GET /admin/alerts` gave them. Omit to mark every alert current at this call read ("Mark all as read"), including one that appeared after the panel was drawn; send the panel's keys to mark only what it shows. A key that is not a current alert any more is ignored.
           type: array
           items:
             type: string
