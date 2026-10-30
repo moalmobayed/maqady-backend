@@ -187,7 +187,9 @@ export class ExportsController {
   /**
    * The file as the response. A client that goes away destroys the stream, which stops its
    * reading; a failure after the first byte cuts the connection (the status is already sent), so
-   * the client never keeps a short file that looks complete. Logged without the data.
+   * the client never keeps a short file that looks complete. Nest hands a failure of the file
+   * itself (a later batch) to the error handler only, so it is logged there, through the log-safe
+   * serializer; the error logger sees only a failed write to the client.
    */
   private download(file: ExportFile, response: Response): StreamableFile {
     response.on('close', () => {
@@ -197,11 +199,12 @@ export class ExportsController {
       type: CSV_CONTENT_TYPE,
       disposition: `attachment; filename="${file.filename}"`,
     })
-      .setErrorHandler(() => {
+      .setErrorHandler((error) => {
+        this.logger.error({ err: error }, 'A CSV export failed after its first byte');
         response.destroy();
       })
       .setErrorLogger((error) => {
-        this.logger.error({ err: error }, 'A CSV export failed after its first byte');
+        this.logger.warn({ err: error }, 'A CSV export could not be written to the client');
       });
   }
 }
