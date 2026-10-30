@@ -28376,6 +28376,708 @@ paths:
         - 'Admin: payments'
       security:
         - staff: []
+  /admin/overview:
+    get:
+      description: |-
+        Admins only (a box office token is `FORBIDDEN`): every number of the Overview (PRD A1) for a period of cinema days (06:00 to 06:00 Cairo time) and all theaters or one (`theaterId`). Computed now from the bookings, showtimes and payments, after settling due slow payments; nothing is cached.
+
+        - Period: `period=today|7d|30d` (the server decides today's cinema day), or `dateFrom` / `dateTo` (inclusive, at most 366 days), never both; neither is the last 7 cinema days.
+        - `kpis`: Revenue (totals of Confirmed and Completed bookings, on the cinema day of their showtime; a refunded booking drops out), Tickets sold (their seats), Occupancy (tickets ÷ seats on sale of the scheduled showtimes), Avg. ticket (revenue ÷ tickets) and Counter share (the money taken at the box office ÷ all of it). Each card has `previous` and `change` against `comparison`: a single day against the same weekday last week, a longer period against the days just before it.
+        - `byTheater` ("Revenue by theater" with Online / Counter and VS PREV), `byHall` (with `theaterId` only), `paymentMethods`, `topMovies` (5), `heatmap` (weekday × start-time slot, % of seats sold), `revenueTrend` (the 30 cinema days ending on `dateTo`, per theater), `tonight` (today's showtimes still to end, whatever the period).
+        - Ratios have 4 decimals (0.4567 is 45.67%) and are null when there is nothing to divide by; money is piastres.
+        - "Needs attention" is `GET /admin/alerts`; "Export CSV" follows (U19).
+        - `period` with dates, a bad date, `dateTo` before `dateFrom` or over 366 days: `VALIDATION_FAILED`. An unknown `theaterId`: `NOT_FOUND`.
+      operationId: getOverview
+      parameters:
+        - name: period
+          required: false
+          in: query
+          description: 'The period picker: `today` (today''s cinema day), `7d` or `30d` (that many cinema days ending today). The server decides "today" (06:00 to 06:00 Cairo time), so a 01:00 visit still reads yesterday''s cinema day. Not with `dateFrom` / `dateTo`. With neither, the last 7 cinema days.'
+          schema:
+            $ref: '#/components/schemas/OverviewPeriodPreset'
+        - name: dateFrom
+          required: false
+          in: query
+          description: 'Instead of `period`: the first cinema date (`YYYY-MM-DD`). Omitted with `dateTo`: 6 days before it. Showtimes on this cinema date and later count.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-10'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Instead of `period`: the last cinema date, inclusive. Omitted: today. Not before `dateFrom`; at most 366 days in all.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: theaterId
+          required: false
+          in: query
+          description: 'The scope: one theater (its showtimes only, and `byHall`). Omitted: all theaters. An unknown id is `NOT_FOUND`.'
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: The Overview
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverview'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: The Overview of a period
+      tags:
+        - 'Admin: overview'
+      security:
+        - staff: []
+  /admin/alerts:
+    get:
+      description: |-
+        Staff (box office or admin): the Notifications panel and the bell's badge (`unreadCount`). Alerts are computed now from the stored facts, after settling due slow payments; none is raised by a timer, so a condition that no longer holds is simply not listed.
+
+        - `failed_payments`: online payments (card, wallet) declined or closed at the wallet on today's cinema day, one alert with the count. Key `failed-payments:<cinemaDate>:<count>`: another failure makes a new key, unread again.
+        - `low_sales`: each showtime later today (not started yet) under 35% sold (Confirmed seats ÷ seats). Key `low-sales:<showtimeId>`.
+        - `hall_gap`: each active hall of an active theater with no scheduled showtime on a cinema day of the next 7 (today included) when the theater is open. Key `hall-gap:<hallId>:<cinemaDate>`.
+
+        The same condition always has the same key, so it is listed once, for every staff member alike. `read` is the signed-in member's own: marking keys read (`POST /admin/alert-reads`) changes nobody else's badge. Unread first, then by kind and time; cursor-paged over the current list, with `total` and `unreadCount` for the whole list.
+      operationId: listAlerts
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+      responses:
+        '200':
+          description: One page of alerts, with the badge
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAlertPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: The current alerts and the unread count
+      tags:
+        - 'Admin: alerts'
+      security:
+        - staff: []
+  /admin/alert-reads:
+    post:
+      description: |-
+        Staff (box office or admin): marks alerts read for the signed-in member only, the alerts whose `key` is in `keys` (opening one) or every current alert when `keys` is omitted ("Mark all as read"). Answers the badge after it.
+
+        - A key that is not a current alert (resolved since, or replaced by a newer failed-payments count) is ignored, so a stale panel never hides a newer alert.
+        - Marking a key twice is harmless: it keeps the first time it was read. No `Idempotency-Key` is needed; one is accepted.
+        - A malformed key, an empty list or more than 200 keys: `VALIDATION_FAILED`.
+      operationId: markAlertsRead
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: 'A new UUID per user action, reused unchanged when retrying that same action. Within 24 hours, a retry with the same key and the same request replays the first response (with `Idempotent-Replayed: true`) instead of running again; the same key with a different request is `IDEMPOTENCY_KEY_REUSED`.'
+          schema:
+            type: string
+            maxLength: 128
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+            example: 5f0c8a8e-2f3b-4d8e-9a51-3c2b7d1e9f40
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertReadsRequest'
+      responses:
+        '200':
+          description: What was marked, and the badge after it
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Idempotent-Replayed:
+              description: '`true` when this is the stored response of an earlier request with the same `Idempotency-Key`; absent otherwise.'
+              schema:
+                type: string
+                enum:
+                  - 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertReadResult'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '413':
+          description: '`PAYLOAD_TOO_LARGE`: JSON bodies are limited to 1 MB.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYLOAD_TOO_LARGE:
+                  summary: PAYLOAD_TOO_LARGE
+                  value:
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: The request body is too large.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '422':
+          description: '`IDEMPOTENCY_KEY_REUSED`: The key was sent before, within 24 hours, with a different route, path, body or hold code. Use a new key for a new action; reuse a key only to retry the identical request.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                IDEMPOTENCY_KEY_REUSED:
+                  summary: IDEMPOTENCY_KEY_REUSED
+                  value:
+                    error:
+                      code: IDEMPOTENCY_KEY_REUSED
+                      message: This Idempotency-Key was already used for a different request.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Mark alerts read
+      tags:
+        - 'Admin: alerts'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -28418,6 +29120,10 @@ tags:
     description: 'The Customers page: search, the status filter and a customer''s drawer with Bookings, Spent and No-shows (both roles); edit, block and unblock, the reset email and Delete account (admins only)'
   - name: 'Admin: payments'
     description: 'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)'
+  - name: 'Admin: overview'
+    description: 'The Overview: KPI cards with their comparisons, revenue by theater and hall, payment methods, top movies, the busy-times heatmap, the 30-day trend and Tonight (admins only)'
+  - name: 'Admin: alerts'
+    description: 'The bell and its Notifications panel: the current alerts with each staff member''s read state, and marking them read (both roles)'
   - name: Profile
     description: 'The signed-in customer: details and password'
   - name: My bookings
@@ -37557,6 +38263,986 @@ components:
         - byMethod
         - failed
         - reconciliation
+    OverviewPeriodPreset:
+      type: string
+      enum:
+        - today
+        - 7d
+        - 30d
+    OverviewPeriod:
+      type: object
+      properties:
+        preset:
+          nullable: true
+          example: 7d
+          description: The preset asked for; null when the period was given as dates.
+          allOf:
+            - $ref: '#/components/schemas/OverviewPeriodPreset'
+        dateFrom:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-10'
+          description: The first cinema date.
+        dateTo:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The last cinema date, inclusive.
+        days:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 366
+          example: 7
+          description: How many cinema days.
+        from:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T06:00:00+03:00'
+          description: 'The period starts here: 06:00 Cairo time on `dateFrom`.'
+        to:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-17T06:00:00+03:00'
+          description: 'The period ends here, exclusive: 06:00 Cairo time the morning after `dateTo`.'
+      required:
+        - preset
+        - dateFrom
+        - dateTo
+        - days
+        - from
+        - to
+    ComparisonBasis:
+      type: string
+      enum:
+        - same_weekday_last_week
+        - previous_period
+      description: '`same_weekday_last_week` for a single day ("vs last Thursday"); `previous_period` for a longer period ("vs previous 7 days").'
+    OverviewComparison:
+      type: object
+      properties:
+        basis:
+          nullable: false
+          example: previous_period
+          description: '`same_weekday_last_week` for a single day ("vs last Thursday"); `previous_period` for a longer period ("vs previous 7 days").'
+          allOf:
+            - $ref: '#/components/schemas/ComparisonBasis'
+        dateFrom:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-03'
+          description: The first cinema date compared with.
+        dateTo:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-09'
+          description: The last cinema date compared with, inclusive.
+        days:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 7
+          description: 'How many cinema days: always the period''s.'
+        from:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-03T06:00:00+03:00'
+          description: 06:00 Cairo time on `dateFrom`.
+        to:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-10T06:00:00+03:00'
+          description: 06:00 Cairo time the morning after `dateTo`, exclusive.
+      required:
+        - basis
+        - dateFrom
+        - dateTo
+        - days
+        - from
+        - to
+    MoneyKpi:
+      type: object
+      properties:
+        value:
+          nullable: false
+          description: In the period.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        previous:
+          nullable: false
+          description: In the comparison period.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        change:
+          type: number
+          nullable: true
+          example: 0.125
+          description: 'The relative change against `previous`: `(value − previous) ÷ previous`, 4 decimals (0.125 is +12.5%, −0.2 is −20%). Null when `previous` is 0 or null.'
+      required:
+        - value
+        - previous
+        - change
+    CountKpi:
+      type: object
+      properties:
+        value:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 412
+          description: In the period.
+        previous:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 380
+          description: In the comparison period.
+        change:
+          type: number
+          nullable: true
+          example: 0.0842
+          description: 'The relative change against `previous`: `(value − previous) ÷ previous`, 4 decimals (0.125 is +12.5%, −0.2 is −20%). Null when `previous` is 0 or null.'
+      required:
+        - value
+        - previous
+        - change
+    RatioKpi:
+      type: object
+      properties:
+        value:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.4567
+          description: 'In the period, a ratio with 4 decimals: 0.4567 is 45.67%. Null when there is nothing to divide by.'
+        previous:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.41
+          description: 'In the comparison period, a ratio with 4 decimals: 0.4567 is 45.67%. Null when there is nothing to divide by.'
+        change:
+          type: number
+          nullable: true
+          example: 0.1139
+          description: 'The relative change against `previous`: `(value − previous) ÷ previous`, 4 decimals (0.125 is +12.5%, −0.2 is −20%). Null when `previous` is 0 or null.'
+      required:
+        - value
+        - previous
+        - change
+    OptionalMoneyKpi:
+      type: object
+      properties:
+        value:
+          nullable: true
+          description: In the period; null without tickets.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        previous:
+          nullable: true
+          description: In the comparison period; null without tickets.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        change:
+          type: number
+          nullable: true
+          example: -0.04
+          description: 'The relative change against `previous`: `(value − previous) ÷ previous`, 4 decimals (0.125 is +12.5%, −0.2 is −20%). Null when `previous` is 0 or null.'
+      required:
+        - value
+        - previous
+        - change
+    OverviewKpis:
+      type: object
+      properties:
+        revenue:
+          nullable: false
+          description: 'Revenue: the totals of Confirmed and Completed bookings, counted on the cinema day of their showtime. A refunded booking drops out.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyKpi'
+        ticketsSold:
+          nullable: false
+          description: 'Tickets sold: the seats of those bookings. Held, Failed, Abandoned and Refunded never count.'
+          allOf:
+            - $ref: '#/components/schemas/CountKpi'
+        occupancy:
+          nullable: false
+          description: 'Occupancy: tickets sold ÷ seats on sale across the period''s scheduled showtimes (gaps are not seats, wheelchair spaces are; cancelled showtimes are left out). Null without showtimes.'
+          allOf:
+            - $ref: '#/components/schemas/RatioKpi'
+        averageTicket:
+          nullable: false
+          description: 'Avg. ticket: revenue ÷ tickets sold, in whole piastres. Null without tickets.'
+          allOf:
+            - $ref: '#/components/schemas/OptionalMoneyKpi'
+        counterShare:
+          nullable: false
+          description: 'Counter share: the share of those bookings'' money taken at the box office (cash and card terminal, net of refunds). Null without money.'
+          allOf:
+            - $ref: '#/components/schemas/RatioKpi'
+      required:
+        - revenue
+        - ticketsSold
+        - occupancy
+        - averageTicket
+        - counterShare
+    TheaterRevenue:
+      type: object
+      properties:
+        revenue:
+          nullable: false
+          description: Revenue, by the cinema day of the showtime.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 96
+          description: Tickets sold.
+        seatsOnSale:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 384
+          description: Seats on sale across the scheduled showtimes.
+        occupancy:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.25
+          description: 'Occupancy, a ratio with 4 decimals: 0.4567 is 45.67%: the scheduled showtimes'' tickets ÷ their seats. Null without scheduled showtimes.'
+        showtimeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 2
+          description: Scheduled showtimes (cancelled ones are left out).
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        averageTicket:
+          nullable: true
+          description: 'Avg. ticket: revenue ÷ tickets sold; null without tickets.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        online:
+          nullable: false
+          description: 'The "Online" part: card and wallet money of these bookings, net of refunds.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        counter:
+          nullable: false
+          description: 'The "Counter" part: cash and card-terminal money, net of refunds owed.'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        previousRevenue:
+          nullable: false
+          description: Revenue in the comparison period.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        change:
+          type: number
+          nullable: true
+          example: 0.08
+          description: '"VS PREV": The relative change against `previous`: `(value − previous) ÷ previous`, 4 decimals (0.125 is +12.5%, −0.2 is −20%). Null when `previous` is 0 or null.'
+      required:
+        - revenue
+        - ticketsSold
+        - seatsOnSale
+        - occupancy
+        - showtimeCount
+        - theater
+        - averageTicket
+        - online
+        - counter
+        - previousRevenue
+        - change
+    HallRevenue:
+      type: object
+      properties:
+        revenue:
+          nullable: false
+          description: Revenue, by the cinema day of the showtime.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 96
+          description: Tickets sold.
+        seatsOnSale:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 384
+          description: Seats on sale across the scheduled showtimes.
+        occupancy:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.25
+          description: 'Occupancy, a ratio with 4 decimals: 0.4567 is 45.67%: the scheduled showtimes'' tickets ÷ their seats. Null without scheduled showtimes.'
+        showtimeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 2
+          description: Scheduled showtimes (cancelled ones are left out).
+        hall:
+          nullable: false
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+      required:
+        - revenue
+        - ticketsSold
+        - seatsOnSale
+        - occupancy
+        - showtimeCount
+        - hall
+    MethodRevenue:
+      type: object
+      properties:
+        method:
+          nullable: false
+          example: card
+          description: '`card`, `wallet`, `cash` or `card_terminal`.'
+          allOf:
+            - $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          nullable: false
+          description: 'The money of the period''s bookings on this method: succeeded charges minus refunds (a counter refund still to pay out included).'
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        share:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.62
+          description: 'This method ÷ all methods, a ratio with 4 decimals: 0.4567 is 45.67%. Null when nothing was taken.'
+      required:
+        - method
+        - amount
+        - share
+    MovieRevenue:
+      type: object
+      properties:
+        revenue:
+          nullable: false
+          description: Revenue, by the cinema day of the showtime.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 96
+          description: Tickets sold.
+        seatsOnSale:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 384
+          description: Seats on sale across the scheduled showtimes.
+        occupancy:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.25
+          description: 'Occupancy, a ratio with 4 decimals: 0.4567 is 45.67%: the scheduled showtimes'' tickets ÷ their seats. Null without scheduled showtimes.'
+        showtimeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 2
+          description: Scheduled showtimes (cancelled ones are left out).
+        movie:
+          nullable: false
+          description: 'The movie: its id and title (`name`).'
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+      required:
+        - revenue
+        - ticketsSold
+        - seatsOnSale
+        - occupancy
+        - showtimeCount
+        - movie
+    ShowtimeSlot:
+      type: string
+      enum:
+        - before_15
+        - '15_18'
+        - '18_21'
+        - '21_24'
+        - after_midnight
+      description: 'By local start time: `before_15` (06:00–14:59, morning shows included), `15_18`, `18_21`, `21_24`, `after_midnight` (00:00–05:59, still the previous cinema day).'
+    HeatmapCell:
+      type: object
+      properties:
+        weekday:
+          type: integer
+          nullable: false
+          minimum: 1
+          maximum: 7
+          example: 4
+          description: 'The cinema date''s ISO weekday: 1 Monday … 7 Sunday.'
+        slot:
+          nullable: false
+          example: '18_21'
+          description: 'By local start time: `before_15` (06:00–14:59, morning shows included), `15_18`, `18_21`, `21_24`, `after_midnight` (00:00–05:59, still the previous cinema day).'
+          allOf:
+            - $ref: '#/components/schemas/ShowtimeSlot'
+        showtimeCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 3
+          description: Scheduled showtimes in the cell.
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 210
+          description: Their tickets sold.
+        seatsOnSale:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 576
+          description: Their seats on sale.
+        occupancy:
+          type: number
+          nullable: true
+          minimum: 0
+          example: 0.3646
+          description: '"% of seats sold", a ratio with 4 decimals: 0.4567 is 45.67%. Null for an empty cell.'
+      required:
+        - weekday
+        - slot
+        - showtimeCount
+        - ticketsSold
+        - seatsOnSale
+        - occupancy
+    RevenuePoint:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date.
+        revenue:
+          nullable: false
+          description: Revenue of the showtimes on that cinema date (0 when none).
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - cinemaDate
+        - revenue
+    TheaterRevenueSeries:
+      type: object
+      properties:
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        points:
+          nullable: false
+          description: Every cinema date of the window, oldest first.
+          type: array
+          items:
+            $ref: '#/components/schemas/RevenuePoint'
+      required:
+        - theater
+        - points
+    RevenueTrend:
+      type: object
+      properties:
+        dateFrom:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-09-17'
+          description: 'The first cinema date: 29 days before `dateTo`.'
+        dateTo:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: 'The last cinema date: the period''s `dateTo`.'
+        totals:
+          nullable: false
+          description: 'All theaters in scope: 30 points, oldest first.'
+          type: array
+          items:
+            $ref: '#/components/schemas/RevenuePoint'
+        theaters:
+          nullable: false
+          description: 'One line per theater with revenue in the window (and the selected theater), by name: the legend.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterRevenueSeries'
+      required:
+        - dateFrom
+        - dateTo
+        - totals
+        - theaters
+    TonightShowtime:
+      type: object
+      properties:
+        showtimeId:
+          type: integer
+          nullable: false
+          example: 81
+          description: Showtime id.
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T21:30:00+03:00'
+          description: Starts at.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T23:38:00+03:00'
+          description: Ends at.
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: 'Its cinema date: today.'
+        hasStarted:
+          type: boolean
+          nullable: false
+          example: false
+          description: True once it has started (it stays listed until it ends).
+        movie:
+          nullable: false
+          description: 'The movie: id and title (`name`).'
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        hall:
+          nullable: false
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 54
+          description: Seats in Confirmed bookings (holds do not count).
+        seatCapacity:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 192
+          description: Seats on sale.
+        soldShare:
+          type: number
+          nullable: false
+          minimum: 0
+          example: 0.2813
+          description: '"% sold", a ratio with 4 decimals: 0.4567 is 45.67%. The dashboard marks above 0.85 and below 0.35.'
+        revenue:
+          nullable: false
+          description: Its revenue.
+          allOf:
+            - $ref: '#/components/schemas/MoneyResponse'
+      required:
+        - showtimeId
+        - startsAt
+        - endsAt
+        - cinemaDate
+        - hasStarted
+        - movie
+        - theater
+        - hall
+        - ticketsSold
+        - seatCapacity
+        - soldShare
+        - revenue
+    TonightList:
+      type: object
+      properties:
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: Today's cinema date.
+        items:
+          nullable: false
+          description: Up to 20, soonest first.
+          type: array
+          items:
+            $ref: '#/components/schemas/TonightShowtime'
+        total:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 26
+          description: Today's scheduled showtimes still to end in scope, beyond the 20 too.
+      required:
+        - cinemaDate
+        - items
+        - total
+    AdminOverview:
+      type: object
+      properties:
+        period:
+          nullable: false
+          description: The period.
+          allOf:
+            - $ref: '#/components/schemas/OverviewPeriod'
+        comparison:
+          nullable: false
+          description: What the KPI cards and "VS PREV" compare with.
+          allOf:
+            - $ref: '#/components/schemas/OverviewComparison'
+        theater:
+          nullable: true
+          description: The selected theater; null for all theaters.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: Today's cinema date.
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T15:10:00+03:00'
+          description: When the numbers were computed ("Updated 15:10").
+        kpis:
+          nullable: false
+          description: The KPI cards.
+          allOf:
+            - $ref: '#/components/schemas/OverviewKpis'
+        byTheater:
+          nullable: false
+          description: '"Revenue by theater": every theater in scope with a showtime in the period (or revenue in the comparison), highest revenue first.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterRevenue'
+        byHall:
+          nullable: true
+          description: '"Revenue by hall", only with `theaterId`: each hall with a showtime in the period, highest revenue first. Null for all theaters.'
+          type: array
+          items:
+            $ref: '#/components/schemas/HallRevenue'
+        paymentMethods:
+          nullable: false
+          description: '"Payment methods": card, wallet, cash, card terminal, always all four.'
+          type: array
+          items:
+            $ref: '#/components/schemas/MethodRevenue'
+        topMovies:
+          nullable: false
+          description: '"Top movies by revenue": at most 5 movies with a showtime in the period, highest revenue first (then tickets, then title).'
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieRevenue'
+        heatmap:
+          nullable: false
+          description: 'The busy-times heatmap: 35 cells, weekday 1 (Monday) to 7, each with the 5 slots in order.'
+          type: array
+          items:
+            $ref: '#/components/schemas/HeatmapCell'
+        revenueTrend:
+          nullable: false
+          description: '"Revenue · last 30 days": the 30 cinema days ending on `period.dateTo`.'
+          allOf:
+            - $ref: '#/components/schemas/RevenueTrend'
+        tonight:
+          nullable: false
+          description: '"Tonight": today''s showtimes in scope still to end, whatever the period.'
+          allOf:
+            - $ref: '#/components/schemas/TonightList'
+      required:
+        - period
+        - comparison
+        - theater
+        - cinemaDate
+        - serverTime
+        - kpis
+        - byTheater
+        - byHall
+        - paymentMethods
+        - topMovies
+        - heatmap
+        - revenueTrend
+        - tonight
+    AlertKind:
+      type: string
+      enum:
+        - failed_payments
+        - low_sales
+        - hall_gap
+      description: '`failed_payments` (online payments failed today), `low_sales` (a showtime later today under 35% sold) or `hall_gap` (a hall with no showtimes on a day of the next 7).'
+    FailedPaymentsAlert:
+      type: object
+      properties:
+        count:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 6
+          description: Online charges (card, wallet) declined, or closed by the customer at the wallet, today. Open the Payments screen with `status=failed` and today as the period.
+      required:
+        - count
+    LowSalesAlert:
+      type: object
+      properties:
+        showtimeId:
+          type: integer
+          nullable: false
+          example: 81
+          description: 'The showtime: open its manage panel with `GET /admin/showtimes/{id}`.'
+        startsAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T23:30:00+03:00'
+          description: 'Starts at (after now: a started showtime is no longer an alert).'
+        movie:
+          nullable: false
+          description: 'The movie: id and title (`name`).'
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        theater:
+          nullable: false
+          description: The theater.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        hall:
+          nullable: false
+          description: The hall.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        ticketsSold:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 54
+          description: Seats in Confirmed bookings.
+        seatCapacity:
+          type: integer
+          nullable: false
+          minimum: 1
+          example: 192
+          description: Seats on sale.
+        soldShare:
+          type: number
+          nullable: false
+          minimum: 0
+          maximum: 0.35
+          example: 0.2813
+          description: Tickets sold ÷ seats, a ratio with 4 decimals (always under 0.35 here).
+      required:
+        - showtimeId
+        - startsAt
+        - movie
+        - theater
+        - hall
+        - ticketsSold
+        - seatCapacity
+        - soldShare
+    HallGapAlert:
+      type: object
+      properties:
+        hall:
+          nullable: false
+          description: The hall with nothing scheduled.
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+        theater:
+          nullable: false
+          description: 'Its theater: open its timeline with `GET /admin/showtimes?theaterId=&date=` on the alert''s `cinemaDate`.'
+          allOf:
+            - $ref: '#/components/schemas/NamedRef'
+      required:
+        - hall
+        - theater
+    AdminAlert:
+      type: object
+      properties:
+        key:
+          type: string
+          nullable: false
+          maxLength: 200
+          pattern: ^[a-z0-9:-]{1,200}$
+          example: failed-payments:2026-10-16:6
+          description: 'The stable key: `failed-payments:<cinemaDate>:<count>`, `low-sales:<showtimeId>` or `hall-gap:<hallId>:<cinemaDate>`. The same condition always has the same key, so it is listed once and stays read once read; a new failed payment changes the count in the key, so that alert is unread again. Send it to `POST /admin/alert-reads`.'
+        kind:
+          nullable: false
+          example: failed_payments
+          description: '`failed_payments` (online payments failed today), `low_sales` (a showtime later today under 35% sold) or `hall_gap` (a hall with no showtimes on a day of the next 7).'
+          allOf:
+            - $ref: '#/components/schemas/AlertKind'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema day the alert is about.
+        title:
+          type: string
+          nullable: false
+          example: 6 online payments failed today
+          description: A line to show as is, in English.
+        read:
+          type: boolean
+          nullable: false
+          example: false
+          description: True once the signed-in staff member has marked this key read.
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+          description: When they first marked it read; null while unread.
+        failedPayments:
+          nullable: true
+          description: Set for `failed_payments`, else null.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/FailedPaymentsAlert'
+        lowSales:
+          nullable: true
+          description: Set for `low_sales`, else null.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/LowSalesAlert'
+        hallGap:
+          nullable: true
+          description: Set for `hall_gap`, else null.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/HallGapAlert'
+      required:
+        - key
+        - kind
+        - cinemaDate
+        - title
+        - read
+        - readAt
+        - failedPayments
+        - lowSales
+        - hallGap
+    AdminAlertPage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: Unread first; then failed payments, low sales (soonest show first), hall gaps (soonest day first, then theater and hall by name).
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAlert'
+        nextCursor:
+          type: string
+          nullable: true
+          example: null
+          description: Pass back as `cursor` for the next page; null on the last page.
+        total:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: How many alerts are current.
+        unreadCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 3
+          description: 'The bell''s badge: current alerts the signed-in staff member has not read.'
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: Today's cinema date.
+        serverTime:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T15:10:00+03:00'
+          description: When the alerts were computed.
+      required:
+        - items
+        - nextCursor
+        - total
+        - unreadCount
+        - cinemaDate
+        - serverTime
+    AlertReadsRequest:
+      type: object
+      properties:
+        keys:
+          nullable: false
+          minItems: 1
+          maxItems: 200
+          example:
+            - failed-payments:2026-10-16:6
+            - low-sales:81
+          description: The `key`s to mark read, 1 to 200, as `GET /admin/alerts` gave them. Omit to mark every current alert read ("Mark all as read"). A key that is not a current alert any more is ignored.
+          type: array
+          items:
+            type: string
+    AlertReadResult:
+      type: object
+      properties:
+        markedCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 2
+          description: Keys newly marked read. Keys already read, and keys that are not current alerts, are not counted.
+        unreadCount:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 1
+          description: The bell's badge after marking.
+        total:
+          type: integer
+          nullable: false
+          minimum: 0
+          example: 4
+          description: How many alerts are current.
+      required:
+        - markedCount
+        - unreadCount
+        - total
     ErrorResponse:
       type: object
       properties:
