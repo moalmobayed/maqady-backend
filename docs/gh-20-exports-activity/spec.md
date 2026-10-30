@@ -93,7 +93,7 @@ customer's personal data.
   event in its own transaction, and builds the CSV stream.
 - `export-columns.ts`: the columns of each file, from the list's response DTO.
 - `overview-rows.ts`: the Overview response as one row per figure.
-- `csv.ts`: `escapeCsvCell()`, `csvCellOf()`, `csvStream()`, `decimalOf()`.
+- `csv.ts`: `escapeCsvCell()`, `csvCellOf()`, `csvStream()`, `mapBatches()`, `decimalOf()`.
 - `export-options.ts`: `ExportOptions { batchSize: 500 }` (an injectable, so a test can read
   in batches of 2 with real wiring).
 - `exports.constants.ts`, `enums.ts` (`EXPORT_DATASETS`), `types.ts`.
