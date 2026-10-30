@@ -27,6 +27,9 @@ export interface ExportFile {
   readonly stream: Readable;
 }
 
+/** The filters of an export as its audit event may record them; an absent filter is undefined. */
+export type ExportFilters = Readonly<Record<string, AuditMetadataValue | undefined>>;
+
 /** The export's audit metadata: its dataset and the filters given, never personal data. */
 export type ExportAuditMetadata = Readonly<Record<string, AuditMetadataValue>>;
 

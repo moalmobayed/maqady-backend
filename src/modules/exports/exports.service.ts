@@ -27,7 +27,7 @@ import {
 import { ExportOptions } from './export-options';
 import { EXPORT_DOWNLOADED_ACTION, EXPORT_ENTITY } from './exports.constants';
 import { overviewRows } from './overview-rows';
-import type { ExportAuditMetadata, ExportDataset, ExportFile } from './types';
+import type { ExportAuditMetadata, ExportDataset, ExportFile, ExportFilters } from './types';
 
 /**
  * The admin CSV exports (PRD "CSV exports"; design §13.4), admins only: the Overview of the
@@ -137,7 +137,7 @@ export class ExportsService {
     staff: StaffPrincipal,
     dataset: ExportDataset,
     stream: Readable,
-    filters: Readonly<Record<string, AuditMetadataValue | undefined>>,
+    filters: ExportFilters,
   ): Promise<ExportFile> {
     try {
       await this.transactions.run(() =>
@@ -157,10 +157,7 @@ export class ExportsService {
 }
 
 /** The dataset and the filters that were given; absent filters are left out. */
-function metadataOf(
-  dataset: ExportDataset,
-  filters: Readonly<Record<string, AuditMetadataValue | undefined>>,
-): ExportAuditMetadata {
+function metadataOf(dataset: ExportDataset, filters: ExportFilters): ExportAuditMetadata {
   const given = Object.entries(filters).filter(
     (entry): entry is [string, AuditMetadataValue] => entry[1] !== undefined,
   );
