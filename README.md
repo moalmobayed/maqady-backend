@@ -290,6 +290,9 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   booking paid by card).
 - `test/support/payments-screen.ts` (U16): `listTransactions()` and `paymentsSummary()` through
   the real admin Payments routes.
+- `test/support/overview-alerts.ts` (U17): `getOverview()`, `listAlerts()` and `markAlertsRead()`
+  through the real routes, and `bookableFixture(testApp, admin, days)` (a published theater with
+  the hours given and a 31-seat hall, for after-midnight and early shows).
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -593,6 +596,29 @@ curl -s "localhost:3000/api/v1/admin/payments?status=pending&kind=refund" -H "Au
 curl -s "localhost:3000/api/v1/admin/payments/summary?dateFrom=2026-10-10&dateTo=2026-10-16" -H "Authorization: Bearer $ADMIN"
 ```
 
+## Overview and the bell
+
+The admin Overview and the Notifications bell (U17, `docs/gh-18-overview-alerts/spec.md`), in the
+read-only `analytics` module, computed on read after settling due slow payments: nothing is cached
+and no timer raises anything.
+
+- `GET /api/v1/admin/overview?period=today|7d|30d` (or `dateFrom` / `dateTo`; `theaterId` for one
+  theater), admins only: the KPI cards (Revenue, Tickets sold, Occupancy, Avg. ticket, Counter
+  share) against the same weekday last week or the period before, revenue by theater (Online /
+  Counter, VS PREV) and by hall, payment methods, top movies, the weekday × start-time heatmap,
+  the 30-day trend per theater and Tonight. Revenue counts on the cinema day of the showtime.
+- `GET /api/v1/admin/alerts` (both staff roles): the current alerts with stable keys
+  (`failed-payments:<date>:<count>`, `low-sales:<showtimeId>`, `hall-gap:<hallId>:<date>`), unread
+  first, with the caller's `unreadCount`. `POST /api/v1/admin/alert-reads` marks `keys` (or every
+  current alert) read for the caller only, in `staff_alert_reads`.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/overview?period=7d&theaterId=1" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/alerts?limit=20" -H "Authorization: Bearer $STAFF"
+curl -s -X POST localhost:3000/api/v1/admin/alert-reads -H "Authorization: Bearer $STAFF" \
+  -H 'Content-Type: application/json' -d '{"keys":["low-sales:81"]}'
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -696,7 +722,8 @@ src/
                                          customers, halls, discovery, showtimes, seating (seat
                                          claims and the /ws seat map), bookings (holds,
                                          checkout, box office, admin bookings), analytics
-                                         (the Payments screen), seed (the development seed)
+                                         (the Payments screen, the Overview and the bell),
+                                         seed (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

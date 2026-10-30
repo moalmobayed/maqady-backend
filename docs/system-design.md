@@ -135,7 +135,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `admin-customers` | No table: the admin Customers screen and anonymisation (U15, `docs/gh-16-admin-customers/spec.md`). *Deviation:* a module of its own, since its routes need `bookings` (the numbers, booking contacts and notes) and `bookings` imports `customers`; it changes each table through the module that owns it | customers, bookings, auth, idempotency, messaging, audit |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
-| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService` |
+| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService`. *As built (U17, `docs/gh-18-overview-alerts/spec.md`):* it also holds the Overview and the bell, reading `halls` and `movies` names too, owns and writes `staff_alert_reads`, and uses theaters' `TheaterHoursService` (the open days of a hall gap) |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
 Rules:
@@ -1225,6 +1225,17 @@ showtime's theater; filters `kind`, `method`, `channel`, `status` (shown), `thea
 the period's failed charges, and the reconciliation by theater, against the provider and of each
 touched booking's balance (§13.3).
 
+Overview and bell (U17, `docs/gh-18-overview-alerts/spec.md`), both after `settleAllDue()`:
+`GET /admin/overview` (Admin) takes `period=today|7d|30d` or `dateFrom` / `dateTo` (not both; at
+most 366 days) and `theaterId` (unknown: `NOT_FOUND`), and answers the five KPI cards with
+`previous` and `change` against `comparison` (a single day against the same weekday last week, a
+longer period against the days before it), `byTheater` (Online / Counter, VS PREV), `byHall`
+(with `theaterId` only), `paymentMethods`, `topMovies` (5), the 35-cell `heatmap`, `revenueTrend`
+(30 cinema days) and `tonight` (20). Its "Needs attention" list is the bell's. `GET /admin/alerts`
+(Staff) answers a cursor page of the current alerts (§13.3) with the caller's `read` / `readAt`,
+`total` and `unreadCount`; `POST /admin/alert-reads` (Staff, not strict: marking is naturally
+idempotent) answers `200 { markedCount, unreadCount, total }`.
+
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
@@ -1409,6 +1420,31 @@ generated contract (§19).
   The unread count is the number of current alert keys the staff member hasn't seen in
   `staff_alert_reads`. `POST /admin/alert-reads` marks the current keys seen. A new failed
   payment changes the count in the key, so the alert shows as unread again.
+- **As built (U17, `docs/gh-18-overview-alerts/spec.md`).**
+  - *Overview.* One query per period reads every showtime of the period's cinema dates with its
+    Confirmed and Completed bookings' totals and seats; one more reads those bookings' money by
+    theater and payment method (succeeded charges minus every refund, a pending counter refund
+    included, so a consistent ledger adds up to the totals). Every card, table, chart and the
+    heatmap folds from those rows (`analytics/overview.ts`). Occupancy counts scheduled showtimes
+    only, tickets ÷ `seat_capacity`. Counter share is cash and card-terminal money ÷ all the
+    money of the period's bookings, from the ledger, not the booking's channel, so an online
+    booking's edit paid in cash counts where it was paid. A comparison's `change` is relative,
+    `(value − previous) ÷ previous`, from the shown values; ratios have 4 decimals. The period is
+    `period=today|7d|30d` (resolved on the server's cinema day) or `dateFrom` / `dateTo` with the
+    Payments screen's rules. "Revenue · last 30 days" is the 30 cinema days ending on the period's
+    last date; "Tonight" is today's scheduled showtimes still to end, whatever the period.
+  - *Alerts.* `failed-payments` counts online charges declined or closed at the wallet with
+    `completed_at` on today's cinema day (U16's "Failed today", online only). `low-sales` is a
+    scheduled showtime of today's cinema date that starts after now with Confirmed seats × 100 <
+    35 × `seat_capacity`. *Deviation:* `hall-gap` looks at today and the 6 cinema days after it,
+    only at active halls of `active` theaters, and only on days the theater is open
+    (`TheaterHoursService`: a closed special date, a closed weekday or no hours is no gap), since
+    a hall can't be scheduled on a closed day. The bell lists them unread first, then by kind and
+    time, cursor-paged in memory with `total` and `unreadCount`. `POST /admin/alert-reads` takes
+    optional `keys` (one opened alert) or marks every current key; a key that is not current is
+    ignored, a key read twice keeps its first `seen_at`, and the caller's reads older than 30
+    days are deleted on the way (tidying only). It does not settle first: settlement runs in its
+    own transaction before any other, and a decline that settles later makes a new, unread key.
 
 ### 13.4 Exports
 
