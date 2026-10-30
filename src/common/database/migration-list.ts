@@ -45,6 +45,7 @@ import * as m0150_01 from '../../migrations/0150_01_create_booking_notes';
 import * as m0150_02 from '../../migrations/0150_02_add_admin_booking_indexes';
 import * as m0160_01 from '../../migrations/0160_01_add_admin_customer_indexes';
 import * as m0170_01 from '../../migrations/0170_01_add_payments_screen_indexes';
+import * as m0180_01 from '../../migrations/0180_01_create_staff_alert_reads';
 import * as m0190_01 from '../../migrations/0190_01_add_search_indexes';
 
 /**
@@ -99,5 +100,6 @@ export const MIGRATIONS: readonly ListedMigration[] = [
   { name: '0150_02_add_admin_booking_indexes', file: m0150_02 },
   { name: '0160_01_add_admin_customer_indexes', file: m0160_01 },
   { name: '0170_01_add_payments_screen_indexes', file: m0170_01 },
+  { name: '0180_01_create_staff_alert_reads', file: m0180_01 },
   { name: '0190_01_add_search_indexes', file: m0190_01 },
 ];

@@ -63,6 +63,16 @@ export const API_TAGS = [
       'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)',
   },
   {
+    name: 'Admin: overview',
+    description:
+      'The Overview: KPI cards with their comparisons, revenue by theater and hall, payment methods, top movies, the busy-times heatmap, the 30-day trend and Tonight (admins only)',
+  },
+  {
+    name: 'Admin: alerts',
+    description:
+      "The bell and its Notifications panel: the current alerts with each staff member's read state, and marking them read (both roles)",
+  },
+  {
     name: 'Admin: search',
     description:
       'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)',
