@@ -18,13 +18,13 @@ import { CustomerAnonymisationService } from './customer-anonymisation.service';
  * `messaging`, and changes each table through the module that owns it. `bookings` imports
  * `customers`, so these routes cannot live there.
  *
- * Exported for the customers CSV (U19) and search (U18): `AdminCustomersService` and
- * `CustomerAnonymisationService`.
+ * Exported for the customers CSV (U19) and search (U18): `AdminCustomersService`,
+ * `CustomerAnonymisationService` and `AdminCustomerResponseMapper` (the CSV's rows are the list's).
  */
 @Module({
   imports: [CustomersModule, BookingsModule, CredentialsModule, IdempotencyModule],
   controllers: [AdminCustomersController],
   providers: [AdminCustomersService, CustomerAnonymisationService, AdminCustomerResponseMapper],
-  exports: [AdminCustomersService, CustomerAnonymisationService],
+  exports: [AdminCustomersService, CustomerAnonymisationService, AdminCustomerResponseMapper],
 })
 export class AdminCustomersModule {}

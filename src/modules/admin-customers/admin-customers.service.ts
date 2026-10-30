@@ -3,6 +3,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import type { AuditActor } from '../../common/audit/types';
 import { TransactionRepository } from '../../common/database/transaction.repository';
 import { AppError } from '../../common/errors/app-error';
+import { keysetBatches } from '../../common/pagination/keyset-batches';
 import type { Page, PageQueryInput } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
 import { AdminBookingsService } from '../bookings/admin-bookings.service';
@@ -47,6 +48,27 @@ export class AdminCustomersService {
     await this.settlement.settleAllDue();
     const page = await this.customers.list(filter, query);
     return { ...page, items: await this.withStats(page.items) };
+  }
+
+  /**
+   * U19 (the customers CSV): every row `list()` would answer with these filters, in its order,
+   * `batchSize` at a time. Due payments are settled once, now; each batch is then one page query
+   * of the list and one grouped query for the numbers, read lazily, with no total.
+   */
+  async exportBatches(
+    filter: AdminCustomerFilter,
+    batchSize: number,
+  ): Promise<AsyncIterable<readonly AdminCustomerListItem[]>> {
+    await this.settlement.settleAllDue();
+    const customers = keysetBatches(
+      (request) => this.customers.rowsForAdmin(filter, request),
+      (customer) => ({ sortKey: customer.createdAt.toISOString(), id: customer.id }),
+      batchSize,
+    );
+    const withStats = (batch: readonly Customer[]) => this.withStats(batch);
+    return (async function* () {
+      for await (const batch of customers) yield await withStats(batch);
+    })();
   }
 
   /**

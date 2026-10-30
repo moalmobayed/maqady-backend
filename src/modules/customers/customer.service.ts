@@ -5,7 +5,7 @@ import { TransactionRepository } from '../../common/database/transaction.reposit
 import { AppError } from '../../common/errors/app-error';
 import { toPage, toPageRequest } from '../../common/pagination/cursor';
 import { INVALID_CURSOR_MESSAGE } from '../../common/pagination/pagination.constants';
-import type { Page, PageQueryInput } from '../../common/pagination/types';
+import type { Page, PageQueryInput, PageRequest } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
 import { ONE_TIME_TOKEN_LIFETIME_SECONDS } from '../auth/auth.constants';
 import { OneTimeTokenService } from '../auth/one-time-token.service';
@@ -109,6 +109,16 @@ export class CustomerService {
       (row) => ({ sortKey: row.created_at.toISOString(), id: row.id }),
       toCustomer,
     );
+  }
+
+  /**
+   * U19 (the customers CSV): up to `request.limit + 1` live customers after `request.after`, in
+   * `list()`'s order and under its filters, with no total: one page query of the list, for a
+   * caller that reads the whole list in batches (`keysetBatches()`).
+   */
+  async rowsForAdmin(filter: AdminCustomerFilter, request: PageRequest): Promise<Customer[]> {
+    const rows = await this.customers.pageForAdmin(filter, request);
+    return rows.map(toCustomer);
   }
 
   /**
