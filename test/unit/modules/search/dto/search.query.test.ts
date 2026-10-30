@@ -24,7 +24,7 @@ describe('SearchQuery', () => {
     [{ q: 'x'.repeat(101) }, 'too long'],
     [{ q: 'ab\u0000c' }, 'a NUL character'],
     [{ q: ['ab', 'cd'] }, 'repeated'],
-  ])('refuses %j (%s) on q', async (query) => {
+  ])('refuses %j (%s) on q', async (query: Record<string, unknown>, _label: string) => {
     expect((await check(query)).fields).toEqual(['q']);
   });
 
