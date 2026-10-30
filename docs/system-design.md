@@ -1380,10 +1380,11 @@ generated contract (§19).
   default `pg_trgm.word_similarity_threshold` (0.6). Emails, phones and references are never
   fuzzy. The same trigram GIN indexes serve both; migration `0190_01` adds theater names
   (`name::text`, CITEXT) and districts.
-- Ranking: each matched column's tier (the whole value 0, a prefix 1, a substring 2, a typo only
-  3), the entity's earlier column first within a tier (a title before a cast name, a theater name
-  before its district, a name before an email before a phone), then word similarity, then a
-  stable order (title or name; bookings and customers newest first).
+- Ranking: each matched column's tier (the whole value 0, for a phone also the E.164 form of a
+  local mobile; a prefix 1, a substring 2, a typo only 3), the entity's earlier column first
+  within a tier (a title before a cast name, a theater name before its district, a name before
+  an email before a phone), then word similarity, then a stable order (title or name; bookings
+  and customers newest first).
 - `GET /search` (public, the `search` rate limit, cacheable 60 s): Coming soon and Now showing
   movies by title or cast (`matchedPerson`), people credited on them, `active` theaters by name or
   district. Nothing else is visible, also not through a cast match.
