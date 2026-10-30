@@ -28376,6 +28376,332 @@ paths:
         - 'Admin: payments'
       security:
         - staff: []
+  /search:
+    get:
+      description: |-
+        Public; no token needed. The nav search's results page, grouped, up to 5 of each, best match first:
+
+        - `movies`: Coming soon and Now showing movies whose title or a credited person's name matches; a cast match names the person in `matchedPerson`.
+        - `people`: people credited on a Coming soon or Now showing movie whose name matches (open the Movies page with `/movies?people=<id>`).
+        - `theaters`: theaters open for sales (`active`) whose name or district matches.
+
+        Drafts, archived movies and theaters that are drafts or have paused sales never appear. Matching is case-insensitive and accepts part of a word; from 3 characters a name or title with a typo matches too ("Incepton" finds "Inception"). Ranking: the whole value, then a value starting with the query, then one containing it, then a typo-tolerant match, the closest first. Each group says whether more matched (`hasMore`); empty groups are the empty state. Limited to 60 searches a minute per IP address (`429 RATE_LIMITED` with `Retry-After`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`; an error `no-store`).
+      operationId: searchPublic
+      parameters:
+        - name: q
+          required: true
+          in: query
+          description: 'What to look for, 2 to 100 characters after the surrounding spaces are dropped. Case-insensitive: part of a word matches anywhere (`%` and `_` are plain characters), and from 3 characters a name or title with a typo matches too.'
+          schema:
+            minLength: 2
+            maxLength: 100
+            nullable: false
+            example: Incepton
+            type: string
+      responses:
+        '200':
+          description: The results, grouped
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Search movies, people and theaters
+      tags:
+        - Search
+      security: []
+  /admin/search:
+    get:
+      description: |-
+        Staff (box office or admin). The top bar search's results page, grouped, up to 10 of each, best match first, limited to what the role may see:
+
+        - `bookings` (both roles): a whole booking reference in any case (`mq-7k3p9q`) finds exactly that booking; anything else matches the contact name (part of it, or with a typo from 3 characters), email or phone (part of it; a local mobile `01012345678` also finds `+201012345678`). Any status, rows as the Bookings table shows them; due slow payments are settled first.
+        - `customers` (both roles): live accounts by name, email or phone, the same way. A deleted (anonymised) customer is never found, and their old name, email or phone finds none of their bookings either (their contact was cleared; the reference still finds a booking).
+        - `movies`, `people`, `theaters` (admins only): movies in any status, drafts and archived included, by title or cast; every person by name; theaters in any status by name or district. **Null for box office**, whose dashboard has no catalog screens.
+
+        Matching is case-insensitive; ranking: the whole value, then a value starting with the query, then one containing it, then a typo-tolerant match, the closest first. Each group says whether more matched (`hasMore`); open the full list with the same `q` (`GET /admin/bookings?q=`, `GET /admin/customers?q=`, the catalog lists). Personal data: `Cache-Control: private, no-store`.
+      operationId: searchStaff
+      parameters:
+        - name: q
+          required: true
+          in: query
+          description: 'What to look for, 2 to 100 characters after the surrounding spaces are dropped. Case-insensitive: part of a word matches anywhere (`%` and `_` are plain characters), and from 3 characters a name or title with a typo matches too.'
+          schema:
+            minLength: 2
+            maxLength: 100
+            nullable: false
+            example: Incepton
+            type: string
+      responses:
+        '200':
+          description: The results, grouped by what the role may see
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSearchResults'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: '`ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Search the dashboard
+      tags:
+        - 'Admin: search'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -28418,6 +28744,10 @@ tags:
     description: 'The Customers page: search, the status filter and a customer''s drawer with Bookings, Spent and No-shows (both roles); edit, block and unblock, the reset email and Delete account (admins only)'
   - name: 'Admin: payments'
     description: 'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)'
+  - name: 'Admin: search'
+    description: 'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)'
+  - name: Search
+    description: 'The customer site search: movies, people and theaters'
   - name: Profile
     description: 'The signed-in customer: details and password'
   - name: My bookings
@@ -37557,6 +37887,360 @@ components:
         - byMethod
         - failed
         - reconciliation
+    SearchMatchedPerson:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 4
+          description: Person id.
+        fullName:
+          type: string
+          nullable: false
+          example: Ahmed Helmy
+          description: Full name.
+      required:
+        - id
+        - fullName
+    SearchMovie:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 12
+          description: 'Movie id: open `GET /movies/{id}` on the customer site, `GET /admin/movies/{id}` in the dashboard.'
+        title:
+          type: string
+          nullable: false
+          example: Inception
+          description: Title.
+        status:
+          nullable: false
+          example: now_showing
+          description: The public search only ever answers `coming_soon` or `now_showing`; the admin search any status, drafts and archived included.
+          allOf:
+            - $ref: '#/components/schemas/CatalogMovieStatus'
+        releaseDate:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-10-01'
+          description: Release date; null only on a draft without one (admin search).
+        runtimeMinutes:
+          type: integer
+          nullable: true
+          minimum: 1
+          example: 148
+          description: Runtime in minutes; null only on a draft without one (admin search).
+        ageRating:
+          nullable: false
+          example: 12+
+          description: Age rating.
+          allOf:
+            - $ref: '#/components/schemas/AgeRating'
+        poster:
+          nullable: true
+          description: The 2:3 poster, or null when none is uploaded.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        matchedPerson:
+          nullable: true
+          description: 'When the movie was found by its cast or crew ("title or cast"): the best matching credited person. Null when the title matched at least as well.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SearchMatchedPerson'
+      required:
+        - id
+        - title
+        - status
+        - releaseDate
+        - runtimeMinutes
+        - ageRating
+        - poster
+        - matchedPerson
+    SearchMovieGroup:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: 'Best match first: a whole title, then a title starting with the query, then one containing it, then one with a typo; a title match before a cast match of the same kind. At most 5 publicly, 10 in the dashboard. Empty when nothing matches.'
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchMovie'
+        hasMore:
+          type: boolean
+          nullable: false
+          example: false
+          description: True when more movies matched than are listed ("See all").
+      required:
+        - items
+        - hasMore
+    SearchPerson:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 4
+          description: 'Person id: on the customer site open the Movies page filtered by them (`/movies?people=<id>`), in the dashboard `GET /admin/people/{id}`.'
+        fullName:
+          type: string
+          nullable: false
+          example: Ahmed Helmy
+          description: Full name.
+        photo:
+          nullable: true
+          description: Square photo, or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        roles:
+          type: array
+          nullable: false
+          example:
+            - actor
+            - writer
+          description: 'Their roles in the credit role order: those set on the person plus those they are credited with (publicly, only credits on Coming soon and Now showing movies).'
+          items:
+            $ref: '#/components/schemas/CreditRole'
+      required:
+        - id
+        - fullName
+        - photo
+        - roles
+    SearchPersonGroup:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: Best match first (a whole name, a name starting with the query, containing it, then with a typo). At most 5 publicly, 10 in the dashboard. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchPerson'
+        hasMore:
+          type: boolean
+          nullable: false
+          example: false
+          description: True when more people matched than are listed.
+      required:
+        - items
+        - hasMore
+    SearchTheater:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 3
+          description: 'Theater id: open `GET /theaters/{id}` on the customer site, `GET /admin/theaters/{id}` in the dashboard.'
+        name:
+          type: string
+          nullable: false
+          example: Maqady Zamalek
+          description: Name.
+        status:
+          nullable: false
+          example: active
+          description: The public search only ever answers `active` (open for sales); the admin search any status.
+          allOf:
+            - $ref: '#/components/schemas/TheaterStatus'
+        district:
+          type: string
+          nullable: false
+          example: Zamalek
+          description: 'District: the area people search by.'
+        city:
+          type: string
+          nullable: false
+          example: Cairo
+          description: City.
+        cover:
+          nullable: true
+          description: The cover photo, or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+      required:
+        - id
+        - name
+        - status
+        - district
+        - city
+        - cover
+    SearchTheaterGroup:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: Best match first; a name match before a district match of the same kind. At most 5 publicly, 10 in the dashboard. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchTheater'
+        hasMore:
+          type: boolean
+          nullable: false
+          example: false
+          description: True when more theaters matched than are listed.
+      required:
+        - items
+        - hasMore
+    SearchResults:
+      type: object
+      properties:
+        q:
+          type: string
+          nullable: false
+          example: Incepton
+          description: The query that was searched, trimmed.
+        movies:
+          nullable: false
+          description: Coming soon and Now showing movies by title or cast.
+          allOf:
+            - $ref: '#/components/schemas/SearchMovieGroup'
+        people:
+          nullable: false
+          description: People credited on a Coming soon or Now showing movie, by name.
+          allOf:
+            - $ref: '#/components/schemas/SearchPersonGroup'
+        theaters:
+          nullable: false
+          description: Theaters open for sales (`active`), by name or district.
+          allOf:
+            - $ref: '#/components/schemas/SearchTheaterGroup'
+      required:
+        - q
+        - movies
+        - people
+        - theaters
+    AdminSearchBookingGroup:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: Rows as the Bookings table shows them, statuses decided now. A whole reference finds exactly that booking; otherwise the best match of the contact name (whole, start, part, then with a typo), email or phone first, newest first among equals. At most 10. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBookingListItem'
+        hasMore:
+          type: boolean
+          nullable: false
+          example: false
+          description: 'True when more bookings matched than are listed: see all with `GET /admin/bookings?q=`.'
+      required:
+        - items
+        - hasMore
+    AdminSearchCustomer:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 42
+          description: 'Customer id: open the drawer with `GET /admin/customers/{id}`.'
+        fullName:
+          type: string
+          nullable: false
+          example: Layla Hassan
+          description: Full name.
+        email:
+          type: string
+          format: email
+          nullable: false
+          example: layla.hassan@example.com
+          description: The sign-in email.
+        phone:
+          type: string
+          nullable: true
+          example: '+201012345678'
+          description: Mobile number in international (E.164) form, or null when none is on file.
+        status:
+          nullable: false
+          example: active
+          description: '`active`, or `blocked` (cannot sign in).'
+          allOf:
+            - $ref: '#/components/schemas/CustomerStatus'
+        emailVerified:
+          type: boolean
+          nullable: false
+          example: true
+          description: Whether the customer verified their email.
+        joinedAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-09-02T18:20:00+03:00'
+          description: When the account was created (JOINED).
+      required:
+        - id
+        - fullName
+        - email
+        - phone
+        - status
+        - emailVerified
+        - joinedAt
+    AdminSearchCustomerGroup:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: Live accounts, best match first (name, then email, then phone), newest first among equals. A deleted (anonymised) account is never found. At most 10. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSearchCustomer'
+        hasMore:
+          type: boolean
+          nullable: false
+          example: false
+          description: 'True when more customers matched than are listed: see all with `GET /admin/customers?q=`.'
+      required:
+        - items
+        - hasMore
+    AdminSearchResults:
+      type: object
+      properties:
+        q:
+          type: string
+          nullable: false
+          example: layla
+          description: The query that was searched, trimmed.
+        bookings:
+          nullable: false
+          description: Bookings by reference, contact name, email or phone (both roles).
+          allOf:
+            - $ref: '#/components/schemas/AdminSearchBookingGroup'
+        customers:
+          nullable: false
+          description: Customers by name, email or phone (both roles).
+          allOf:
+            - $ref: '#/components/schemas/AdminSearchCustomerGroup'
+        movies:
+          nullable: true
+          description: 'Admins: movies in any status (drafts and archived included) by title or cast. Null for box office, who has no Movies screen.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SearchMovieGroup'
+        people:
+          nullable: true
+          description: 'Admins: every person, by name. Null for box office.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SearchPersonGroup'
+        theaters:
+          nullable: true
+          description: 'Admins: theaters in any status, by name or district. Null for box office.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SearchTheaterGroup'
+      required:
+        - q
+        - bookings
+        - customers
+        - movies
+        - people
+        - theaters
     ErrorResponse:
       type: object
       properties:
