@@ -289,8 +289,9 @@ customer's name, email or phone.
 ## Not covered by hand
 
 - A download larger than one batch (500 rows), and a failure after the first byte: covered by the
-  integration suite (batches of 2 with one page query per batch observed) and the unit tests of
-  `csvStream()` (lazy reads, a mid-stream failure destroys the stream).
+  integration suite (batches of 2 with one page query per batch observed), the unit tests of
+  `csvStream()` (lazy reads, a mid-stream failure destroys the stream) and the controller's unit
+  test on real Express (the connection is cut and the failure logged; review R1).
 - Leading tab and carriage return in a name: the HTTP routes trim names, so they cannot be typed
   through the API; the integration suite writes them through the service and checks both are
   prefixed.
