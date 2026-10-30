@@ -65,7 +65,7 @@ export const API_TAGS = [
   {
     name: 'Admin: search',
     description:
-      "The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)",
+      'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)',
   },
   { name: 'Search', description: 'The customer site search: movies, people and theaters' },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
