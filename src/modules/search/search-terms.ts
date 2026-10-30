@@ -20,12 +20,14 @@ export function searchTermsOf(q: string): SearchTerms {
   const text = q.trim();
   const local = LOCAL_MOBILE_PATTERN.exec(text);
   const reference = text.toUpperCase();
+  const phone = local ? `+20${local[1]}` : null;
   return {
     text,
     prefix: `${escapeLike(text)}%`,
     contains: `%${escapeLike(text)}%`,
     fuzzy: text.length >= FUZZY_MIN_LENGTH,
-    phoneContains: local ? `%+20${local[1]}%` : null,
+    phone,
+    phoneContains: phone === null ? null : `%${phone}%`,
     reference: REFERENCE_PATTERN.test(reference) ? reference : null,
   };
 }
@@ -36,24 +38,29 @@ export function bindingsOf(terms: SearchTerms, limit: number): SearchBindings {
     q: terms.text,
     prefix: terms.prefix,
     contains: terms.contains,
+    phone: terms.phone,
     phoneContains: terms.phoneContains,
     limit,
   };
 }
 
 /**
- * How well one column matched, as SQL on the named bindings: 0 the whole value (any case), 1 a
- * prefix, 2 a substring, 3 only typo-tolerant (`:q <% column`, pg_trgm word similarity at least
- * `pg_trgm.word_similarity_threshold`), `NO_MATCH_TIER` otherwise (or NULL).
+ * How well one column matched, as SQL on the named bindings: 0 the whole value (any case; for a
+ * phone also the E.164 form of a local mobile), 1 a prefix, 2 a substring, 3 only typo-tolerant
+ * (`:q <% column`, pg_trgm word similarity at least `pg_trgm.word_similarity_threshold`),
+ * `NO_MATCH_TIER` otherwise (or NULL).
  */
 export function tierSql(column: SearchColumn, terms: SearchTerms): string {
   const c = column.sql;
-  const substring =
-    column.kind === 'phone' && terms.phoneContains !== null
-      ? `${c} ILIKE :contains OR ${c} ILIKE :phoneContains`
-      : `${c} ILIKE :contains`;
+  const localMobile = column.kind === 'phone' && terms.phone !== null;
+  const exact = localMobile
+    ? `lower(${c}) = lower(:q) OR ${c} = :phone`
+    : `lower(${c}) = lower(:q)`;
+  const substring = localMobile
+    ? `${c} ILIKE :contains OR ${c} ILIKE :phoneContains`
+    : `${c} ILIKE :contains`;
   const fuzzy = column.kind === 'name' && terms.fuzzy ? ` WHEN :q <% ${c} THEN 3` : '';
-  return `CASE WHEN lower(${c}) = lower(:q) THEN 0 WHEN ${c} ILIKE :prefix THEN 1 WHEN ${substring} THEN 2${fuzzy} ELSE ${NO_MATCH_TIER} END`;
+  return `CASE WHEN ${exact} THEN 0 WHEN ${c} ILIKE :prefix THEN 1 WHEN ${substring} THEN 2${fuzzy} ELSE ${NO_MATCH_TIER} END`;
 }
 
 /**

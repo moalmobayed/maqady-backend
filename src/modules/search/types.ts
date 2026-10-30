@@ -24,6 +24,8 @@ export interface SearchTerms {
   readonly contains: string;
   /** True when the query is long enough for a typo-tolerant match (`FUZZY_MIN_LENGTH`). */
   readonly fuzzy: boolean;
+  /** A local Egyptian mobile (`01012345678`) in its E.164 form (`+201012345678`); else null. */
+  readonly phone: string | null;
   /** For an Egyptian mobile typed locally (`01012345678`), `%+201012345678%`; otherwise null. */
   readonly phoneContains: string | null;
   /** The booking reference in upper case when the whole query is one (`mq-7k3p9q`); else null. */
@@ -45,6 +47,7 @@ export type SearchBindings = {
   readonly q: string;
   readonly prefix: string;
   readonly contains: string;
+  readonly phone: string | null;
   readonly phoneContains: string | null;
   readonly limit: number;
 };

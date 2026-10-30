@@ -196,6 +196,37 @@ describe('GET /admin/search (integration)', () => {
       expect(response.body.customers.items).toHaveLength(10);
       expect(response.body.customers.hasMore).toBe(true);
     });
+
+    it('ranks the number a local mobile stands for as the whole value, before a number merely containing it', async () => {
+      // A newer account and booking whose international numbers contain the same digits.
+      const other = await registerCustomer(testApp, {
+        fullName: 'Omar Abroad',
+        email: 'omar.abroad@example.com',
+      });
+      expectStatus(
+        await testApp
+          .http()
+          .patch('/api/v1/me')
+          .set('Authorization', other.authorization)
+          .send({ phone: '+3901012345678' }),
+        200,
+      );
+      const sale = expectStatus(
+        await counterSale(testApp, boxOffice.authorization, showtime.showtimeId, ['A5'], {
+          method: 'cash',
+          customer: { kind: 'contact', fullName: 'Nadia Abroad', phone: '+3901198765432' },
+        }),
+        201,
+      );
+      const otherBooking = (sale.body as { booking: { reference: string } }).booking.reference;
+
+      const byLaylasNumber = await staff(boxOffice, '01012345678');
+      expect(groupIds(byLaylasNumber, 'customers')).toEqual([layla.customerId, other.customerId]);
+      expect(references(await staff(boxOffice, '01198765432'))).toEqual([
+        walkInBooking,
+        otherBooking,
+      ]);
+    });
   });
 
   it('never finds an anonymised customer, nor their bookings, by their old details', async () => {

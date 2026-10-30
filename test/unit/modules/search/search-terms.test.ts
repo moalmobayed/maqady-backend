@@ -20,6 +20,7 @@ describe('searchTermsOf', () => {
       prefix: 'Inception%',
       contains: '%Inception%',
       fuzzy: true,
+      phone: null,
       phoneContains: null,
       reference: null,
     });
@@ -39,8 +40,11 @@ describe('searchTermsOf', () => {
   });
 
   it('also looks for an Egyptian local mobile in its E.164 form', () => {
-    expect(searchTermsOf('01012345678').phoneContains).toBe('%+201012345678%');
-    expect(searchTermsOf('+201012345678').phoneContains).toBeNull();
+    expect(searchTermsOf('01012345678')).toMatchObject({
+      phone: '+201012345678',
+      phoneContains: '%+201012345678%',
+    });
+    expect(searchTermsOf('+201012345678')).toMatchObject({ phone: null, phoneContains: null });
     expect(searchTermsOf('0101234567').phoneContains).toBeNull();
   });
 
@@ -77,6 +81,11 @@ describe('the SQL fragments', () => {
     expect(tierSql(PHONE, mobile)).toContain(
       'WHEN c.phone ILIKE :contains OR c.phone ILIKE :phoneContains THEN 2',
     );
+    // The number a local mobile stands for is the whole value, not a mere substring.
+    expect(tierSql(PHONE, mobile)).toContain(
+      'CASE WHEN lower(c.phone) = lower(:q) OR c.phone = :phone THEN 0',
+    );
+    expect(tierSql(PHONE, fuzzy)).not.toContain(':phone');
     expect(anyMatchSql([NAME, EMAIL], short)).toBe(
       '((p.full_name ILIKE :contains) OR (c.email::text ILIKE :contains))',
     );
@@ -100,6 +109,7 @@ describe('the SQL fragments', () => {
       q: terms.text,
       prefix: terms.prefix,
       contains: terms.contains,
+      phone: null,
       phoneContains: null,
       limit: 6,
     });
