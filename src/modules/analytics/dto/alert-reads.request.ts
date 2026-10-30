@@ -3,9 +3,9 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsOptional,
   IsString,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 import { ALERT_KEY_PATTERN, MAX_ALERT_READ_KEYS } from '../analytics.constants';
 
@@ -21,7 +21,8 @@ export class AlertReadsRequest {
     example: ['failed-payments:2026-10-16:6', 'low-sales:81'],
     description: `The \`key\`s to mark read, 1 to ${MAX_ALERT_READ_KEYS}, as \`GET /admin/alerts\` gave them. Omit to mark every current alert read ("Mark all as read"). A key that is not a current alert any more is ignored.`,
   })
-  @IsOptional()
+  // Omitted means every current alert; a sent `null` is refused, not read as "none" or "all".
+  @ValidateIf((_: object, value: unknown) => value !== undefined)
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_ALERT_READ_KEYS)

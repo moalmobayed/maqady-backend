@@ -317,6 +317,7 @@ describe('Admin alerts (integration)', () => {
   it('refuses malformed keys and pages', async () => {
     for (const body of [
       { keys: [] },
+      { keys: null },
       { keys: ['Not A Key'] },
       { keys: 'low-sales:1' },
       { keys: Array.from({ length: 201 }, (_, index) => `low-sales:${index + 1}`) },

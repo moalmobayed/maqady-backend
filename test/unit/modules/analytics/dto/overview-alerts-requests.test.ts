@@ -58,6 +58,7 @@ describe('AlertReadsRequest', () => {
 
   it.each([
     [{ keys: [] }],
+    [{ keys: null }],
     [{ keys: 'low-sales:81' }],
     [{ keys: ['Low-Sales:81'] }],
     [{ keys: ['low sales'] }],
