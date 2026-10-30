@@ -3,6 +3,7 @@ import { AuditReadService } from '../../common/audit/audit-read.service';
 import { AppError } from '../../common/errors/app-error';
 import { sumMoney } from '../../common/money/money';
 import { toPage, toPageRequest } from '../../common/pagination/cursor';
+import { keysetBatches } from '../../common/pagination/keyset-batches';
 import { INVALID_CURSOR_MESSAGE } from '../../common/pagination/pagination.constants';
 import type { Page, PageQueryInput } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
@@ -63,15 +64,7 @@ export class AdminBookingsService {
         fields: [{ field: 'cursor', messages: [INVALID_CURSOR_MESSAGE] }],
       });
     }
-    if (
-      filter.dateFrom !== undefined &&
-      filter.dateTo !== undefined &&
-      filter.dateFrom > filter.dateTo
-    ) {
-      throw new AppError('VALIDATION_FAILED', undefined, {
-        fields: [{ field: 'dateTo', messages: ['dateTo must be on or after dateFrom'] }],
-      });
-    }
+    checkDateRange(filter);
     await this.settlement.settleAllDue();
     const now = this.clock.now();
     // One after the other: inside a transaction they would share one connection.
@@ -92,6 +85,39 @@ export class AdminBookingsService {
         checkedInAt: row.checked_in_at,
       }),
     );
+  }
+
+  /**
+   * U19 (the bookings CSV): every row `list()` would answer with these filters, in its order,
+   * `batchSize` at a time. The filters are checked and due payments settled once, now; the
+   * batches are then read lazily, each one page query of the list at the same `now` and one
+   * `BookingViews.ofMany()`, with no total.
+   */
+  async exportBatches(
+    filter: AdminBookingFilter,
+    batchSize: number,
+  ): Promise<AsyncIterable<readonly AdminBookingListItem[]>> {
+    checkDateRange(filter);
+    await this.settlement.settleAllDue();
+    const now = this.clock.now();
+    const rows = keysetBatches(
+      (request) => this.bookings.pageForAdmin(filter, now, request),
+      (row) => ({ sortKey: row.created_at.toISOString(), id: row.id }),
+      batchSize,
+    );
+    const views = this.views;
+    return (async function* () {
+      for await (const batch of rows) {
+        const bookings = new Map(
+          (await views.ofMany(batch, now)).map((booking) => [booking.id, booking]),
+        );
+        yield batch.map((row) => ({
+          booking: bookings.get(row.id)!,
+          contact: contactOf(row),
+          checkedInAt: row.checked_in_at,
+        }));
+      }
+    })();
   }
 
   /**
@@ -198,6 +224,19 @@ export class AdminBookingsService {
         metadata: event.metadata,
       })),
     };
+  }
+}
+
+/** `VALIDATION_FAILED` on `dateTo` when the range ends before it starts. */
+function checkDateRange(filter: AdminBookingFilter): void {
+  if (
+    filter.dateFrom !== undefined &&
+    filter.dateTo !== undefined &&
+    filter.dateFrom > filter.dateTo
+  ) {
+    throw new AppError('VALIDATION_FAILED', undefined, {
+      fields: [{ field: 'dateTo', messages: ['dateTo must be on or after dateFrom'] }],
+    });
   }
 }
 

@@ -27,7 +27,8 @@ import { PaymentsReportService } from './payments-report.service';
  * state, which it owns; it uses bookings' `SettlementService`, payments' `PaymentProvider` (the
  * provider check), staff's `StaffService` (names) and theaters' `TheaterHoursService` (open days
  * of a hall gap). Exported: `PaymentsReportService`, `OverviewService` and `AlertsService` for the
- * CSV exports (U19).
+ * CSV exports (U19), with `PaymentsReportResponseMapper` and `OverviewResponseMapper`, so a CSV
+ * row is built from the response its screen answers.
  */
 @Module({
   imports: [BookingsModule, PaymentsModule, StaffModule, TheatersModule],
@@ -43,6 +44,12 @@ import { PaymentsReportService } from './payments-report.service';
     AlertsService,
     AlertsResponseMapper,
   ],
-  exports: [PaymentsReportService, OverviewService, AlertsService],
+  exports: [
+    PaymentsReportService,
+    OverviewService,
+    AlertsService,
+    PaymentsReportResponseMapper,
+    OverviewResponseMapper,
+  ],
 })
 export class AnalyticsModule {}

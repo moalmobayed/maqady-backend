@@ -77,6 +77,16 @@ export const API_TAGS = [
     description:
       'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)',
   },
+  {
+    name: 'Admin: exports',
+    description:
+      'CSV downloads of the Overview, Bookings, Customers and Payments screens with their filters, formula-safe and recorded in the activity log (admins only)',
+  },
+  {
+    name: 'Admin: activity',
+    description:
+      'The Activity log: who did what across the dashboard, filtered by staff member, item type and date, with no personal data (admins only)',
+  },
   { name: 'Search', description: 'The customer site search: movies, people and theaters' },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
   {

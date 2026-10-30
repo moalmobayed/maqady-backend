@@ -205,6 +205,8 @@ empty database: the two datasets don't share names, so seeding one over the othe
   advisory. Drop the override once the Swagger version in use depends on a fixed `js-yaml`.
 - The seat map runs on `@nestjs/websockets` and `@nestjs/platform-ws` (11.2.7, like the other
   Nest packages) with `ws` pinned to the version `platform-ws` itself depends on (8.21.2).
+- The CSV exports write their records with `csv-stringify` (6.9.0, its CommonJS build through
+  `csv-stringify/sync`), as design §13.4 names it.
 - `npm audit` reports a moderate advisory in `sprintf-js`, reached only through Jest's coverage
   tooling (dev only, no fix upstream). `npm audit --omit=dev` is clean.
 
@@ -644,6 +646,31 @@ curl -s "localhost:3000/api/v1/search?q=Lighthose"
 curl -s "localhost:3000/api/v1/admin/search?q=01012345678" -H "Authorization: Bearer $STAFF"
 ```
 
+## Exports and the Activity log
+
+CSV exports and the Activity log (U19, `docs/gh-20-exports-activity/spec.md`), admins only, in the
+read-only `exports` and `activity` modules.
+
+- `GET /api/v1/admin/exports/{overview,bookings,customers,payments}.csv` take their screen's query
+  parameters (without `cursor` and `limit`) and answer the whole filtered list as a download:
+  UTF-8 with a BOM, CRLF, a header row, money in pounds, times in Cairo ISO. Each row is the list
+  route's row for the same filters, in its order. The rows stream in keyset batches of 500
+  through `csv-stringify`, so memory holds one batch whatever the file's size.
+- Formula-safe: a text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is
+  prefixed with `'` (`'+201012345678`); numbers are never prefixed (a refund stays `-40`).
+- Each download writes `export.downloaded` (item type `export`) to the activity log with the
+  filters, a search only as `search: true`. A refused request answers JSON and records nothing;
+  a failure after the first byte cuts the connection rather than leave a short file.
+- `GET /api/v1/admin/activity` lists the audit events newest first, cursor-paged with `total`,
+  filtered by `staffUserId`, `actorKind`, `entityType` (with `entityId`), `action` and
+  `dateFrom` / `dateTo` (cinema dates). No personal data: field names, never values; a customer
+  actor is an id.
+
+```bash
+curl -s -OJ "localhost:3000/api/v1/admin/exports/bookings.csv?status=confirmed" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/activity?entityType=export&limit=20" -H "Authorization: Bearer $ADMIN"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -748,8 +775,9 @@ src/
                                          claims and the /ws seat map), bookings (holds,
                                          checkout, box office, admin bookings), analytics
                                          (the Payments screen, the Overview and the bell),
-                                         search (public and staff search), seed (the
-                                         development seed)
+                                         search (public and staff search), exports (the
+                                         CSV downloads), activity (the Activity log), seed
+                                         (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support
 contracts/                               the generated OpenAPI contract (and the agreed drafts)

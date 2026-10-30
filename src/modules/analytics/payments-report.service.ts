@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
 import { formatMoneyDisplay, money } from '../../common/money/money';
 import { toPage, toPageRequest } from '../../common/pagination/cursor';
+import { keysetBatches } from '../../common/pagination/keyset-batches';
 import { INVALID_CURSOR_MESSAGE } from '../../common/pagination/pagination.constants';
 import type { Page, PageQueryInput } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
@@ -66,13 +67,7 @@ export class PaymentsReportService {
     if (request.after !== null && request.after.sortKey === null) {
       throw invalid('cursor', INVALID_CURSOR_MESSAGE);
     }
-    if (
-      filter.dateFrom !== undefined &&
-      filter.dateTo !== undefined &&
-      filter.dateFrom > filter.dateTo
-    ) {
-      throw invalid('dateTo', 'dateTo must be on or after dateFrom');
-    }
+    checkDateRange(filter);
     await this.settlement.settleAllDue();
     // One after the other: inside a transaction they would share one connection.
     const rows = await this.report.page(filter, request);
@@ -88,6 +83,34 @@ export class PaymentsReportService {
       (row) => ({ sortKey: row.occurred_at.toISOString(), id: row.id }),
       (row) => toTransaction(row, refs),
     );
+  }
+
+  /**
+   * U19 (the payments CSV): every row `transactions()` would answer with these filters, in its
+   * order, `batchSize` at a time. The filters are checked and due payments settled once, now; each
+   * batch is then one page query of the table and one read of the staff it names, read lazily,
+   * with no total.
+   */
+  async transactionBatches(
+    filter: TransactionFilter,
+    batchSize: number,
+  ): Promise<AsyncIterable<readonly Transaction[]>> {
+    checkDateRange(filter);
+    await this.settlement.settleAllDue();
+    const rows = keysetBatches(
+      (request) => this.report.page(filter, request),
+      (row) => ({ sortKey: row.occurred_at.toISOString(), id: row.id }),
+      batchSize,
+    );
+    const staffRefs = (ids: readonly (number | null)[]) => this.staffRefs(ids);
+    return (async function* () {
+      for await (const batch of rows) {
+        const refs = await staffRefs(
+          batch.flatMap((row) => [row.collected_by_staff_id, row.paid_out_by_staff_id]),
+        );
+        yield batch.map((row) => toTransaction(row, refs));
+      }
+    })();
   }
 
   /**
@@ -244,6 +267,17 @@ export class PaymentsReportService {
         { id: member.id, fullName: member.fullName },
       ]),
     );
+  }
+}
+
+/** `VALIDATION_FAILED` on `dateTo` when the filter's range ends before it starts. */
+function checkDateRange(filter: TransactionFilter): void {
+  if (
+    filter.dateFrom !== undefined &&
+    filter.dateTo !== undefined &&
+    filter.dateFrom > filter.dateTo
+  ) {
+    throw invalid('dateTo', 'dateTo must be on or after dateFrom');
   }
 }
 

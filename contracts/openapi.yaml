@@ -29404,6 +29404,1290 @@ paths:
         - 'Admin: search'
       security:
         - staff: []
+  /admin/exports/overview.csv:
+    get:
+      description: |-
+        "Export CSV of the current view" on the Overview (PRD A1): the figures `GET /admin/overview` answers for the same `period` or `dateFrom` / `dateTo` and `theaterId`, one row per figure.
+
+        - Columns: Section, Cinema date, Subject ID, Subject, Metric, Unit (`EGP`, `count`, `ratio`, `date`, `text`), Value, Previous, Change.
+        - Sections, in the screen's order: `period` (the dates, the comparison, when it was generated), `kpis` (with Previous and Change), `by_theater` (revenue with its previous and change, online, counter, average ticket, tickets, seats, occupancy, showtimes), `by_hall` (one theater only), `payment_methods`, `top_movies`, `heatmap` (Subject ID the ISO weekday of the cinema date, 1 Monday to 7 Sunday; Subject the start-time slot), `revenue_trend` (all theaters, then each, by cinema date) and `tonight` (Subject ID the showtime).
+        - Ratios are as the API answers them: `0.4567` is 45.67%.
+        - The same rules as `GET /admin/overview`: either a preset or dates, at most 366 days, an unknown `theaterId` is `NOT_FOUND`; due slow payments are settled first.
+
+        Admins only (a box office token is `FORBIDDEN`). Downloaded as a file (`Content-Disposition: attachment; filename="maqady-<dataset>-<cinema date>.csv"`), never cached (`Cache-Control: private, no-store`): fetch it with the `Authorization` header and save the response, no token ever goes in a URL.
+
+        - CSV: UTF-8 with a byte-order mark (Arabic opens correctly in Excel), CRLF line ends, a header row, a field quoted when it holds a comma, a quote or a line break.
+        - **Formula-safe**: any text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet shows it as text instead of running it (a phone such as `+201012345678` reads `'+201012345678`). Numbers are plain numbers.
+        - Money is in Egyptian pounds as a decimal number (`190`, `19.5`), with its currency in a column; times are Cairo ISO with their offset, as the API answers them; yes / no for flags; an empty cell for none.
+        - Streamed: rows are read in batches as the download proceeds, so a file of any size starts at once. If the server fails part-way, the connection is cut, so the download fails instead of saving a short file.
+        - Recorded in the activity log (`export.downloaded`, item type `export`) with the filters given, because the file holds personal data; a search text is recorded only as `search: true`. A refused request (`VALIDATION_FAILED`) records nothing.
+      operationId: exportOverview
+      parameters:
+        - name: period
+          required: false
+          in: query
+          description: 'The period picker: `today` (today''s cinema day), `7d` or `30d` (that many cinema days ending today). The server decides "today" (06:00 to 06:00 Cairo time), so a 01:00 visit still reads yesterday''s cinema day. Not with `dateFrom` / `dateTo`. With neither, the last 7 cinema days.'
+          schema:
+            $ref: '#/components/schemas/OverviewPeriodPreset'
+        - name: dateFrom
+          required: false
+          in: query
+          description: 'Instead of `period`: the first cinema date (`YYYY-MM-DD`). Omitted with `dateTo`: 6 days before it. Showtimes on this cinema date and later count.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-10'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Instead of `period`: the last cinema date, inclusive. Omitted: today. Not before `dateFrom`; at most 366 days in all.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: theaterId
+          required: false
+          in: query
+          description: 'The scope: one theater (its showtimes only, and `byHall`). Omitted: all theaters. An unknown id is `NOT_FOUND`.'
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+      responses:
+        '200':
+          description: The Overview as CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "Section,Cinema date,Subject ID,Subject,Metric,Unit,Value,Previous,Change\r\nkpis,,,All theaters,revenue,EGP,1900,1500,0.2667\r\n"
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '404':
+          description: '`NOT_FOUND`: The route or the resource doesn''t exist. Another customer''s resource also answers NOT_FOUND.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                NOT_FOUND:
+                  summary: NOT_FOUND
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: The requested resource was not found.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Export the Overview as CSV
+      tags:
+        - 'Admin: exports'
+      security:
+        - staff: []
+  /admin/exports/bookings.csv:
+    get:
+      description: |-
+        "Export" on the Bookings table (PRD A6, "Bookings (current filters)"): every booking `GET /admin/bookings` lists with the same filters (`q`, `theaterId`, `movieId`, `status`, `channel`, `method`, `dateFrom` / `dateTo`, `customerId`), every page, in its order (newest first), each row the list's row.
+
+        - Columns: Reference, Status, Payment status, Channel, Owner, Contact name, Contact email, Contact phone, Movie, Theater, Hall, Starts at, Cinema date, Seats (labels separated by spaces), Seat count, Total, Currency, Payment method, Card brand, Card last 4, Wallet, Receipt reference, Created at, Confirmed at, Checked in at.
+        - Statuses are decided by the clock at the moment the export starts, after due slow payments are settled, as the list's are.
+        - The same validation as the list: `dateTo` before `dateFrom` or a malformed filter is `VALIDATION_FAILED`; `cursor` and `limit` are refused.
+
+        Admins only (a box office token is `FORBIDDEN`). Downloaded as a file (`Content-Disposition: attachment; filename="maqady-<dataset>-<cinema date>.csv"`), never cached (`Cache-Control: private, no-store`): fetch it with the `Authorization` header and save the response, no token ever goes in a URL.
+
+        - CSV: UTF-8 with a byte-order mark (Arabic opens correctly in Excel), CRLF line ends, a header row, a field quoted when it holds a comma, a quote or a line break.
+        - **Formula-safe**: any text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet shows it as text instead of running it (a phone such as `+201012345678` reads `'+201012345678`). Numbers are plain numbers.
+        - Money is in Egyptian pounds as a decimal number (`190`, `19.5`), with its currency in a column; times are Cairo ISO with their offset, as the API answers them; yes / no for flags; an empty cell for none.
+        - Streamed: rows are read in batches as the download proceeds, so a file of any size starts at once. If the server fails part-way, the connection is cut, so the download fails instead of saving a short file.
+        - Recorded in the activity log (`export.downloaded`, item type `export`) with the filters given, because the file holds personal data; a search text is recorded only as `search: true`. A refused request (`VALIDATION_FAILED`) records nothing.
+      operationId: exportBookings
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: 'Search, 2 to 100 characters (surrounding spaces dropped): a booking reference (any case) finds that booking; anything else is matched, case-insensitively, anywhere in the booking''s contact name, email or phone ("Booking no., name, email, phone"). An Egyptian mobile typed locally (`01012345678`) also finds its stored `+201012345678`.'
+          schema:
+            minLength: 2
+            maxLength: 100
+            nullable: false
+            example: MQ-7K3P9Q
+            type: string
+        - name: theaterId
+          required: false
+          in: query
+          description: Only bookings of showtimes at this theater.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: movieId
+          required: false
+          in: query
+          description: Only bookings of showtimes of this movie.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 12
+            type: integer
+        - name: status
+          required: false
+          in: query
+          description: 'Only bookings in this status now (decided from stored times, like `status` on each booking): `held`, `failed`, `abandoned`, `confirmed`, `completed` or `refunded`.'
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - name: channel
+          required: false
+          in: query
+          description: '`online` (the website) or `counter` (the box office).'
+          schema:
+            $ref: '#/components/schemas/BookingChannel'
+        - name: method
+          required: false
+          in: query
+          description: 'Only bookings with a sale payment attempt of this method: `card`, `wallet`, `cash` or `card_terminal`.'
+          schema:
+            $ref: '#/components/schemas/PaymentMethod'
+        - name: dateFrom
+          required: false
+          in: query
+          description: Bookings made on or after this cinema date (`YYYY-MM-DD`; a cinema day runs from 06:00 to 06:00 Cairo time). With `dateTo` for a range; both the same date for one day (the Today card).
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Bookings made on or before this cinema date (inclusive: until 06:00 the next morning). Not before `dateFrom`.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: customerId
+          required: false
+          in: query
+          description: Only this customer's bookings, whatever the channel (the Customers drawer's bookings, `GET /admin/customers/{id}`). An unknown or anonymised customer simply has none.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 42
+            type: integer
+      responses:
+        '200':
+          description: The bookings as CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "Reference,Status,Payment status,Channel,Owner,Contact name,Contact email,Contact phone,Movie,Theater,Hall,Starts at,Cinema date,Seats,Seat count,Total,Currency,Payment method,Card brand,Card last 4,Wallet,Receipt reference,Created at,Confirmed at,Checked in at\r\nMQ-7K3P9Q,confirmed,succeeded,online,customer,Nadia Farouk,nadia@example.com,'+201012345678,The Nile Light,Zawya Downtown,Hall 1,2026-10-16T19:30:00+03:00,2026-10-16,B2 B3,2,380,EGP,card,visa,4242,,,2026-10-10T10:00:00+03:00,2026-10-10T10:00:05+03:00,\r\n"
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Export bookings as CSV
+      tags:
+        - 'Admin: exports'
+      security:
+        - staff: []
+  /admin/exports/customers.csv:
+    get:
+      description: |-
+        "Export (Admin)" on the Customers table (PRD A7, "Customers (current filters)"): every customer `GET /admin/customers` lists with the same `q` and `status`, every page, newest account first, each row the list's row with its numbers. Deleted (anonymised) accounts are never in it.
+
+        - Columns: ID, Full name, Email, Phone, Status, Email verified, Email verified at, Joined at, Last sign-in at, Updated at, Bookings, Spent, Currency, No-shows, Last booking at.
+        - Due slow payments are settled first, so the numbers match the Bookings screen.
+        - `cursor` and `limit` are refused.
+
+        Admins only (a box office token is `FORBIDDEN`). Downloaded as a file (`Content-Disposition: attachment; filename="maqady-<dataset>-<cinema date>.csv"`), never cached (`Cache-Control: private, no-store`): fetch it with the `Authorization` header and save the response, no token ever goes in a URL.
+
+        - CSV: UTF-8 with a byte-order mark (Arabic opens correctly in Excel), CRLF line ends, a header row, a field quoted when it holds a comma, a quote or a line break.
+        - **Formula-safe**: any text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet shows it as text instead of running it (a phone such as `+201012345678` reads `'+201012345678`). Numbers are plain numbers.
+        - Money is in Egyptian pounds as a decimal number (`190`, `19.5`), with its currency in a column; times are Cairo ISO with their offset, as the API answers them; yes / no for flags; an empty cell for none.
+        - Streamed: rows are read in batches as the download proceeds, so a file of any size starts at once. If the server fails part-way, the connection is cut, so the download fails instead of saving a short file.
+        - Recorded in the activity log (`export.downloaded`, item type `export`) with the filters given, because the file holds personal data; a search text is recorded only as `search: true`. A refused request (`VALIDATION_FAILED`) records nothing.
+      operationId: exportCustomers
+      parameters:
+        - name: q
+          required: false
+          in: query
+          description: Search, 2 to 100 characters (surrounding spaces dropped), matched case-insensitively anywhere in the customer's name, email or phone ("Name, email or phone"). An Egyptian mobile typed locally (`01012345678`) also finds its stored `+201012345678`. `%` and `_` match only themselves.
+          schema:
+            minLength: 2
+            maxLength: 100
+            nullable: false
+            example: layla
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: 'The status radio: only `active` or only `blocked` customers. Omit for All.'
+          schema:
+            $ref: '#/components/schemas/CustomerStatus'
+      responses:
+        '200':
+          description: The customers as CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "ID,Full name,Email,Phone,Status,Email verified,Email verified at,Joined at,Last sign-in at,Updated at,Bookings,Spent,Currency,No-shows,Last booking at\r\n42,Layla Hassan,layla@example.com,'+201012345678,active,yes,2026-09-01T12:00:00+03:00,2026-09-01T11:58:00+03:00,2026-10-10T09:00:00+03:00,2026-10-10T09:00:00+03:00,3,1140,EGP,1,2026-10-10T10:00:00+03:00\r\n"
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Export customers as CSV
+      tags:
+        - 'Admin: exports'
+      security:
+        - staff: []
+  /admin/exports/payments.csv:
+    get:
+      description: |-
+        "Export for accounting" on the Payments page (PRD A8, "Payments for accounting (chosen period)"): every charge and refund `GET /admin/payments` lists with the same filters (`kind`, `method`, `channel`, `status`, `theaterId`, `dateFrom` / `dateTo`: cinema dates of when the money moved, inclusive), every page, newest first, each row the table's row.
+
+        - Columns: ID, Occurred at, Cinema date, Kind, Purpose, Method, Channel, Status (as the screen shows it), Failure reason, Ledger status, Amount (negative for a refund), Currency, Refund of payment, Refunded amount, Pending refund amount, Booking reference, Booking channel, Contact name, Theater ID, Theater, Card brand, Card last 4, Wallet, Receipt reference, Collected by, Paid out at, Paid out by, Created at, Completed at.
+        - Due slow payments are settled first, so nothing shows a stale `pending`.
+        - `dateTo` before `dateFrom` or a malformed filter is `VALIDATION_FAILED`; `cursor` and `limit` are refused.
+
+        Admins only (a box office token is `FORBIDDEN`). Downloaded as a file (`Content-Disposition: attachment; filename="maqady-<dataset>-<cinema date>.csv"`), never cached (`Cache-Control: private, no-store`): fetch it with the `Authorization` header and save the response, no token ever goes in a URL.
+
+        - CSV: UTF-8 with a byte-order mark (Arabic opens correctly in Excel), CRLF line ends, a header row, a field quoted when it holds a comma, a quote or a line break.
+        - **Formula-safe**: any text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet shows it as text instead of running it (a phone such as `+201012345678` reads `'+201012345678`). Numbers are plain numbers.
+        - Money is in Egyptian pounds as a decimal number (`190`, `19.5`), with its currency in a column; times are Cairo ISO with their offset, as the API answers them; yes / no for flags; an empty cell for none.
+        - Streamed: rows are read in batches as the download proceeds, so a file of any size starts at once. If the server fails part-way, the connection is cut, so the download fails instead of saving a short file.
+        - Recorded in the activity log (`export.downloaded`, item type `export`) with the filters given, because the file holds personal data; a search text is recorded only as `search: true`. A refused request (`VALIDATION_FAILED`) records nothing.
+      operationId: exportPayments
+      parameters:
+        - name: kind
+          required: false
+          in: query
+          description: Only charges (money taken) or only refunds (money given back).
+          schema:
+            $ref: '#/components/schemas/PaymentKind'
+        - name: method
+          required: false
+          in: query
+          description: 'Only rows on this rail: `card`, `wallet` (online), `cash` or `card_terminal` (at the counter). A refund is on its charge’s rail.'
+          schema:
+            $ref: '#/components/schemas/PaymentMethod'
+        - name: channel
+          required: false
+          in: query
+          description: '`online` (card and wallet) or `counter` (cash and card terminal).'
+          schema:
+            $ref: '#/components/schemas/PaymentChannel'
+        - name: status
+          required: false
+          in: query
+          description: 'Only rows shown with this status: `succeeded`, `pending` (a payment in progress, or a counter refund waiting to be paid out), `failed` (declined, or a closed wallet) or `refunded` (a charge whose succeeded refunds reach its amount).'
+          schema:
+            $ref: '#/components/schemas/TransactionStatus'
+        - name: theaterId
+          required: false
+          in: query
+          description: Only rows of bookings for showtimes at this theater.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 1
+            type: integer
+        - name: dateFrom
+          required: false
+          in: query
+          description: Rows whose money moved (or, while processing or pending, that were written) on or after this cinema date (`YYYY-MM-DD`; a cinema day runs from 06:00 to 06:00 Cairo time). With `dateTo` for the period the summary shows.
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-10'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Rows on or before this cinema date (inclusive: until 06:00 the next morning). Not before `dateFrom`.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+      responses:
+        '200':
+          description: The transactions as CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "ID,Occurred at,Cinema date,Kind,Purpose,Method,Channel,Status,Failure reason,Ledger status,Amount,Currency,Refund of payment,Refunded amount,Pending refund amount,Booking reference,Booking channel,Contact name,Theater ID,Theater,Card brand,Card last 4,Wallet,Receipt reference,Collected by,Paid out at,Paid out by,Created at,Completed at\r\n12,2026-10-10T10:02:00+03:00,2026-10-10,refund,cancellation,card,online,succeeded,,succeeded,-380,EGP,7,,,MQ-7K3P9Q,online,Nadia Farouk,1,Zawya Downtown,visa,4242,,,,,,2026-10-10T10:02:00+03:00,2026-10-10T10:02:00+03:00\r\n"
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: Export transactions as CSV
+      tags:
+        - 'Admin: exports'
+      security:
+        - staff: []
+  /admin/activity:
+    get:
+      description: |-
+        Admins only (a box office token is `FORBIDDEN`): who did what across the dashboard (PRD "Activity log"), every recorded event, newest first, cursor-paged with `total` under the same filters. Never cached (`Cache-Control: private, no-store`).
+
+        - Each event: time (`occurredAt`, `cinemaDate`), who (`actor`: a staff member by name, a customer by id only, or the system), what (`action`, `changedFields`, `metadata`) and which item (`entity`; `booking.reference` for booking and payment events).
+        - No personal data: events record the names of changed fields, never their values, and their metadata holds no name, email or phone. Every staff change, booking event and CSV export is here (`export.downloaded`).
+        - Filters combine: `staffUserId` (a staff member's actions), `actorKind`, `entityType` (with `entityId` for one item), `action`, `dateFrom` / `dateTo` (cinema dates, inclusive).
+        - `entityId` without `entityType`, `dateTo` before `dateFrom`, or a malformed filter or cursor: `VALIDATION_FAILED`.
+      operationId: listActivity
+      parameters:
+        - name: cursor
+          required: false
+          in: query
+          description: Opaque. Omit for the first page; then pass `nextCursor` from the previous page unchanged.
+          schema:
+            maxLength: 512
+            nullable: false
+            example: WyIyMDI2LTEwLTE2VDE5OjMwOjAwKzAzOjAwIiw0Ml0
+            type: string
+        - name: limit
+          required: false
+          in: query
+          description: Items per page, 1 to 100. Default 20.
+          schema:
+            minimum: 1
+            maximum: 100
+            nullable: false
+            default: 20
+            example: 20
+            type: integer
+        - name: staffUserId
+          required: false
+          in: query
+          description: Only what this staff member did (their id, from `GET /admin/staff`). An unknown id simply has no events.
+          schema:
+            minimum: 1
+            nullable: false
+            example: 7
+            type: integer
+        - name: actorKind
+          required: false
+          in: query
+          description: Only events by `staff` (the dashboard), `customer` (the website) or `system` (settlement, guests).
+          schema:
+            $ref: '#/components/schemas/ActorKind'
+        - name: entityType
+          required: false
+          in: query
+          description: 'Only events about this item type, a lower-case name: `booking`, `payment`, `showtime`, `movie`, `movie_photo`, `movie_video`, `person`, `theater`, `theater_photo`, `theater_special_date`, `hall`, `customer`, `staff_user`, `session`, `export`. A type nothing records has no events.'
+          schema:
+            maxLength: 32
+            pattern: ^[a-z][a-z_]*$
+            nullable: false
+            example: booking
+            type: string
+        - name: entityId
+          required: false
+          in: query
+          description: 'With `entityType` only: one item''s activity (for example `entityType=showtime&entityId=81`). Without `entityType`: `VALIDATION_FAILED`.'
+          schema:
+            minimum: 1
+            nullable: false
+            example: 81
+            type: integer
+        - name: action
+          required: false
+          in: query
+          description: Only this action, `noun.verb` as events name it.
+          schema:
+            maxLength: 64
+            pattern: ^[a-z][a-z_]*(\.[a-z][a-z_]*)+$
+            nullable: false
+            example: booking.refunded
+            type: string
+        - name: dateFrom
+          required: false
+          in: query
+          description: Events on or after this cinema date (`YYYY-MM-DD`; a cinema day runs from 06:00 to 06:00 Cairo time).
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: 'Events on or before this cinema date (inclusive: until 06:00 the next morning). Not before `dateFrom`.'
+          schema:
+            format: date
+            nullable: false
+            example: '2026-10-16'
+            type: string
+      responses:
+        '200':
+          description: One page of events
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityEventPage'
+        '400':
+          description: '`VALIDATION_FAILED`: The body, query, path or a header failed validation. When the request could be parsed, `details.fields` lists each problem as `{ field, messages }`, with dotted paths such as `seats.0.label` (a header appears under its name, for example `Idempotency-Key`). `details` is null when the body could not be read, for example malformed JSON.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_FAILED:
+                  summary: VALIDATION_FAILED
+                  value:
+                    error:
+                      code: VALIDATION_FAILED
+                      message: The request is not valid.
+                      details:
+                        fields:
+                          - field: seats.0.label
+                            messages:
+                              - label must be a string
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '401':
+          description: |-
+            `UNAUTHENTICATED`: No valid access token was sent: none, malformed, expired, or for the other site (a customer token on an admin route, or the reverse). Refresh the tokens, or sign in, and retry.
+
+            `SESSION_EXPIRED`: The refresh token is past its lifetime. Sign in again.
+
+            `SESSION_REVOKED`: The session was ended: signed out, the account was blocked or deactivated, or an old refresh token was reused. Sign in again.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHENTICATED:
+                  summary: UNAUTHENTICATED
+                  value:
+                    error:
+                      code: UNAUTHENTICATED
+                      message: Sign in to continue.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_EXPIRED:
+                  summary: SESSION_EXPIRED
+                  value:
+                    error:
+                      code: SESSION_EXPIRED
+                      message: Your session has expired. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                SESSION_REVOKED:
+                  summary: SESSION_REVOKED
+                  value:
+                    error:
+                      code: SESSION_REVOKED
+                      message: You were signed out. Sign in again.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '403':
+          description: |-
+            `ACCOUNT_DEACTIVATED`: The staff account was deactivated by an admin.
+
+            `FORBIDDEN`: The signed-in account may not perform this action, for example a box office account on an admin-only route.
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ACCOUNT_DEACTIVATED:
+                  summary: ACCOUNT_DEACTIVATED
+                  value:
+                    error:
+                      code: ACCOUNT_DEACTIVATED
+                      message: This staff account is deactivated.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+                FORBIDDEN:
+                  summary: FORBIDDEN
+                  value:
+                    error:
+                      code: FORBIDDEN
+                      message: You do not have access to this.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '429':
+          description: '`RATE_LIMITED`: A rate limit was reached. Wait for the number of seconds in the `Retry-After` header, then retry.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  summary: RATE_LIMITED
+                  value:
+                    error:
+                      code: RATE_LIMITED
+                      message: Too many requests. Try again shortly.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '500':
+          description: '`INTERNAL`: An unexpected error. Quote `correlationId` when reporting it.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL:
+                  summary: INTERNAL
+                  value:
+                    error:
+                      code: INTERNAL
+                      message: Something went wrong on our side.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+        '503':
+          description: '`SERVICE_UNAVAILABLE`: The database can''t be reached right now. Retry after a short wait; the free host may also be waking up.'
+          headers:
+            X-Request-Id:
+              description: Correlation id for this request. Quote it when reporting a problem.
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    error:
+                      code: SERVICE_UNAVAILABLE
+                      message: The service is temporarily unavailable.
+                      details: null
+                      correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
+      summary: The Activity log
+      tags:
+        - 'Admin: activity'
+      security:
+        - staff: []
 info:
   title: Maqady API
   description: |-
@@ -29452,6 +30736,10 @@ tags:
     description: 'The bell and its Notifications panel: the current alerts with each staff member''s read state, and marking them read (both roles)'
   - name: 'Admin: search'
     description: 'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)'
+  - name: 'Admin: exports'
+    description: CSV downloads of the Overview, Bookings, Customers and Payments screens with their filters, formula-safe and recorded in the activity log (admins only)
+  - name: 'Admin: activity'
+    description: 'The Activity log: who did what across the dashboard, filtered by staff member, item type and date, with no personal data (admins only)'
   - name: Search
     description: 'The customer site search: movies, people and theaters'
   - name: Profile
@@ -39927,6 +41215,152 @@ components:
         - movies
         - people
         - theaters
+    ActivityActor:
+      type: object
+      properties:
+        kind:
+          nullable: false
+          example: staff
+          description: '`staff` (named in `staff`), `customer` (a signed-in customer, by `customerId` only) or `system` (settlement, a guest, an expiry).'
+          allOf:
+            - $ref: '#/components/schemas/ActorKind'
+        staff:
+          nullable: true
+          description: The staff member who acted; null for a customer or the system.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/StaffRef'
+        customerId:
+          type: integer
+          nullable: true
+          example: null
+          description: The customer who acted (open `GET /admin/customers/{id}`); null for staff or the system. Never their name, email or phone.
+      required:
+        - kind
+        - staff
+        - customerId
+    ActivityEntity:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: false
+          example: booking
+          description: 'The item type, a lower-case name: `booking`, `payment`, `showtime`, `movie`, `movie_photo`, `movie_video`, `person`, `theater`, `theater_photo`, `theater_special_date`, `hall`, `customer`, `staff_user`, `session` or `export`.'
+        id:
+          type: integer
+          nullable: true
+          example: 512
+          description: Its id; null for an item with no row of its own (an `export`).
+      required:
+        - type
+        - id
+    ActivityBooking:
+      type: object
+      properties:
+        reference:
+          type: string
+          nullable: false
+          pattern: ^MQ-[2-9A-HJKMNP-Z]{6}$
+          example: MQ-7K3P9Q
+          description: 'Its reference: open it with `GET /admin/bookings/{ref}`.'
+      required:
+        - reference
+    ActivityEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: false
+          example: 9042
+          description: Event id.
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: false
+          example: '2026-10-16T19:02:10+03:00'
+          description: When it happened (Cairo time).
+        cinemaDate:
+          type: string
+          format: date
+          nullable: false
+          example: '2026-10-16'
+          description: The cinema date it happened on (a cinema day runs from 06:00 to 06:00).
+        action:
+          type: string
+          nullable: false
+          example: booking.refunded
+          description: 'What happened, `noun.verb`: for example `booking.confirmed`, `booking.refunded`, `payment.paid_out`, `booking.edited`, `showtime.moved`, `movie.updated`, `customer.status_changed`, `staff_user.invited`, `export.downloaded`.'
+        actor:
+          nullable: false
+          allOf:
+            - $ref: '#/components/schemas/ActivityActor'
+        entity:
+          nullable: false
+          allOf:
+            - $ref: '#/components/schemas/ActivityEntity'
+        booking:
+          nullable: true
+          description: The booking it belongs to (booking and payment events); null otherwise.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ActivityBooking'
+        changedFields:
+          nullable: false
+          example:
+            - showtime
+            - seats
+          description: The names of the fields it changed, never their values.
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+            nullable: true
+          nullable: false
+          example:
+            seatCount: 2
+            method: card
+          description: Non-personal facts of the event, each a string, number, boolean or null (a seat count, a method, an amount in piastres, an export's dataset and filters). Never a name, email or phone.
+      required:
+        - id
+        - occurredAt
+        - cinemaDate
+        - action
+        - actor
+        - entity
+        - booking
+        - changedFields
+        - metadata
+    ActivityEventPage:
+      type: object
+      properties:
+        items:
+          nullable: false
+          description: This page, newest first. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityEvent'
+        nextCursor:
+          type: string
+          nullable: true
+          example: WyIyMDI2LTEwLTE2VDE5OjAyOjEwLjAwMFoiLDkwNDJd
+          description: Pass as `cursor` to get the next page; null on the last page.
+        total:
+          type: integer
+          minimum: 0
+          nullable: false
+          example: 1284
+          description: How many events match, with the same filters.
+      required:
+        - items
+        - nextCursor
+        - total
     ErrorResponse:
       type: object
       properties:

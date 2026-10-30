@@ -135,7 +135,7 @@ a repository, a service, a controller or gateway, and the module file.
 | `messaging` | `messages`; templates, the outbox, the Resend email sender and the simulated SMS sender | — |
 | `admin-customers` | No table: the admin Customers screen and anonymisation (U15, `docs/gh-16-admin-customers/spec.md`). *Deviation:* a module of its own, since its routes need `bookings` (the numbers, booking contacts and notes) and `bookings` imports `customers`; it changes each table through the module that owns it | customers, bookings, auth, idempotency, messaging, audit |
 | `discovery` | No table: the public home and browsing reads (U8a, `docs/gh-9-home-and-browse/spec.md`) and the showtime reads, ticker and hall counts (U8b, `docs/gh-9-discovery-showtimes/spec.md`) | catalog, theaters, halls, showtimes, media |
-| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService`. *As built (U17, `docs/gh-18-overview-alerts/spec.md`):* it also holds the Overview and the bell, reading `halls` and `movies` names too, owns and writes `staff_alert_reads`, and uses theaters' `TheaterHoursService` (the open days of a hall gap). *As built (U18, `docs/gh-19-search/spec.md`):* `search` ranks across a table's columns with the trigram operators, which only SQL can do in one query per group, so its repository reads `movies`, `movie_credits`, `people`, `person_roles`, `theaters`, `customers` and `bookings` in its own queries (the `analytics` deviation); booking rows come from bookings' `AdminBookingsService.itemsByIds()` after `SettlementService.settleAllDue()`, images from `MediaService` |
+| `search`, `analytics`, `exports`, `activity` | Read-only queries; `staff_alert_reads` (analytics) | the modules they read. *As built (U16, `docs/gh-17-payments-screen/spec.md`):* `analytics` holds the Payments screen; its repository reads `payments`, `bookings`, `showtimes` and `theaters` in its own aggregate queries, and it uses bookings' `SettlementService`, payments' `PaymentProvider` and staff's `StaffService`. *As built (U17, `docs/gh-18-overview-alerts/spec.md`):* it also holds the Overview and the bell, reading `halls` and `movies` names too, owns and writes `staff_alert_reads`, and uses theaters' `TheaterHoursService` (the open days of a hall gap). *As built (U18, `docs/gh-19-search/spec.md`):* `search` ranks across a table's columns with the trigram operators, which only SQL can do in one query per group, so its repository reads `movies`, `movie_credits`, `people`, `person_roles`, `theaters`, `customers` and `bookings` in its own queries (the `analytics` deviation); booking rows come from bookings' `AdminBookingsService.itemsByIds()` after `SettlementService.settleAllDue()`, images from `MediaService`. *As built (U19, `docs/gh-20-exports-activity/spec.md`):* `exports` has no repository: each file reads through its screen's exported service and response mapper (bookings' `AdminBookingsService.exportBatches()`, admin-customers' `AdminCustomersService.exportBatches()`, analytics' `PaymentsReportService.transactionBatches()` and `OverviewService`), so a file is its screen; it writes only its audit events. `activity` reads `audit_events` left-joined to `bookings` (the reference) in its own query, the `analytics` deviation, and names staff through `StaffService` |
 | `health` | Liveness and readiness; a readiness `200` starts an outbox flush (§13.1, §16) | database, messaging |
 
 Rules:
@@ -1244,6 +1244,8 @@ route is rate limited by `search` and cacheable for 60 seconds; the staff route 
 `private, no-store` and has the default limit. A customer token on the staff route is
 `UNAUTHENTICATED`.
 
+Exports and activity (U19, `docs/gh-20-exports-activity/spec.md`), admins only: each `GET /admin/exports/{overview,bookings,customers,payments}.csv` takes its screen's query parameters (`AdminOverviewQuery`; `AdminBookingsQuery`, `AdminCustomersQuery` and `AdminPaymentsQuery` without `cursor` and `limit`, which are refused) and answers `200 text/csv` (`Content-Disposition: attachment; filename="maqady-<dataset>-<cinema date>.csv"`, `Cache-Control: private, no-store`): the list route's rows for the same filters, every page, in its order, each built from the list's own response DTO; the Overview as one row per figure (Section, Cinema date, Subject ID, Subject, Metric, Unit, Value, Previous, Change). A refused request answers the usual JSON error. `GET /admin/activity` answers a cursor page of `ActivityEvent { id, occurredAt, cinemaDate, action, actor { kind, staff, customerId }, entity { type, id }, booking { reference }, changedFields, metadata }`, newest first (`occurred_at DESC, id DESC`) with `total`, filtered by `staffUserId`, `actorKind`, `entityType` (`entityId` only with it), `action` and `dateFrom` / `dateTo` (cinema dates); `private, no-store`.
+
 Discovery (U8a, `docs/gh-9-home-and-browse/spec.md`): `GET /home` is exactly the `HomeResponse`
 of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
@@ -1485,6 +1487,26 @@ generated contract (§19).
   spreadsheets don't run it as a formula.
 - Admins only. Each export writes an audit event in its own short transaction, because exports
   contain personal data.
+- *As built (U19, `docs/gh-20-exports-activity/spec.md`).*
+  - *Deviation:* rows are read in **keyset batches** (500 rows, `ExportOptions`), each one page
+    query of the screen's list and its usual hydration, not from a Knex stream. A `pg` stream
+    needs `pg-query-stream`, holds one of the pool's 5 connections and one statement for the
+    whole download (which `statement_timeout`, 10 seconds, would cut on a slow client), and every
+    row needs the list's per-page reads anyway. An async generator yields the batches; each
+    batch's records are written by `csv-stringify` into one chunk of a `Readable.from()` stream
+    with `highWaterMark` 1, so the next batch is read only once the response took the previous
+    one, and destroying the stream (the client went away) stops the reading. Due payments are
+    settled once and the clock read once before the first batch; no total is counted.
+  - The header and the first batch are read before the response starts, so a failure up to there
+    is an ordinary JSON error; a later one destroys the connection, never a short file that looks
+    complete.
+  - Text cells (headers too) are escaped; numbers never are, so a refund stays a negative number.
+    Money is in pounds as a decimal number with a Currency column, times are Cairo ISO, flags
+    `yes` / `no`. UTF-8 with a BOM, CRLF, fields quoted when they hold a comma, a quote or any
+    line break.
+  - The audit event is `export.downloaded` on entity `export` (no id), metadata `dataset` and the
+    filters given, a search text only as `search: true`. It is written after the first batch is
+    read and before the response starts; a refused request records nothing.
 
 ### 13.5 Activity log
 
@@ -1502,6 +1524,13 @@ generated contract (§19).
   in one query (`idx_audit_events_booking_id`, `idx_audit_events_entity_type_entity_id_occurred_at`),
   ordered by `occurred_at`, then id; settlement records a charge's result before the
   confirmation or refund it causes, so the order reads right within one instant.
+- *As built (U19, `docs/gh-20-exports-activity/spec.md`):* the admin Activity log
+  (`GET /admin/activity`) lists every event, newest first, cursor-paged with `total`, through the
+  U1 indexes (`idx_audit_events_occurred_at`, `idx_audit_events_actor_staff_user_id`,
+  `idx_audit_events_entity_type`) and U12's `idx_audit_events_entity_type_entity_id_occurred_at`
+  for one item; no migration was needed. Filters: staff member, actor kind, entity type, one
+  entity, action and cinema dates. A staff actor is shown by name, a customer actor by id only,
+  and booking and payment events carry the booking's reference.
 
 ## 14. Cross-cutting concerns
 

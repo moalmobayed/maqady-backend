@@ -16,6 +16,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TimeModule } from './common/time/time.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { AdminCustomersModule } from './modules/admin-customers/admin-customers.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
@@ -23,6 +24,7 @@ import { SettleFirstInterceptor } from './modules/bookings/settle-first.intercep
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
+import { ExportsModule } from './modules/exports/exports.module';
 import { HallsModule } from './modules/halls/halls.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
@@ -88,6 +90,8 @@ export class AppModule {
         AdminCustomersModule,
         AnalyticsModule,
         SearchModule,
+        ExportsModule,
+        ActivityModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
