@@ -95,6 +95,27 @@ export class AdminBookingsService {
   }
 
   /**
+   * U18 (search): the admin list rows of these bookings, in the order of `ids`; unknown ids are
+   * left out. A fixed number of queries whatever the count. The caller settles due payments first
+   * when the statuses must be fresh, as `list()` does.
+   */
+  async itemsByIds(ids: readonly number[]): Promise<AdminBookingListItem[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.bookings.findByIds(ids);
+    const bookings = new Map(
+      (await this.views.ofMany(rows, this.clock.now())).map((booking) => [booking.id, booking]),
+    );
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    return [...new Set(ids)].flatMap((id) => {
+      const row = rowsById.get(id);
+      const booking = bookings.get(id);
+      return row && booking
+        ? [{ booking, contact: contactOf(row), checkedInAt: row.checked_in_at }]
+        : [];
+    });
+  }
+
+  /**
    * `GET /admin/bookings/summary`, the four cards (PRD A6): today is the cinema day containing
    * now (06:00 to 06:00 Cairo time, design §8); the Refunded card covers the 7 days before now.
    */

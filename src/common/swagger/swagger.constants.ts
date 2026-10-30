@@ -62,6 +62,12 @@ export const API_TAGS = [
     description:
       'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)',
   },
+  {
+    name: 'Admin: search',
+    description:
+      "The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)",
+  },
+  { name: 'Search', description: 'The customer site search: movies, people and theaters' },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
   {
     name: 'My bookings',

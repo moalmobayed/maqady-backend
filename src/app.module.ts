@@ -30,6 +30,7 @@ import { MessageLogModule } from './modules/messaging/message-log.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { OutboxDrainInterceptor } from './modules/messaging/outbox-drain.interceptor';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SearchModule } from './modules/search/search.module';
 import { SeatingModule } from './modules/seating/seating.module';
 import { ShowtimesModule } from './modules/showtimes/showtimes.module';
 import { StaffModule } from './modules/staff/staff.module';
@@ -86,6 +87,7 @@ export class AppModule {
         BookingsModule,
         AdminCustomersModule,
         AnalyticsModule,
+        SearchModule,
       ],
       providers: [
         { provide: APP_PIPE, useFactory: createValidationPipe },
