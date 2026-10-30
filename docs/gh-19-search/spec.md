@@ -108,7 +108,7 @@ All under `/api/v1`. Times are Cairo ISO with offset; money `{ amount, currency 
 | Route | Access | S | Success | Errors |
 |---|---|---|---|---|
 | `GET /search?q=` | `@Public()`, `@RateLimit('search')` | | `200 SearchResults` | `400 VALIDATION_FAILED` (`q`); `429 RATE_LIMITED`; `503 SERVICE_UNAVAILABLE` |
-| `GET /admin/search?q=` | `@Staff()` | | `200 AdminSearchResults` | `400 VALIDATION_FAILED` (`q`); `401`; `403` (a customer token: `FORBIDDEN`); `503` |
+| `GET /admin/search?q=` | `@Staff()` | | `200 AdminSearchResults` | `400 VALIDATION_FAILED` (`q`); `401 UNAUTHENTICATED` (no token, or a customer token: it is not a staff token); `503` |
 
 Every route also documents `500 INTERNAL` and `429 RATE_LIMITED` (cross-cutting docs).
 
@@ -163,6 +163,8 @@ with images (`MediaService.findByIds`): at most 6 queries, whatever matches.
     groups (box office never queries movies, people or theaters and answers `null`), settlement
     before staff booking hits, hydration order kept, images resolved once per group, alt texts.
   - `dto/search.query.test.ts`: `q` trimmed, required, 2–100, NUL refused.
+  - `test/unit/modules/bookings/admin-bookings.items-by-ids.test.ts`: `itemsByIds()` keeps the
+    order asked, drops unknown and repeated ids, judges at the clock's now, queries nothing for none.
 - Integration (`test/integration/modules/search/`, real app and Postgres):
   - `search.controller.test.ts`: substring and typo matches with the exact match first and the
     typo-tolerant match ranking first among fuzzy ones; cast matches with `matchedPerson`; people
