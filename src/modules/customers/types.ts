@@ -128,3 +128,40 @@ export interface CustomerPasswordResetParams {
   readonly fullName: string;
   readonly token: string;
 }
+
+/** `GET /admin/customers` (U15): every filter optional, combined with AND. */
+export interface AdminCustomerFilter {
+  /** 2 to 100 characters, trimmed: part of the name, email or phone. */
+  readonly q?: string;
+  readonly status?: CustomerStatus;
+}
+
+/** What an admin search looks for: a substring, and the E.164 form of a local mobile. */
+export interface CustomerSearch {
+  /** A `LIKE` pattern with `%`, `_` and `\` escaped. */
+  readonly pattern: string;
+  /** The pattern of `+20…` when the text is an Egyptian local mobile, else null. */
+  readonly phonePattern: string | null;
+}
+
+/** One SQL condition of the admin list, on `customers`, with its values bound. */
+export interface CustomerSqlCondition {
+  readonly sql: string;
+  readonly bindings: readonly (string | number | Date)[];
+}
+
+/** What `PATCH /admin/customers/{id}` asks to change in the account (U15); `phone: null` clears. */
+export interface CustomerDetailsChanges {
+  readonly fullName?: string;
+  readonly email?: string;
+  readonly phone?: string | null;
+}
+
+/** The columns an admin edit writes; absent ones stay. A new email is unverified. */
+export interface CustomerDetailsUpdate {
+  readonly full_name?: string;
+  readonly email?: string;
+  readonly email_verified_at?: null;
+  readonly phone?: string | null;
+  readonly updated_at: Date;
+}

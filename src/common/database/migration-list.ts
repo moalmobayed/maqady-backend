@@ -38,6 +38,15 @@ import * as m0110_03 from '../../migrations/0110_03_create_seat_claims';
 import * as m0110_04 from '../../migrations/0110_04_create_hold_refusals';
 import * as m0110_05 from '../../migrations/0110_05_add_booking_foreign_keys';
 import * as m0120_01 from '../../migrations/0120_01_create_payments';
+import * as m0130_01 from '../../migrations/0130_01_add_audit_events_entity_index';
+import * as m0140_01 from '../../migrations/0140_01_add_payments_receipt_reference_check';
+import * as m0140_02 from '../../migrations/0140_02_add_bookings_checked_in_check';
+import * as m0150_01 from '../../migrations/0150_01_create_booking_notes';
+import * as m0150_02 from '../../migrations/0150_02_add_admin_booking_indexes';
+import * as m0160_01 from '../../migrations/0160_01_add_admin_customer_indexes';
+import * as m0170_01 from '../../migrations/0170_01_add_payments_screen_indexes';
+import * as m0180_01 from '../../migrations/0180_01_create_staff_alert_reads';
+import * as m0190_01 from '../../migrations/0190_01_add_search_indexes';
 
 /**
  * Every migration in `src/migrations/`, in run order. Imported statically so a bundler or file
@@ -84,4 +93,13 @@ export const MIGRATIONS: readonly ListedMigration[] = [
   { name: '0110_04_create_hold_refusals', file: m0110_04 },
   { name: '0110_05_add_booking_foreign_keys', file: m0110_05 },
   { name: '0120_01_create_payments', file: m0120_01 },
+  { name: '0130_01_add_audit_events_entity_index', file: m0130_01 },
+  { name: '0140_01_add_payments_receipt_reference_check', file: m0140_01 },
+  { name: '0140_02_add_bookings_checked_in_check', file: m0140_02 },
+  { name: '0150_01_create_booking_notes', file: m0150_01 },
+  { name: '0150_02_add_admin_booking_indexes', file: m0150_02 },
+  { name: '0160_01_add_admin_customer_indexes', file: m0160_01 },
+  { name: '0170_01_add_payments_screen_indexes', file: m0170_01 },
+  { name: '0180_01_create_staff_alert_reads', file: m0180_01 },
+  { name: '0190_01_add_search_indexes', file: m0190_01 },
 ];

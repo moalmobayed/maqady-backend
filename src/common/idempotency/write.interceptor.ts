@@ -123,7 +123,12 @@ function runHandler(next: CallHandler): Promise<unknown> {
 
 /** The scope a key belongs to: the principal, or `anonymous` for guests (design §14.1). */
 export function scopeOf(principal: Principal | undefined): string {
-  return principal ? `${principal.kind}:${principal.id}` : ANONYMOUS_SCOPE;
+  return principal ? ownerScope(principal.kind, principal.id) : ANONYMOUS_SCOPE;
+}
+
+/** The scope of one account's keys: `customer:<id>` or `staff:<id>`. */
+export function ownerScope(kind: Principal['kind'], id: number): string {
+  return `${kind}:${id}`;
 }
 
 /**

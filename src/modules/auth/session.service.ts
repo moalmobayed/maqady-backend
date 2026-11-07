@@ -120,6 +120,20 @@ export class SessionService {
     });
   }
 
+  /**
+   * Deletes every session row of an account, rotated and revoked ones included (anonymisation,
+   * U15, design §21); returns how many went. The live heads are locked first, as a revocation
+   * does, so a refresh in flight finishes and the row it inserted is deleted by the statement
+   * that follows. The guard then finds no session and answers `UNAUTHENTICATED`.
+   */
+  async deleteAllFor(owner: SessionOwner): Promise<number> {
+    return this.transactions.run(async () => {
+      const scope: SessionScope = { kind: 'owner', owner };
+      await this.sessions.lockLiveHeads(scope);
+      return this.sessions.deleteScope(scope);
+    });
+  }
+
   private async rotate(input: RefreshSessionInput): Promise<RefreshOutcome> {
     if (!OPAQUE_TOKEN_PATTERN.test(input.refreshToken)) throw new AppError('UNAUTHENTICATED');
     const row = await this.sessions.findByTokenHashForUpdate(sha256Hex(input.refreshToken));

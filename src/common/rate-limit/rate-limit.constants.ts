@@ -27,7 +27,13 @@ export const RATE_LIMIT_DEFINITIONS: Readonly<Record<RateLimitName, RateLimitDef
   holdIp: { defaultRule: '30/10m', key: 'ip', variable: 'RATE_LIMIT_HOLD_IP' },
   holdCustomer: { defaultRule: '10/10m', key: 'customer', variable: 'RATE_LIMIT_HOLD_CUSTOMER' },
   payment: { defaultRule: '10/5m', key: 'bookingRef', variable: 'RATE_LIMIT_PAYMENT' },
-  ticketEmail: { defaultRule: '3/1h', key: 'bookingRef', variable: 'RATE_LIMIT_TICKET_EMAIL' },
+  // Per booking and caller: the throttler runs before the access guard, so a booking-only key
+  // would let anyone who knows a reference spend the owner's sends (U12).
+  ticketEmail: {
+    defaultRule: '3/1h',
+    key: 'customerAndBookingRef',
+    variable: 'RATE_LIMIT_TICKET_EMAIL',
+  },
   search: { defaultRule: '60/1m', key: 'ip', variable: 'RATE_LIMIT_SEARCH' },
 };
 

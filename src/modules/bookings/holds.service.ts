@@ -8,6 +8,8 @@ import { Clock } from '../../common/time/clock';
 import { addToInstant } from '../../common/time/time';
 import { CustomerService } from '../customers/customer.service';
 import type { Customer } from '../customers/types';
+import { StaffService } from '../staff/staff.service';
+import type { StaffMember } from '../staff/types';
 import { layoutSeats } from '../halls/hall-layout';
 import { HallReadService } from '../halls/hall-read.service';
 import type { HallSeat } from '../halls/types';
@@ -35,11 +37,12 @@ import type {
   CreatedHold,
   CreateHoldInput,
   HoldAccess,
+  HoldOwner,
+  HoldRowHolder,
   NewBookingRow,
   HoldsToRelease,
   HoldTiming,
   InsertedHold,
-  NewHoldCode,
   ReclaimedSeats,
   ReleaseReason,
   ShowtimeContext,
@@ -52,8 +55,8 @@ import type {
  * a block) can wait for each other but never deadlock:
  *
  * 2. the showtime `FOR SHARE` (create only), 3. the hall `FOR SHARE` (create only), 4. the
- * customer (`FOR NO KEY UPDATE`), 5. the bookings involved `FOR UPDATE` in id order, 6. the seat
- * claims, by showtime and label (`SeatClaimService`).
+ * customer, or the staff member of a counter hold (`FOR NO KEY UPDATE`), 5. the bookings involved
+ * `FOR UPDATE` in id order, 6. the seat claims, by showtime and label (`SeatClaimService`).
  *
  * Expiry is judged from stored times against the `Clock`: nothing runs when a hold ends. A
  * released hold's claims end `now` and its `hold_expires_at` becomes `now`, so it reads as
@@ -61,7 +64,9 @@ import type {
  *
  * Due payments are settled before each route runs (`@SettleFirst()`, §7.1 step 1, U11), and a
  * hold whose payment is still processing is never released or replaced (`PAYMENT_IN_PROGRESS`,
- * U11). U13 adds the staff holder.
+ * U11). A counter hold (U13) is the same hold with a staff holder: it runs every step above,
+ * competes for seats through the same claim statement, has no customer, contact or hold code, and
+ * replaces only that member's previous live counter hold.
  */
 @Injectable()
 export class HoldsService {
@@ -78,13 +83,15 @@ export class HoldsService {
     private readonly clock: Clock,
     private readonly views: BookingViews,
     private readonly payments: PaymentsService,
+    private readonly staff: StaffService,
   ) {}
 
   /**
    * Holds 1 to 8 seats of a showtime for 5 minutes (capped at its start), releasing the
    * holder's previous live hold in the same transaction: a customer's live online hold, and the
-   * live unowned hold whose code they present. When a seat is taken the whole request rolls back
-   * (the previous hold stays), `SEAT_TAKEN` lists the taken seats, and the refusal is recorded.
+   * live unowned hold whose code they present; a staff member's live counter hold. When a seat is
+   * taken the whole request rolls back (the previous hold stays), `SEAT_TAKEN` lists the taken
+   * seats, and the refusal is recorded.
    */
   async create(input: CreateHoldInput): Promise<CreatedHold> {
     return this.transactions.run(async () => {
@@ -112,7 +119,14 @@ export class HoldsService {
       const { holder } = input;
       const customer =
         holder.kind === 'customer' ? await this.lockCustomer(holder.customerId) : null;
-      const released = await this.lockHoldsToRelease(customer?.id ?? null, holder.holdCode, now);
+      const member = holder.kind === 'staff' ? await this.lockStaff(holder.staffUserId) : null;
+      const released = member
+        ? await this.lockCounterHoldsToRelease(member.id, now)
+        : await this.lockHoldsToRelease(
+            customer?.id ?? null,
+            holder.kind === 'staff' ? undefined : holder.holdCode,
+            now,
+          );
 
       const holdExpiresAt = new Date(
         Math.min(
@@ -120,8 +134,14 @@ export class HoldsService {
           context.view.startsAt.getTime(),
         ),
       );
-      const code = customer ? null : newHoldCode();
-      const booking = await this.insertHold(context, seats, customer, code, holdExpiresAt, now);
+      const code = customer || member ? null : newHoldCode();
+      const booking = await this.insertHold(
+        context,
+        seats,
+        { customer, member, code },
+        holdExpiresAt,
+        now,
+      );
 
       const outcome = await this.seatClaims.write({
         now,
@@ -138,7 +158,7 @@ export class HoldsService {
         throw new AppError('SEAT_TAKEN', undefined, { seats: [...outcome.missing] });
       }
 
-      const actor = this.actorOf(customer);
+      const actor = this.actorOf(customer, member);
       await this.record({
         actor,
         action: 'booking.held',
@@ -146,8 +166,8 @@ export class HoldsService {
         metadata: {
           showtimeId: context.view.id,
           seatCount: labels.length,
-          channel: 'online',
-          holder: customer ? 'customer' : 'guest',
+          channel: booking.row.channel,
+          holder: holderOf(booking.row),
         },
       });
       await this.announceReleases(released.rows, released.claims, actor, 'replaced', {
@@ -259,9 +279,11 @@ export class HoldsService {
 
       const released = await this.releaseLocked([locked], now);
       const actor: AuditActor =
-        access.customerId === undefined
-          ? { kind: 'system' }
-          : { kind: 'customer', id: access.customerId };
+        access.staffUserId !== undefined
+          ? { kind: 'staff', id: access.staffUserId }
+          : access.customerId === undefined
+            ? { kind: 'system' }
+            : { kind: 'customer', id: access.customerId };
       await this.announceReleases([locked], released, actor, 'released');
     });
   }
@@ -315,6 +337,32 @@ export class HoldsService {
     };
   }
 
+  /**
+   * The staff member's live counter holds a new counter hold replaces (design §7.6: at most one
+   * live counter hold per member), locked `FOR UPDATE` in id order and checked again under the
+   * lock; their hold times end `now`. Customers' and guests' holds are never touched.
+   */
+  private async lockCounterHoldsToRelease(staffUserId: number, now: Date): Promise<HoldsToRelease> {
+    const ids = await this.bookings.liveCounterHoldIdsOfStaff(staffUserId, now);
+    if (ids.length === 0) return { rows: [], claims: [] };
+    const rows = (await this.bookings.lockForUpdate(ids)).filter(
+      (row) =>
+        isLiveHold(holdOf(row), now) &&
+        row.channel === 'counter' &&
+        row.created_by_staff_id === staffUserId,
+    );
+    if (rows.length === 0) return { rows: [], claims: [] };
+    await this.refuseProcessing(rows);
+    await this.bookings.expireHolds(
+      rows.map((row) => row.id),
+      now,
+    );
+    return {
+      rows,
+      claims: releasedClaims(rows, await this.bookings.seatsOf(rows.map((row) => row.id))),
+    };
+  }
+
   /** The held seats as the layout read under the hall lock has them; anything else is refused. */
   private async seatsInLayout(hallId: number, labels: readonly string[]): Promise<HallSeat[]> {
     const layout = await this.halls.findLayout(hallId);
@@ -336,24 +384,35 @@ export class HoldsService {
     return customer;
   }
 
+  /**
+   * The staff member of a counter hold, locked (design §7.1 step 4); gone is `UNAUTHENTICATED`,
+   * not active under the lock (a deactivation that committed first) `ACCOUNT_DEACTIVATED`.
+   */
+  private async lockStaff(staffUserId: number): Promise<StaffMember> {
+    const member = await this.staff.findByIdForUpdate(staffUserId);
+    if (!member) throw new AppError('UNAUTHENTICATED');
+    if (member.status !== 'active') throw new AppError('ACCOUNT_DEACTIVATED');
+    return member;
+  }
+
   /** Inserts the held booking and its priced seats; a reference that collides is drawn again. */
   private async insertHold(
     context: ShowtimeContext,
     seats: readonly HallSeat[],
-    customer: Customer | null,
-    code: NewHoldCode | null,
+    holder: HoldRowHolder,
     holdExpiresAt: Date,
     now: Date,
   ): Promise<InsertedHold> {
+    const { customer, member, code } = holder;
     const { prices } = context.view;
     const priced = seats.map((seat) => ({ seat, price: prices[seat.zone] }));
     const contact = customer ? contactOf(customer) : { name: null, email: null, phone: null };
     const row: NewBookingRow = {
       showtime_id: context.view.id,
       status: 'held',
-      channel: 'online',
+      channel: member ? 'counter' : 'online',
       customer_id: customer?.id ?? null,
-      created_by_staff_id: null,
+      created_by_staff_id: member?.id ?? null,
       hold_token_hash: code?.hash ?? null,
       hold_expires_at: holdExpiresAt,
       has_declined_payment: false,
@@ -403,7 +462,7 @@ export class HoldsService {
         metadata: {
           showtimeId: row.showtime_id,
           reason,
-          holder: row.customer_id === null ? 'guest' : 'customer',
+          holder: holderOf(row),
         },
       });
     }
@@ -428,10 +487,11 @@ export class HoldsService {
   }
 
   /**
-   * A customer acts as themselves; a guest has no actor row, so the system records it, with
-   * `holder: 'guest'` in the metadata so the activity log can say so.
+   * A customer or staff member acts as themselves; a guest has no actor row, so the system
+   * records it, with `holder: 'guest'` in the metadata so the activity log can say so.
    */
-  private actorOf(customer: Customer | null): AuditActor {
+  private actorOf(customer: Customer | null, member: StaffMember | null): AuditActor {
+    if (member) return { kind: 'staff', id: member.id };
     return customer ? { kind: 'customer', id: customer.id } : { kind: 'system' };
   }
 
@@ -455,10 +515,22 @@ function holdOf(row: BookingRow): HoldTiming {
   return { status: row.status, holdExpiresAt: row.hold_expires_at };
 }
 
-/** True when the caller owns the booking, or presents the code of an unowned hold. */
+/**
+ * True when the caller owns the booking, presents the code of an unowned online hold, or is the
+ * staff member who made an unowned counter hold.
+ */
 function mayActOn(row: BookingRow, access: HoldAccess): boolean {
   if (row.customer_id !== null) return access.customerId === row.customer_id;
+  if (row.channel === 'counter') {
+    return access.staffUserId !== undefined && access.staffUserId === row.created_by_staff_id;
+  }
   return holdCodeMatches(access.holdCode, row.hold_token_hash);
+}
+
+/** Who holds a booking, as the audit metadata names it (never who they are). */
+function holderOf(row: BookingRow): HoldOwner {
+  if (row.customer_id !== null) return 'customer';
+  return row.channel === 'counter' ? 'staff' : 'guest';
 }
 
 function contactOf(customer: Customer): BookingContact {

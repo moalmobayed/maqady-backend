@@ -34,6 +34,15 @@ export class StaffRepository {
     return this.staff().select<StaffUserRow[]>(STAFF_COLUMNS).where({ id }).first();
   }
 
+  /** These members, in id order; unknown ids are absent (U14: note authors, the activity log). */
+  async findByIds(ids: readonly number[]): Promise<StaffUserRow[]> {
+    if (ids.length === 0) return [];
+    return this.staff()
+      .select<StaffUserRow[]>(STAFF_COLUMNS)
+      .whereIn('id', [...new Set(ids)])
+      .orderBy('id');
+  }
+
   /**
    * The member's row, locked until the transaction ends. `FOR NO KEY UPDATE`, not `FOR UPDATE`:
    * the foreign-key checks of rows that point at the member (a refresh inserting the next session

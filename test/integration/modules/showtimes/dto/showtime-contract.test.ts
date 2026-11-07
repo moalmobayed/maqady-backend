@@ -38,7 +38,7 @@ describe('Showtime schemas and operations in the OpenAPI document', () => {
     await testApp.close();
   });
 
-  it('documents the 5 admin showtime operations with their tag, prose, idempotency and error codes', () => {
+  it('documents the 6 admin showtime operations with their tag, prose, idempotency and error codes', () => {
     const operations = Object.entries(document.paths)
       .filter(([path]) => path.startsWith('/admin/showtime'))
       .flatMap(([path, item]) =>
@@ -53,6 +53,8 @@ describe('Showtime schemas and operations in the OpenAPI document', () => {
         'GET /admin/showtimes/{id}',
         'PATCH /admin/showtimes/{id}',
         'POST /admin/showtime-checks',
+        // U14: the impact of a cancellation, read from bookings and payments.
+        'GET /admin/showtimes/{id}/cancellation-preview',
       ].sort(),
     );
     for (const { value } of operations) {

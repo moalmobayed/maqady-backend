@@ -4,6 +4,7 @@ import { Admin, CurrentPrincipal } from '../../common/auth/access.decorators';
 import type { StaffPrincipal } from '../../common/auth/types';
 import { Strict } from '../../common/idempotency/idempotency.decorators';
 import { toPageRequest } from '../../common/pagination/cursor';
+import { SettleFirst } from '../../common/settlement/settle-first.decorator';
 import {
   ApiErrorResponses,
   REQUEST_ID_RESPONSE_HEADER,
@@ -114,10 +115,11 @@ export class AdminShowtimesController {
   @Patch(':id')
   @Admin()
   @Strict()
+  @SettleFirst('showtime')
   @ApiOperation({
     summary: 'Move, re-price or cancel a showtime',
     description:
-      "Admin only: the manage panel's actions, one per request. Requires an `Idempotency-Key`.\n\n- **Move**: `startTime` (and `cinemaDate` for another date), in the same hall, before the showtime starts. Every check runs again with the movie's current runtime: Now showing movie and active hall (`SHOWTIME_NOT_SCHEDULABLE`), a start that exists that night (`TIME_DOES_NOT_EXIST`) and is in the future (`VALIDATION_FAILED`), inside the opening hours (`OUTSIDE_OPENING_HOURS` with `details.window`), 20 minutes from every other showtime in the hall (`SHOWTIME_CONFLICT` naming them). Every ticket holder is sent the new time by email, and by SMS when they gave a phone.\n- **Prices**: `prices`, before the showtime starts; for new holds only.\n- **Cancel**: `status: cancelled` with `cancelReason`, alone, until the showtime ends. Confirmed bookings are refunded and their holders told. Final; the slot is free again.\n- A started showtime is not moved or re-priced, an ended one is not cancelled, a cancelled one is not changed (`SHOWTIME_NOT_EDITABLE` with `details.reason`).\n- A request that changes nothing answers `200` and records nothing; anything else is recorded in the activity log.",
+      "Admin only: the manage panel's actions, one per request. Requires an `Idempotency-Key`.\n\n- **Move**: `startTime` (and `cinemaDate` for another date), in the same hall, before the showtime starts. Every check runs again with the movie's current runtime: Now showing movie and active hall (`SHOWTIME_NOT_SCHEDULABLE`), a start that exists that night (`TIME_DOES_NOT_EXIST`) and is in the future (`VALIDATION_FAILED`), inside the opening hours (`OUTSIDE_OPENING_HOURS` with `details.window`), 20 minutes from every other showtime in the hall (`SHOWTIME_CONFLICT` naming them). Every ticket holder is sent the new time by email, and by SMS when they gave a phone.\n- **Prices**: `prices`, before the showtime starts; for new holds only.\n- **Cancel**: `status: cancelled` with `cancelReason`, alone, until the showtime ends. Confirmed bookings are refunded and their holders told. Final; the slot is free again.\n- Due slow payments of the showtime are settled first, so a payment that went through before the change counts as a ticket holder's (refunded and told on a cancel, sent the new time on a move).\n- A started showtime is not moved or re-priced, an ended one is not cancelled, a cancelled one is not changed (`SHOWTIME_NOT_EDITABLE` with `details.reason`).\n- A request that changes nothing answers `200` and records nothing; anything else is recorded in the activity log.",
   })
   @ApiBody({ type: UpdateShowtimeRequest })
   @ApiOkResponse({

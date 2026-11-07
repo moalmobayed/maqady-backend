@@ -47,6 +47,55 @@ export class NamedRefResponse {
   name!: string;
 }
 
+/** A theater as a booking names it, with where it is for "Directions" (PRD C9, C11). */
+@ApiSchema({ name: 'BookingTheater' })
+export class BookingTheaterResponse {
+  @ApiProperty({ type: 'integer', nullable: false, example: 3, description: 'Theater id.' })
+  id!: number;
+
+  @ApiProperty({
+    type: String,
+    nullable: false,
+    example: 'Zamalek Cinema',
+    description: 'Name.',
+  })
+  name!: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: false,
+    example: '26 July St',
+    description: 'Street address.',
+  })
+  address!: string;
+
+  @ApiProperty({ type: String, nullable: false, example: 'Zamalek', description: 'District.' })
+  district!: string;
+
+  @ApiProperty({ type: String, nullable: false, example: 'Cairo', description: 'City.' })
+  city!: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: false,
+    minimum: -90,
+    maximum: 90,
+    example: 30.0626,
+    description: 'Latitude, for the "Directions" link.',
+  })
+  latitude!: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: false,
+    minimum: -180,
+    maximum: 180,
+    example: 31.2197,
+    description: 'Longitude, for the "Directions" link.',
+  })
+  longitude!: number;
+}
+
 /** The showtime of a booking, and the header of the seat page (PRD C6). */
 @ApiSchema({ name: 'BookingShowtime' })
 export class BookingShowtimeResponse {
@@ -83,8 +132,12 @@ export class BookingShowtimeResponse {
   @ApiProperty({ type: () => BookingMovieResponse, nullable: false, description: 'The movie.' })
   movie!: BookingMovieResponse;
 
-  @ApiProperty({ type: () => NamedRefResponse, nullable: false, description: 'The theater.' })
-  theater!: NamedRefResponse;
+  @ApiProperty({
+    type: () => BookingTheaterResponse,
+    nullable: false,
+    description: 'The theater, with its address and coordinates.',
+  })
+  theater!: BookingTheaterResponse;
 
   @ApiProperty({ type: () => NamedRefResponse, nullable: false, description: 'The hall.' })
   hall!: NamedRefResponse;

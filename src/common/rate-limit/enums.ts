@@ -26,6 +26,8 @@ export const RATE_LIMIT_NAMES = [
  * - `email`: `body.email`, lower-cased and hashed.
  * - `ipAndEmail`: the client address plus the hashed `body.email`.
  * - `bookingRef`: the `ref` path parameter.
+ * - `customerAndBookingRef`: the signed-in customer (else the client address) plus the `ref` path
+ *   parameter, so nobody but the owner can spend a booking's limit (U12 "Email again").
  */
 export const RATE_LIMIT_KEYS = [
   'ip',
@@ -34,4 +36,5 @@ export const RATE_LIMIT_KEYS = [
   'email',
   'ipAndEmail',
   'bookingRef',
+  'customerAndBookingRef',
 ] as const;

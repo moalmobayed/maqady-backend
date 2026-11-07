@@ -13,6 +13,9 @@ export const PAYMENT_METHODS = ['card', 'wallet', 'cash', 'card_terminal'] as co
 /** The methods a customer pays with on the website (PRD Payments 1). */
 export const ONLINE_PAYMENT_METHODS = ['card', 'wallet'] as const;
 
+/** The methods box office staff record at the counter (PRD Payments 2, U13). */
+export const COUNTER_PAYMENT_METHODS = ['cash', 'card_terminal'] as const;
+
 /** A charge's statuses: in flight, or one of the three final results (design §7.5). */
 export const CHARGE_STATUSES = ['processing', 'succeeded', 'declined', 'cancelled'] as const;
 

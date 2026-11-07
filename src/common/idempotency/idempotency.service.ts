@@ -53,6 +53,14 @@ export class IdempotencyService {
     return { kind: 'replay', status: stored.response_status, body };
   }
 
+  /**
+   * Deletes every key of a scope, live or expired, in the open transaction (anonymisation of a
+   * customer, `customer:<id>`, U15, design §21); returns how many went.
+   */
+  async deleteForScope(scope: string): Promise<number> {
+    return this.repository.deleteScope(scope);
+  }
+
   /** Stores the handler's status and JSON body, encrypted, before the transaction commits. */
   async complete(
     id: number,

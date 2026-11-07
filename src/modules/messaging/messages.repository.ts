@@ -60,6 +60,11 @@ export class MessagesRepository {
       .insert([...rows]);
   }
 
+  /** Deletes the customer's messages in the current transaction (`idx_messages_related_customer_id`). */
+  async deleteRelatedToCustomer(customerId: number): Promise<number> {
+    return this.db.executor()('messages').where({ related_customer_id: customerId }).delete();
+  }
+
   /**
    * Claims up to `limit` due queued messages: their `next_attempt_at` moves to `leaseUntil`, so
    * no other drain claims them while they are sent. `SKIP LOCKED` lets concurrent drains take

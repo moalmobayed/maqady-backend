@@ -205,6 +205,8 @@ empty database: the two datasets don't share names, so seeding one over the othe
   advisory. Drop the override once the Swagger version in use depends on a fixed `js-yaml`.
 - The seat map runs on `@nestjs/websockets` and `@nestjs/platform-ws` (11.2.7, like the other
   Nest packages) with `ws` pinned to the version `platform-ws` itself depends on (8.21.2).
+- The CSV exports write their records with `csv-stringify` (6.9.0, its CommonJS build through
+  `csv-stringify/sync`), as design §13.4 names it.
 - `npm audit` reports a moderate advisory in `sprintf-js`, reached only through Jest's coverage
   tooling (dev only, no fix upstream). `npm audit --omit=dev` is clean.
 
@@ -281,6 +283,20 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   `ws` client on the listening app that waits for messages (`next()`, `closed()`), never for
   time. `test/support/seat-map-probe.module.ts` publishes a seat event in a transaction that
   rolls back.
+- `test/support/admin-bookings.ts` (U14): `paidOnline(testApp, showtimeId, seats)` (a new
+  customer's booking paid by card), `listAdminBookings()`, `refundBooking()`, `payOutRefund()`,
+  `previewEdit()` and `editBooking()` through the real admin routes.
+- `test/support/admin-customers.ts` (U15): `listAdminCustomers()`, `getAdminCustomer()`,
+  `updateAdminCustomer()`, `anonymiseCustomer()`, `requestCustomerReset()` through the real admin
+  routes, and `paidBookingOf(testApp, customer, showtimeId, seats)` (an existing customer's
+  booking paid by card).
+- `test/support/payments-screen.ts` (U16): `listTransactions()` and `paymentsSummary()` through
+  the real admin Payments routes.
+- `test/support/overview-alerts.ts` (U17): `getOverview()`, `listAlerts()` and `markAlertsRead()`
+  through the real routes, and `bookableFixture(testApp, admin, days)` (a published theater with
+  the hours given and a 31-seat hall, for after-midnight and early shows).
+- `test/support/search.ts` (U18): `searchPublic()`, `searchStaff()`, `groupIds(response, 'movies')`
+  and `theaterWithStatus(testApp, admin, 'active' | 'draft' | 'sales_paused', overrides)`.
 - `test/support/routes.ts` lists every HTTP route with its declared access
   (`listHttpRoutes(testApp)`), so "every Admin route" tests cover new routes by themselves.
 - Suites that stand in their own principal resolvers pass `overrides: REAL_RESOLVERS_OFF`
@@ -448,6 +464,213 @@ curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/payments \
 curl -s -o ticket.pdf localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket.pdf -H "Authorization: Bearer $TOKEN"
 ```
 
+## My bookings
+
+The signed-in customer's own bookings (U12, `docs/gh-13-customer-bookings/spec.md`):
+
+- `GET /api/v1/me/bookings?tab=upcoming|past` pages a tab with `tabCounts` for the tab labels.
+  Upcoming is every confirmed booking whose showtime has not ended; Past is completed, refunded
+  and failed ones. Both are decided at read time against the `Clock` (no job), so a test moves a
+  `TestClock` to see a booking change tab, and signs in again when it moves past the access
+  token's life.
+- `GET /api/v1/bookings/{ref}` also shows `seatLines`, `refund` and the theater's address and
+  coordinates; `GET /api/v1/bookings/{ref}/history` is its History from the audit log.
+- `POST /api/v1/bookings/{ref}/ticket-deliveries` ("Email again", `Idempotency-Key` required)
+  queues the tickets email to the account email; `RATE_LIMIT_TICKET_EMAIL` (3 an hour) counts per
+  booking and signed-in customer. `test/support/my-bookings.ts` has `paidBooking()`,
+  `listMyBookings()`, `bookingHistory()` and `emailAgain()` for integration tests.
+
+```bash
+curl -s "localhost:3000/api/v1/me/bookings?tab=past&limit=5" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:3000/api/v1/bookings/MQ-7K3P9Q/ticket-deliveries \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)"
+```
+
+## Box office and ticket scanning
+
+Both staff roles sell at the counter and scan tickets (U13, `docs/gh-14-box-office/spec.md`).
+
+- `POST /api/v1/admin/counter-holds` (`{ showtimeId, seats }`, `Idempotency-Key` required) holds
+  seats for 5 minutes exactly like an online hold, through the same claim statement, so a seat is
+  never sold twice across the website and the counter. A member has one live counter hold; a new
+  one releases the previous one, and `DELETE /api/v1/admin/counter-holds/{ref}` releases it.
+- `POST /api/v1/admin/bookings/{ref}/counter-payments` (`Idempotency-Key` required) records `cash`
+  or `card_terminal` with the terminal's `receiptReference`, and the customer: `walk_in`,
+  `existing` (`customerId`) or `contact` (`fullName`, optional `email` and `phone`). It confirms
+  the booking at once and sends the tickets to any email or phone given. Only the member who made
+  the hold can sell or release it.
+- `GET /api/v1/admin/bookings/{ref}/ticket.pdf` gives staff any booking's PDF ticket (a walk-in
+  has no email); each download is recorded in the activity log.
+- `POST /api/v1/admin/scans` takes `{ theaterId, code }` (the QR text) or
+  `{ theaterId, reference, confirm }` (typed by hand) and always answers `200` with a `result`:
+  `VALID`, `ALREADY_USED` (with the first `checkedInAt`), `WRONG_SHOWTIME`, `NOT_VALID`,
+  `NOT_FOUND` or `CONFIRM_REQUIRED`. Scanning opens 60 minutes before the start and closes at the
+  end. A typed reference admits only on a second request with `confirm: true`.
+
+```bash
+curl -s -X POST localhost:3000/api/v1/admin/counter-holds -H "Authorization: Bearer $STAFF" \
+  -H "Idempotency-Key: $(uuidgen)" -H 'Content-Type: application/json' \
+  -d '{"showtimeId":81,"seats":["F7","F8"]}'
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/counter-payments \
+  -H "Authorization: Bearer $STAFF" -H "Idempotency-Key: $(uuidgen)" -H 'Content-Type: application/json' \
+  -d '{"method":"card_terminal","receiptReference":"TRX-0042817","customer":{"kind":"walk_in"}}'
+curl -s -X POST localhost:3000/api/v1/admin/scans -H "Authorization: Bearer $STAFF" \
+  -H 'Content-Type: application/json' -d '{"theaterId":3,"code":"MQ1.MQ-7K3P9Q.1.…"}'
+```
+
+## Admin bookings
+
+The admin Bookings page (U14, `docs/gh-15-admin-bookings/spec.md`). Both staff roles read and
+annotate; refunds, payouts and edits are admin only.
+
+- `GET /api/v1/admin/bookings` lists bookings newest first with `q` (a reference, or part of the
+  contact name, email or phone), `theaterId`, `movieId`, `status`, `channel`, `method`,
+  `dateFrom` and `dateTo` (cinema dates the booking was made on), and `customerId` (U15). `GET /admin/bookings/summary`
+  gives the four cards; `GET /admin/bookings/{ref}` the detail with every payment and refund, the
+  customer card and the activity log.
+- `GET` / `POST /api/v1/admin/bookings/{ref}/notes` are internal notes (no customer route ever
+  shows them); `POST /admin/bookings/{ref}/ticket-deliveries` resends the tickets by email and SMS.
+- `POST /api/v1/admin/bookings/{ref}/refunds` cancels and refunds in full, each charge on its own
+  rail: card and wallet through the simulated provider at once, cash and card terminal as a
+  `pending` refund that `POST /admin/refunds/{id}/payouts` records as handed back.
+- `POST /api/v1/admin/bookings/{ref}/edit-previews` and `/edits` move a booking to other seats or
+  another showtime of the same movie, or change its contact, with a `reason`. A lower total is
+  refunded automatically; a higher one needs `payment` (`cash` or `card_terminal`) in the same
+  request. The old QR code stops working.
+- `GET /api/v1/admin/showtimes/{id}/cancellation-preview` shows what cancelling a showtime would
+  refund and send; `PATCH /admin/showtimes/{id}` with `status: cancelled` then refunds every
+  booking, releases every hold and emails and texts every ticket holder.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/bookings?q=nadia&status=confirmed" -H "Authorization: Bearer $STAFF"
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/edit-previews -H "Authorization: Bearer $ADMIN" \
+  -H 'Content-Type: application/json' -d '{"seats":["B5","B6"],"reason":"customer_request"}'
+curl -s -X POST localhost:3000/api/v1/admin/bookings/MQ-7K3P9Q/refunds -H "Authorization: Bearer $ADMIN" \
+  -H "Idempotency-Key: $(uuidgen)"
+```
+
+## Admin customers
+
+The admin Customers page (U15, `docs/gh-16-admin-customers/spec.md`), in the `admin-customers`
+module. Both staff roles read; edits, block and unblock, the reset email and "Delete account" are
+admin only.
+
+- `GET /api/v1/admin/customers` lists live customers newest first with `q` (part of the name,
+  email or phone) and `status` (`active`, `blocked`). Each row has `stats`: Bookings (paid and not
+  refunded), Spent, No-shows (a show that ended, never scanned at the entrance) and Last booking.
+  `GET /admin/customers/{id}` adds the 4 newest bookings; `GET /admin/bookings?customerId=` pages
+  all of them.
+- `PATCH /api/v1/admin/customers/{id}` edits `fullName`, `email` (a new address is unverified and
+  its old links stop working) and `phone`, and `status: blocked` signs the customer out everywhere
+  (`ACCOUNT_BLOCKED` on sign-in and refresh); `status: active` unblocks.
+- `POST /api/v1/admin/customers/{id}/password-reset-requests` (strict) emails a 1-hour reset link;
+  a blocked customer is `CUSTOMER_BLOCKED`.
+- `DELETE /api/v1/admin/customers/{id}` anonymises the customer in one transaction (design §21):
+  name, email, phone and password gone, the contact on their bookings cleared, their sessions,
+  links, idempotency keys, messages and the notes on their bookings deleted; bookings and payments
+  stay. The answer counts what was kept and removed.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/customers?q=layla&status=active" -H "Authorization: Bearer $STAFF"
+curl -s -X PATCH localhost:3000/api/v1/admin/customers/42 -H "Authorization: Bearer $ADMIN" \
+  -H 'Content-Type: application/json' -d '{"status":"blocked"}'
+curl -s -X POST localhost:3000/api/v1/admin/customers/42/password-reset-requests \
+  -H "Authorization: Bearer $ADMIN" -H "Idempotency-Key: $(uuidgen)"
+curl -s -X DELETE localhost:3000/api/v1/admin/customers/42 -H "Authorization: Bearer $ADMIN"
+```
+
+## Payments screen
+
+The admin Payments page (U16, `docs/gh-17-payments-screen/spec.md`), admins only, in the read-only
+`analytics` module. Both routes settle due slow payments first.
+
+- `GET /api/v1/admin/payments` lists every charge and refund newest first by when the money moved,
+  with the status the screen shows (`succeeded`, `pending`, `failed` with its reason, `refunded`
+  for a charge refunded in full), refunds with a negative amount, and the filters `kind`,
+  `method`, `channel`, `status`, `theaterId`, `dateFrom` and `dateTo` (cinema dates). A pending
+  counter refund carries `actions.markPaidOut`: pay it out with `POST /admin/refunds/{id}/payouts`.
+- `GET /api/v1/admin/payments/summary?dateFrom=&dateTo=` (by default the last 7 cinema days) gives
+  the four cards (collected online, collected at counters, refunds and their share of the money
+  taken, failed today), totals by channel and method, and the reconciliation: each theater's
+  online, cash, terminal, refunds and net; the simulated provider's view of every final online
+  charge against the ledger's; and every booking or payment that does not add up.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/payments?status=pending&kind=refund" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/payments/summary?dateFrom=2026-10-10&dateTo=2026-10-16" -H "Authorization: Bearer $ADMIN"
+```
+
+## Overview and the bell
+
+The admin Overview and the Notifications bell (U17, `docs/gh-18-overview-alerts/spec.md`), in the
+read-only `analytics` module, computed on read after settling due slow payments: nothing is cached
+and no timer raises anything.
+
+- `GET /api/v1/admin/overview?period=today|7d|30d` (or `dateFrom` / `dateTo`; `theaterId` for one
+  theater), admins only: the KPI cards (Revenue, Tickets sold, Occupancy, Avg. ticket, Counter
+  share) against the same weekday last week or the period before, revenue by theater (Online /
+  Counter, VS PREV) and by hall, payment methods, top movies, the weekday × start-time heatmap,
+  the 30-day trend per theater and Tonight. Revenue counts on the cinema day of the showtime.
+- `GET /api/v1/admin/alerts` (both staff roles): the current alerts with stable keys
+  (`failed-payments:<date>:<count>`, `low-sales:<showtimeId>`, `hall-gap:<hallId>:<date>`), unread
+  first, with the caller's `unreadCount`. `POST /api/v1/admin/alert-reads` marks `keys` (or every
+  current alert) read for the caller only, in `staff_alert_reads`.
+
+```bash
+curl -s "localhost:3000/api/v1/admin/overview?period=7d&theaterId=1" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/alerts?limit=20" -H "Authorization: Bearer $STAFF"
+curl -s -X POST localhost:3000/api/v1/admin/alert-reads -H "Authorization: Bearer $STAFF" \
+  -H 'Content-Type: application/json' -d '{"keys":["low-sales:81"]}'
+```
+
+## Search
+
+Search (U18, `docs/gh-19-search/spec.md`), in the read-only `search` module. Both routes take `q`
+(2–100 characters, trimmed) and answer groups of hits, best first, each with `hasMore`.
+
+- `GET /api/v1/search?q=` (public, 60 a minute per IP: `RATE_LIMIT_SEARCH`) answers up to 5
+  Coming soon and Now showing movies (by title, or by a credited person's name: `matchedPerson`),
+  people credited on them, and `active` theaters (by name or district). Drafts, archived movies and
+  unpublished or paused theaters never appear.
+- `GET /api/v1/admin/search?q=` (staff) answers up to 10 bookings (a whole reference, or the contact
+  name, email or phone; U14's list rows) and live customers for both roles, and for admins up to 10
+  movies, people and theaters in any status; for box office those three are `null`. An anonymised
+  customer is never found, nor are their bookings by their old details.
+- Matching is a case-insensitive substring (`%` and `_` are plain characters) or, from 3
+  characters, a typo-tolerant pg_trgm word-similarity match on names and titles (`q <% column`,
+  the default 0.6 threshold). Ranking: the whole value, a prefix, a substring, then a typo, the
+  closest first.
+
+```bash
+curl -s "localhost:3000/api/v1/search?q=Lighthose"
+curl -s "localhost:3000/api/v1/admin/search?q=01012345678" -H "Authorization: Bearer $STAFF"
+```
+
+## Exports and the Activity log
+
+CSV exports and the Activity log (U19, `docs/gh-20-exports-activity/spec.md`), admins only, in the
+read-only `exports` and `activity` modules.
+
+- `GET /api/v1/admin/exports/{overview,bookings,customers,payments}.csv` take their screen's query
+  parameters (without `cursor` and `limit`) and answer the whole filtered list as a download:
+  UTF-8 with a BOM, CRLF, a header row, money in pounds, times in Cairo ISO. Each row is the list
+  route's row for the same filters, in its order. The rows stream in keyset batches of 500
+  through `csv-stringify`, so memory holds one batch whatever the file's size.
+- Formula-safe: a text cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is
+  prefixed with `'` (`'+201012345678`); numbers are never prefixed (a refund stays `-40`).
+- Each download writes `export.downloaded` (item type `export`) to the activity log with the
+  filters, a search only as `search: true`. A refused request answers JSON and records nothing;
+  a failure after the first byte cuts the connection rather than leave a short file.
+- `GET /api/v1/admin/activity` lists the audit events newest first, cursor-paged with `total`,
+  filtered by `staffUserId`, `actorKind`, `entityType` (with `entityId`), `action` and
+  `dateFrom` / `dateTo` (cinema dates). No personal data: field names, never values; a customer
+  actor is an id.
+
+```bash
+curl -s -OJ "localhost:3000/api/v1/admin/exports/bookings.csv?status=confirmed" -H "Authorization: Bearer $ADMIN"
+curl -s "localhost:3000/api/v1/admin/activity?entityType=export&limit=20" -H "Authorization: Bearer $ADMIN"
+```
+
 ## Database and migrations
 
 - Every table lives in the `maqady` schema (`DB_SCHEMA`). Each connection sets
@@ -549,7 +772,11 @@ src/
   modules/<feature>/                     one Nest module per feature: health, messaging, auth
                                          (credentials), staff, media, theaters, catalog,
                                          customers, halls, discovery, showtimes, seating (seat
-                                         claims and the /ws seat map), bookings (holds), seed
+                                         claims and the /ws seat map), bookings (holds,
+                                         checkout, box office, admin bookings), analytics
+                                         (the Payments screen, the Overview and the bell),
+                                         search (public and staff search), exports (the
+                                         CSV downloads), activity (the Activity log), seed
                                          (the development seed)
   migrations/                            raw SQL migrations
 test/unit, test/integration, test/support

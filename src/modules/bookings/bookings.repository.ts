@@ -2,13 +2,25 @@ import { Injectable } from '@nestjs/common';
 import type { Knex } from 'knex';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
+import type { PageRequest } from '../../common/pagination/types';
+import type { InstantRange } from '../payments/types';
+import { adminBookingConditions } from './admin-bookings.sql';
 import { bookingStatusPredicate } from './booking-status.sql';
+import { tabPredicate } from './my-bookings.sql';
 import type {
+  AdminBookingFilter,
   BookingOwnerColumns,
   BookingRow,
   BookingSeatRow,
+  CheckInTarget,
+  CounterCustomerColumns,
+  EditedBookingColumns,
+  MyBookingRow,
+  MyBookingsTab,
   NewBookingRow,
   SqlPredicate,
+  StatusAliases,
+  TabCountsRow,
   TicketHolderRow,
 } from './types';
 
@@ -32,6 +44,8 @@ const BOOKING_COLUMNS = [
   'confirmed_at',
   'refunded_at',
   'qr_version',
+  'checked_in_at',
+  'checked_in_by_staff_id',
   'created_at',
   'updated_at',
 ] as const;
@@ -45,6 +59,9 @@ const SEAT_COLUMNS = [
   'price',
   'is_wheelchair',
 ] as const;
+
+/** My Bookings joins each booking to its showtime under these aliases (design §5, §7.4). */
+const MY_BOOKINGS_ALIASES: StatusAliases = { booking: 'b', showtime: 's' };
 
 /** A live hold at `now`, on the unaliased `bookings` table (design §7.4). */
 function liveHold(now: Date): SqlPredicate {
@@ -94,6 +111,20 @@ export class BookingsRepository {
     const rows = await this.bookings()
       .select<{ id: number }[]>('id')
       .where({ customer_id: customerId, channel: 'online' })
+      .andWhereRaw(live.sql, [...live.bindings])
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The ids of the staff member's live counter holds at `now`, in id order (at most one is
+   * expected, U13), through `idx_bookings_created_by_staff_id_status_hold_expires_at`.
+   */
+  async liveCounterHoldIdsOfStaff(staffUserId: number, now: Date): Promise<number[]> {
+    const live = liveHold(now);
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where({ created_by_staff_id: staffUserId, channel: 'counter' })
       .andWhereRaw(live.sql, [...live.bindings])
       .orderBy('id');
     return rows.map((row) => row.id);
@@ -150,6 +181,38 @@ export class BookingsRepository {
       .returning<BookingRow[]>(BOOKING_COLUMNS);
     if (!updated) throw new AppError('INTERNAL', 'The booking update returned no row.');
     return updated;
+  }
+
+  /** Gives a counter hold the customer and contact of its sale (U13); the row as it now is. */
+  async setCounterCustomer(id: number, columns: CounterCustomerColumns): Promise<BookingRow> {
+    const [updated] = await this.bookings()
+      .where({ id, channel: 'counter', status: 'held' })
+      .update(columns)
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The counter hold to sell is no longer held.');
+    return updated;
+  }
+
+  /**
+   * Admits a confirmed booking at the entrance (design §7.9), atomically: only while it is still
+   * `confirmed`, never admitted, on the showtime the scan judged (an edit may move it, U14) and,
+   * for a QR code, of the presented QR version. Two scans of one ticket serialize on the row; the
+   * second re-checks the condition after the first commits and changes nothing. Returns the
+   * admission time, or undefined when nothing changed.
+   */
+  async checkIn(
+    presented: CheckInTarget,
+    staffUserId: number,
+    now: Date,
+  ): Promise<Date | undefined> {
+    const query = this.bookings()
+      .where({ id: presented.id, showtime_id: presented.showtimeId, status: 'confirmed' })
+      .whereNull('checked_in_at');
+    if (presented.qrVersion !== null) query.andWhere({ qr_version: presented.qrVersion });
+    const [row] = await query
+      .update({ checked_in_at: now, checked_in_by_staff_id: staffUserId, updated_at: now })
+      .returning<{ checked_in_at: Date }[]>('checked_in_at');
+    return row?.checked_in_at;
   }
 
   /** These bookings in any status, in id order; unknown ids are absent. */
@@ -217,6 +280,182 @@ export class BookingsRepository {
       .select<TicketHolderRow[]>('id', 'reference', 'customer_id', 'contact_email', 'contact_phone')
       .where({ showtime_id: showtimeId, status: 'confirmed' })
       .orderBy('id');
+  }
+
+  /**
+   * One page of a customer's bookings in a My Bookings tab at `now` (PRD C10), `limit + 1` rows:
+   * Upcoming soonest show first, Past most recent show first, ties by id the same way. Joined to
+   * `showtimes` for the clock-derived status and the keyset (design §5: bookings reads showtimes
+   * through its own SQL joins). The customer's rows come from
+   * `idx_bookings_customer_id_status_hold_expires_at`. The cursor's sort key is the show's start as
+   * an ISO instant, bound as a `Date`.
+   */
+  async pageForCustomer(
+    customerId: number,
+    tab: MyBookingsTab,
+    now: Date,
+    page: PageRequest,
+  ): Promise<MyBookingRow[]> {
+    const predicate = tabPredicate(tab, MY_BOOKINGS_ALIASES, now);
+    const order = tab === 'upcoming' ? 'asc' : 'desc';
+    const query = this.customerBookings(customerId)
+      .select<MyBookingRow[]>([
+        ...BOOKING_COLUMNS.map((column) => `b.${column}`),
+        's.starts_at as showtime_starts_at',
+      ])
+      .andWhereRaw(predicate.sql, [...predicate.bindings])
+      .orderBy([
+        { column: 's.starts_at', order },
+        { column: 'b.id', order },
+      ])
+      .limit(page.limit + 1);
+    if (page.after) {
+      query.andWhereRaw(`(s.starts_at, b.id) ${order === 'asc' ? '>' : '<'} (?, ?)`, [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
+    }
+    return query;
+  }
+
+  /** How many of the customer's bookings each My Bookings tab has at `now`, in one query. */
+  async tabCountsOfCustomer(customerId: number, now: Date): Promise<TabCountsRow> {
+    const upcoming = tabPredicate('upcoming', MY_BOOKINGS_ALIASES, now);
+    const past = tabPredicate('past', MY_BOOKINGS_ALIASES, now);
+    const row = await this.customerBookings(customerId)
+      .select<TabCountsRow[]>(
+        this.db
+          .executor()
+          .raw(`COUNT(*) FILTER (WHERE ${upcoming.sql})::int AS upcoming`, [...upcoming.bindings]),
+        this.db
+          .executor()
+          .raw(`COUNT(*) FILTER (WHERE ${past.sql})::int AS past`, [...past.bindings]),
+      )
+      .first();
+    return { upcoming: row?.upcoming ?? 0, past: row?.past ?? 0 };
+  }
+
+  /**
+   * How many of the customer's bookings are stored `confirmed`: Confirmed and Completed, the
+   * Profile's booking count (PRD C12). Served by `idx_bookings_customer_id_status_hold_expires_at`.
+   */
+  async countConfirmedOfCustomer(customerId: number): Promise<number> {
+    const row = await this.bookings()
+      .where({ customer_id: customerId, status: 'confirmed' })
+      .count<{ count: number }[]>({ count: 'id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  // --- Admin bookings (U14) -----------------------------------------------------------------
+
+  /**
+   * One page of the admin bookings list at `now` (PRD A6), `limit + 1` rows, newest first
+   * (`created_at DESC, id DESC`, `idx_bookings_created_at`), joined to the showtime for the
+   * theater and movie filters and the clock-derived status. The cursor's sort key is the
+   * booking's `created_at` as an ISO instant, bound as a `Date`.
+   */
+  async pageForAdmin(
+    filter: AdminBookingFilter,
+    now: Date,
+    page: PageRequest,
+  ): Promise<BookingRow[]> {
+    const query = this.adminBookings(filter, now)
+      .select<BookingRow[]>(BOOKING_COLUMNS.map((column) => `b.${column}`))
+      .orderBy([
+        { column: 'b.created_at', order: 'desc' },
+        { column: 'b.id', order: 'desc' },
+      ])
+      .limit(page.limit + 1);
+    if (page.after) {
+      query.andWhereRaw('(b.created_at, b.id) < (?, ?)', [
+        new Date(String(page.after.sortKey)),
+        page.after.id,
+      ]);
+    }
+    return query;
+  }
+
+  /** How many bookings the admin list has with these filters at `now`. */
+  async countForAdmin(filter: AdminBookingFilter, now: Date): Promise<number> {
+    const row = await this.adminBookings(filter, now)
+      .count<{ count: number }[]>({ count: 'b.id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  /**
+   * The Today card (PRD A6): bookings made in `[from, to)` that were paid, stored `confirmed` or
+   * `refunded` (`idx_bookings_created_at`).
+   */
+  async countPaidCreatedBetween(range: InstantRange): Promise<number> {
+    const row = await this.bookings()
+      .where('created_at', '>=', range.from)
+      .andWhere('created_at', '<', range.to)
+      .whereIn('status', ['confirmed', 'refunded'])
+      .count<{ count: number }[]>({ count: 'id' })
+      .first();
+    return row?.count ?? 0;
+  }
+
+  /** The bookings refunded in `(from, to]`, in id order (the Refunded card, `idx_bookings_refunded_at`). */
+  async refundedIdsBetween(range: InstantRange): Promise<number[]> {
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where('refunded_at', '>', range.from)
+      .andWhere('refunded_at', '<=', range.to)
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The ids of a showtime's confirmed bookings and live holds at `now`, in id order: what
+   * cancelling the showtime refunds or releases (design §7.7, `idx_bookings_showtime_id_status`).
+   */
+  async confirmedOrLiveHeldIdsOf(showtimeId: number, now: Date): Promise<number[]> {
+    const rows = await this.bookings()
+      .select<{ id: number }[]>('id')
+      .where({ showtime_id: showtimeId })
+      .andWhereRaw("(status = 'confirmed' OR (status = 'held' AND hold_expires_at > ?))", [now])
+      .orderBy('id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Applies an edit to a confirmed booking (design §7.8 steps 3 and 7): its showtime, seat count,
+   * total and contact, and the next QR version, which voids every older QR code. Call it after
+   * deleting its claims (the composite foreign key), with the booking locked.
+   */
+  async applyEdit(id: number, columns: EditedBookingColumns): Promise<BookingRow> {
+    const [updated] = await this.bookings()
+      .where({ id, status: 'confirmed' })
+      .update({ ...columns, qr_version: this.db.executor().raw('qr_version + 1') })
+      .returning<BookingRow[]>(BOOKING_COLUMNS);
+    if (!updated) throw new AppError('INTERNAL', 'The booking to edit is no longer confirmed.');
+    return updated;
+  }
+
+  /** Replaces a booking's seat snapshot (design §7.8 step 5): one delete, one multi-row insert. */
+  async replaceSeats(bookingId: number, rows: readonly BookingSeatRow[]): Promise<void> {
+    await this.db.executor()('booking_seats').where({ booking_id: bookingId }).delete();
+    await this.insertSeats(rows);
+  }
+
+  private adminBookings(filter: AdminBookingFilter, now: Date): Knex.QueryBuilder {
+    const query = this.db
+      .executor()({ b: 'bookings' })
+      .join({ s: 'showtimes' }, 's.id', 'b.showtime_id');
+    for (const condition of adminBookingConditions(filter, now)) {
+      query.andWhereRaw(condition.sql, [...condition.bindings]);
+    }
+    return query;
+  }
+
+  private customerBookings(customerId: number): Knex.QueryBuilder {
+    return this.db
+      .executor()({ b: 'bookings' })
+      .join({ s: 'showtimes' }, 's.id', 'b.showtime_id')
+      .where('b.customer_id', customerId);
   }
 
   private bookings(): Knex.QueryBuilder {

@@ -47,7 +47,53 @@ export const API_TAGS = [
     description:
       'Customer sign-up, sign-in, token refresh and sign-out, email verification and password reset',
   },
+  {
+    name: 'Admin: bookings',
+    description:
+      "The Bookings page: search and filters, the summary cards, a booking's detail, internal notes, resending tickets (both roles); cancel and refund, payouts and edits (admins only)",
+  },
+  {
+    name: 'Admin: customers',
+    description:
+      "The Customers page: search, the status filter and a customer's drawer with Bookings, Spent and No-shows (both roles); edit, block and unblock, the reset email and Delete account (admins only)",
+  },
+  {
+    name: 'Admin: payments',
+    description:
+      'The Payments page: every charge and refund with its status, the KPIs of a period and the reconciliation by theater and against the payment provider (admins only)',
+  },
+  {
+    name: 'Admin: overview',
+    description:
+      'The Overview: KPI cards with their comparisons, revenue by theater and hall, payment methods, top movies, the busy-times heatmap, the 30-day trend and Tonight (admins only)',
+  },
+  {
+    name: 'Admin: alerts',
+    description:
+      "The bell and its Notifications panel: the current alerts with each staff member's read state, and marking them read (both roles)",
+  },
+  {
+    name: 'Admin: search',
+    description:
+      'The top bar search: bookings and customers (both roles), movies, people and theaters (admins only)',
+  },
+  {
+    name: 'Admin: exports',
+    description:
+      'CSV downloads of the Overview, Bookings, Customers and Payments screens with their filters, formula-safe and recorded in the activity log (admins only)',
+  },
+  {
+    name: 'Admin: activity',
+    description:
+      'The Activity log: who did what across the dashboard, filtered by staff member, item type and date, with no personal data (admins only)',
+  },
+  { name: 'Search', description: 'The customer site search: movies, people and theaters' },
   { name: 'Profile', description: 'The signed-in customer: details and password' },
+  {
+    name: 'My bookings',
+    description:
+      'The signed-in customer\'s bookings: Upcoming and Past, a booking\'s History, "Email again"',
+  },
 ] as const;
 
 /** Relative first, so Swagger UI's "Try it out" calls whichever host serves the docs. */

@@ -80,6 +80,14 @@ export class SessionsRepository {
       .update({ revoked_at: revokedAt, revoked_reason: reason });
   }
 
+  /**
+   * Deletes every row of the scope in one statement; returns how many. Rows of one family point
+   * at each other (`replaced_by_id`), so they go together.
+   */
+  async deleteScope(scope: SessionScope): Promise<number> {
+    return this.scoped(scope).delete();
+  }
+
   private scoped(scope: SessionScope) {
     const query = this.db.executor()('sessions');
     if (scope.kind === 'family') return query.where({ family_id: scope.familyId });

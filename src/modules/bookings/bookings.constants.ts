@@ -1,3 +1,5 @@
+import type { BookingHistoryKind } from './types';
+
 /** A hold lasts 5 minutes, and never beyond the showtime's start (design §7.3, PRD Seats 2). */
 export const HOLD_MINUTES = 5;
 
@@ -41,8 +43,8 @@ export const QR_PAYLOAD_PATTERN =
 export const TICKET_LINK_PATH = '/ticket';
 export const MY_BOOKINGS_PATH = '/my-bookings';
 
-/** Metadata key `@SettleFirst()` writes. */
-export const SETTLE_FIRST_METADATA = 'maqady:settle-first';
+/** Metadata key `@SettleFirst()` writes (in `common/settlement` since U14). */
+export { SETTLE_FIRST_METADATA } from '../../common/settlement/settle-first.constants';
 
 /** Audit entity type of payment events. */
 export const PAYMENT_ENTITY = 'payment';
@@ -52,3 +54,79 @@ export const TICKET_CACHE_CONTROL = 'private, no-store';
 
 /** The calendar event's organizer-free UID domain: `UID:<reference>@maqady`. */
 export const CALENDAR_UID_DOMAIN = 'maqady';
+
+/** Personal reads (My Bookings, a booking's History): no shared or browser cache keeps them. */
+export const PRIVATE_CACHE_CONTROL = 'private, no-store';
+
+/** The audit action of "Email again" (U12) and of the staff resend (U14). */
+export const TICKETS_RESENT_ACTION = 'booking.tickets_resent';
+
+/**
+ * A booking's own audit actions its History shows (PRD C11), and as what. Every other action
+ * (`booking.claimed`, `booking.released`, `booking.confirmed`, `payment.declined`,
+ * `payment.cancelled`, `payment.processing`, `payment.refunded`) stays internal.
+ */
+export const HISTORY_BOOKING_ACTIONS: Readonly<Record<string, BookingHistoryKind>> = {
+  'booking.held': 'seats_held',
+  'payment.succeeded': 'payment_received',
+  'booking.refunded': 'refunded',
+  'booking.edited': 'changed_by_cinema',
+  [TICKETS_RESENT_ACTION]: 'tickets_resent',
+};
+
+/** The showtime's audit actions a booking's History shows while the booking holds a ticket. */
+export const HISTORY_SHOWTIME_ACTIONS: Readonly<Record<string, BookingHistoryKind>> = {
+  'showtime.moved': 'changed_by_cinema',
+};
+
+/** The English label of each History kind, as the booking page shows it. */
+export const HISTORY_LABELS: Readonly<Record<BookingHistoryKind, string>> = {
+  seats_held: 'Seats held',
+  payment_received: 'Payment received',
+  refunded: 'Refunded',
+  changed_by_cinema: 'Changed by the cinema',
+  tickets_resent: 'Tickets resent',
+};
+
+// --- Box office (U13) -----------------------------------------------------------------------
+
+/** Scanning opens this many minutes before a showtime starts and closes at its end (PRD call 14). */
+export const SCAN_OPENS_MINUTES_BEFORE_START = 60;
+
+/**
+ * A card terminal's receipt reference as staff type it (PRD Payments 2): up to 64 letters, digits,
+ * spaces and `. / _ -`, starting with a letter or digit. `chk_payments_receipt_reference` repeats it.
+ */
+export const RECEIPT_REFERENCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ./_-]{0,63}$/;
+export const RECEIPT_REFERENCE_MAX_LENGTH = 64;
+
+/** The longest scanned code accepted: a camera reads any QR code, and anything else is NOT_FOUND. */
+export const SCAN_CODE_MAX_LENGTH = 512;
+
+/** Audit actions of the box office that U10 and U11 do not already name. */
+export const BOOKING_CHECKED_IN_ACTION = 'booking.checked_in';
+export const TICKET_DOWNLOADED_ACTION = 'booking.ticket_downloaded';
+
+// --- Admin bookings (U14) -------------------------------------------------------------------
+
+/** A note is 1 to 1,000 characters after trimming (design §6.2 `booking_notes`). */
+export const NOTE_MAX_LENGTH = 1000;
+
+/** The admin search needs 2 to 100 characters (design §13.2). */
+export const SEARCH_MIN_LENGTH = 2;
+export const SEARCH_MAX_LENGTH = 100;
+
+/** An Egyptian mobile as typed locally, `01012345678`, which is stored as `+201012345678`. */
+export const LOCAL_MOBILE_PATTERN = /^0(1[0-9]{9})$/;
+
+/** The admin detail's activity log shows a booking's first this many events. */
+export const ACTIVITY_LOG_LIMIT = 100;
+
+/** The Refunded card counts the bookings refunded in this many days before now (PRD A6). */
+export const REFUNDED_CARD_DAYS = 7;
+
+/** Audit actions of admin bookings (U14) that earlier units do not already name. */
+export const BOOKING_REFUNDED_ACTION = 'booking.refunded';
+export const BOOKING_EDITED_ACTION = 'booking.edited';
+export const NOTE_ADDED_ACTION = 'booking.note_added';
+export const PAYOUT_ACTION = 'payment.paid_out';

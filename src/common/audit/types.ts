@@ -38,3 +38,64 @@ export interface AuditEventRow {
   readonly changed_fields: string[];
   readonly metadata: Readonly<Record<string, AuditMetadataValue>>;
 }
+
+/**
+ * What a booking's History reads (U12): the booking's own events with these actions and, once it
+ * held a ticket, these actions of its showtime between `from` (inclusive) and `until` (exclusive,
+ * none when the booking still holds it).
+ */
+export interface BookingEventsFilter {
+  readonly bookingId: number;
+  readonly bookingActions: readonly string[];
+  readonly showtime: {
+    readonly id: number;
+    readonly actions: readonly string[];
+    readonly from: Date;
+    readonly until: Date | null;
+  } | null;
+}
+
+/** An audit event as a History reads it: when and what, never who or the metadata. */
+export interface AuditEventView {
+  readonly id: number;
+  readonly occurredAt: Date;
+  readonly action: string;
+}
+
+/** An `audit_events` row as `AuditReadRepository` reads it. */
+export interface AuditEventViewRow {
+  readonly id: number;
+  readonly occurred_at: Date;
+  readonly action: string;
+}
+
+/** One page of audit events and how many the whole list has. */
+export interface AuditEventPage {
+  readonly rows: readonly AuditEventView[];
+  readonly total: number;
+}
+
+/**
+ * One event of a booking's activity log as staff read it (U14): what happened, when, who did it
+ * (the actor's kind and, for staff, their id), which fields changed and the non-personal metadata.
+ */
+export interface BookingActivityEvent {
+  readonly id: number;
+  readonly occurredAt: Date;
+  readonly action: string;
+  readonly actorKind: ActorKind;
+  readonly actorStaffUserId: number | null;
+  readonly changedFields: readonly string[];
+  readonly metadata: Readonly<Record<string, AuditMetadataValue>>;
+}
+
+/** An `audit_events` row as the booking activity read takes it. */
+export interface BookingActivityRow {
+  readonly id: number;
+  readonly occurred_at: Date;
+  readonly action: string;
+  readonly actor_kind: ActorKind;
+  readonly actor_staff_user_id: number | null;
+  readonly changed_fields: string[];
+  readonly metadata: Readonly<Record<string, AuditMetadataValue>> | null;
+}
