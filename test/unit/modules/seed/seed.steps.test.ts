@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { MAX_MOVIE_RATING, TEXT_LIMITS } from '../../../../src/modules/catalog/catalog.constants';
 import {
   PHONE_NUMBER_PATTERN,
@@ -7,7 +8,8 @@ import { SEED_DATASETS } from '../../../../src/modules/seed/datasets';
 import { AppError } from '../../../../src/common/errors/app-error';
 import { createValidationPipe } from '../../../../src/common/errors/validation';
 import { CreateHallRequest } from '../../../../src/modules/halls/dto/create-hall.request';
-import { SEED_STEPS, seedHallOf } from '../../../../src/modules/seed/seed.steps';
+import { placeholderImage } from '../../../../src/modules/seed/seed-images';
+import { SEED_STEPS, needsFacilities, seedHallOf } from '../../../../src/modules/seed/seed.steps';
 import type {
   SeedAdminMovie,
   SeedAdminTheater,
@@ -17,6 +19,7 @@ import type {
   SeedHallRow,
   SeedMovie,
   SeedTheater,
+  SeedUpload,
   SeedWriteMethod,
 } from '../../../../src/modules/seed/types';
 
@@ -219,7 +222,7 @@ function seedTheater(overrides: Partial<SeedTheater> = {}): SeedTheater {
     facilities: [],
     hours: [],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: false,
     colour: '#1f4e79',
     coverUrl: null,
@@ -244,12 +247,16 @@ function adminTheater(overrides: Partial<SeedAdminTheater> = {}): SeedAdminTheat
   };
 }
 
-/** The admin API as the `theaters` step sees it: `existing` theaters, and `/admin/theaters/7`. */
+/**
+ * The admin API as the `theaters` step sees it: `existing` theaters, and `/admin/theaters/7`.
+ * Writes and uploads are recorded, never applied.
+ */
 function fakeTheaterApi(
   existing: readonly { id: number; name: string }[],
   stored: SeedAdminTheater,
 ) {
   const writes: Write[] = [];
+  const uploads: { path: string; upload: SeedUpload }[] = [];
   const api: SeedApi = {
     get: <T>(path: string): Promise<T> => {
       const route = path.split('?')[0];
@@ -263,9 +270,12 @@ function fakeTheaterApi(
       writes.push({ method, path, body: body as Record<string, unknown> });
       return Promise.resolve({ id: 7 } as T);
     },
-    upload: () => Promise.reject(new Error('unexpected upload')),
+    upload: <T>(_method: 'POST' | 'PUT', path: string, upload: SeedUpload): Promise<T> => {
+      uploads.push({ path, upload });
+      return Promise.resolve({ id: 1 } as T);
+    },
   };
-  return { api, writes };
+  return { api, writes, uploads };
 }
 
 function theaterContext(api: SeedApi, theaters: readonly SeedTheater[]): SeedContext {
@@ -357,6 +367,100 @@ describe('the seed theaters step: postal code and WhatsApp (#29)', () => {
       }
     },
   );
+});
+
+describe('the seed theaters step: prayer room and gallery photos (#29 P5)', () => {
+  const seeded = [{ id: 7, name: 'Maqady Zamalek' }];
+
+  it('adds the prayer room to a theater seeded before it, with the dataset list', async () => {
+    const { api, writes } = fakeTheaterApi(
+      seeded,
+      adminTheater({ facilities: ['free_parking', 'food_court'] }),
+    );
+    await theatersStep.run(
+      theaterContext(api, [
+        seedTheater({ facilities: ['free_parking', 'food_court', 'prayer_room'] }),
+      ]),
+    );
+    expect(writes).toEqual([
+      {
+        method: 'PUT',
+        path: '/admin/theaters/7/facilities',
+        body: { facilities: ['free_parking', 'food_court', 'prayer_room'] },
+      },
+    ]);
+  });
+
+  it('leaves alone facilities an admin changed, and a theater that already has them all', async () => {
+    const dataset = [seedTheater({ facilities: ['free_parking', 'food_court', 'prayer_room'] })];
+    for (const facilities of [
+      ['free_parking'],
+      ['free_parking', 'food_court', 'kids_room'],
+      ['free_parking', 'food_court', 'prayer_room'],
+      ['prayer_room'],
+    ]) {
+      const { api, writes } = fakeTheaterApi(seeded, adminTheater({ facilities }));
+      await theatersStep.run(theaterContext(api, dataset));
+      expect({ facilities, writes }).toEqual({ facilities, writes: [] });
+    }
+  });
+
+  it('decides the facilities back-fill only for facilities #29 added', () => {
+    expect(needsFacilities([], ['cafe_bar'])).toBe(true);
+    expect(needsFacilities([], [])).toBe(false);
+    expect(needsFacilities(['cafe_bar'], ['cafe_bar', 'prayer_room'])).toBe(true);
+    expect(needsFacilities(['cafe_bar'], ['cafe_bar', 'kids_room'])).toBe(false);
+    expect(needsFacilities(['cafe_bar'], ['cafe_bar', 'kids_room', 'prayer_room'])).toBe(false);
+    expect(needsFacilities(['cafe_bar', 'prayer_room'], ['cafe_bar', 'prayer_room'])).toBe(false);
+  });
+
+  it('uploads a gallery photo with a URL from its download, and one without as a picture of its own', async () => {
+    const picture = await placeholderImage(1280, 960, '#1f4e79', 'a cinema');
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(picture, { headers: { 'content-type': 'image/jpeg' } }));
+    const { api, uploads } = fakeTheaterApi(seeded, adminTheater({ photos: [] }));
+    await theatersStep.run(
+      theaterContext(api, [
+        seedTheater({
+          gallery: [
+            {
+              caption: 'The facade. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+              url: 'https://upload.wikimedia.org/a/1920px-Facade.jpg',
+            },
+            { caption: 'The lobby' },
+          ],
+        }),
+      ]),
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://upload.wikimedia.org/a/1920px-Facade.jpg',
+      expect.anything(),
+    );
+    expect(uploads.map(({ path, upload }) => ({ path, fields: upload.fields }))).toEqual([
+      {
+        path: '/admin/theaters/7/photos',
+        fields: {
+          usage: 'gallery',
+          caption: 'The facade. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+        },
+      },
+      { path: '/admin/theaters/7/photos', fields: { usage: 'gallery', caption: 'The lobby' } },
+    ]);
+    for (const { upload } of uploads) {
+      expect(await sharp(upload.file).metadata()).toMatchObject({ width: 1600, height: 1067 });
+    }
+  });
+
+  it('adds no gallery photo to a theater that already has one', async () => {
+    const { api, uploads } = fakeTheaterApi(seeded, adminTheater({ photos: [{}] }));
+    await theatersStep.run(
+      theaterContext(api, [seedTheater({ gallery: [{ caption: 'The lobby' }] })]),
+    );
+    expect(uploads).toEqual([]);
+  });
 });
 
 describe('the seed halls step: format and screen size (#29 P4)', () => {

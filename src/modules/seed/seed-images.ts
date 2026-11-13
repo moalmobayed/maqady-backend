@@ -1,5 +1,11 @@
 import sharp from 'sharp';
-import { SEED_IMAGE_TIMEOUT_MS, SEED_IMAGE_USER_AGENT } from './seed.constants';
+import {
+  SEED_IMAGE_ATTEMPTS,
+  SEED_IMAGE_MAX_RETRY_WAIT_MS,
+  SEED_IMAGE_RETRY_MS,
+  SEED_IMAGE_TIMEOUT_MS,
+  SEED_IMAGE_USER_AGENT,
+} from './seed.constants';
 
 /**
  * Placeholder pictures for the development seed, generated with sharp so no binary is committed:
@@ -38,14 +44,22 @@ export async function placeholderImage(
 /**
  * A real picture for a dataset that names one: downloaded from `url`, turned upright, then
  * cropped to exactly `width` × `height` around its most salient part (faces, the title), as a
- * JPEG that then goes through the real image pipeline like any upload. A failed download throws,
- * naming the URL, so the seed stops rather than store a broken picture; it can run again.
+ * JPEG that then goes through the real image pipeline like any upload. A host that answers `429`
+ * or `5xx` is asked again, up to `SEED_IMAGE_ATTEMPTS` times (#29: Wikimedia rate-limits bursts).
+ * A failed download throws, naming the URL, so the seed stops rather than store a broken
+ * picture; it can run again.
  */
-export async function downloadedImage(url: string, width: number, height: number): Promise<Buffer> {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': SEED_IMAGE_USER_AGENT },
-    signal: AbortSignal.timeout(SEED_IMAGE_TIMEOUT_MS),
-  });
+export async function downloadedImage(
+  url: string,
+  width: number,
+  height: number,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<Buffer> {
+  let response = await download(url);
+  for (let attempt = 1; attempt < SEED_IMAGE_ATTEMPTS && retryable(response.status); attempt++) {
+    await wait(retryDelay(response, attempt));
+    response = await download(url);
+  }
   const type = response.headers.get('content-type') ?? '';
   if (!response.ok || !type.startsWith('image/')) {
     throw new Error(`Seed: the picture ${url} answered ${response.status} ${type}`.trim());
@@ -56,6 +70,30 @@ export async function downloadedImage(url: string, width: number, height: number
     .resize(width, height, { fit: 'cover', position: sharp.strategy.attention })
     .jpeg({ quality: 88 })
     .toBuffer();
+}
+
+function download(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: { 'User-Agent': SEED_IMAGE_USER_AGENT },
+    signal: AbortSignal.timeout(SEED_IMAGE_TIMEOUT_MS),
+  });
+}
+
+/** Too many requests, or a server error: worth asking again. */
+function retryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/** The response's `Retry-After` in seconds, capped; else a growing pause. */
+function retryDelay(response: Response, attempt: number): number {
+  const seconds = Number(response.headers.get('retry-after'));
+  const ms =
+    Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : SEED_IMAGE_RETRY_MS * attempt;
+  return Math.min(ms, SEED_IMAGE_MAX_RETRY_WAIT_MS);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** A colour a third darker, for the far end of the gradient. */

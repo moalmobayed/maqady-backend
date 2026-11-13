@@ -34,7 +34,8 @@ export interface SeedTheater {
   readonly hours: readonly SeedDayHours[];
   /** Holiday hours this many days after today's cinema date, or none. */
   readonly specialDate: SeedSpecialDate | null;
-  readonly galleryCaptions: readonly string[];
+  /** Uploaded on a theater whose gallery is empty, in order. */
+  readonly gallery: readonly SeedGalleryPhoto[];
   /** Published (`active`) by the `publish-theaters` step, or left a draft. */
   readonly publish: boolean;
   /** Base colour of the generated pictures. */
@@ -52,6 +53,17 @@ export interface SeedTheater {
   readonly postalCode?: string | null;
   /** The WhatsApp number, E.164 (#29); left out or null, none. Back-filled likewise. */
   readonly whatsapp?: string | null;
+}
+
+/**
+ * A gallery photo of a seed theater. A real dataset names a freely licensed picture and credits
+ * its author and licence in the caption (#29); left out, the picture is generated.
+ */
+export interface SeedGalleryPhoto {
+  /** At most 120 characters (`chk_theater_photos_caption`). */
+  readonly caption: string;
+  /** The picture to download, `https://`; left out, a generated one. */
+  readonly url?: string;
 }
 
 /**
@@ -298,7 +310,7 @@ export interface SeedAdminTheater {
   readonly postalCode: string | null;
   readonly whatsapp: string | null;
   readonly phones: readonly unknown[];
-  readonly facilities: readonly unknown[];
+  readonly facilities: readonly string[];
   readonly hours: readonly unknown[];
   readonly specialDates: readonly unknown[];
   readonly defaultPrices: unknown;

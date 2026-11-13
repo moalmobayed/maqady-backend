@@ -129,7 +129,7 @@ function seedTheater(name: string, overrides: Partial<SeedTheater> = {}): SeedTh
       closes: '01:00',
     })),
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: false,
     colour: '#1f4e79',
     coverUrl: null,

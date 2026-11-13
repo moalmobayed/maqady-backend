@@ -1,6 +1,7 @@
 import { addDays } from '../../common/time/time';
 import { DEFAULT_HALL_FORMAT } from '../halls/halls.constants';
 import {
+  SEED_BACKFILL_FACILITIES,
   SEED_HALL_NAME,
   SEED_IMAGE_SIZES,
   SEED_LIST_LIMIT,
@@ -175,7 +176,7 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
 
 /**
  * Sets whatever of the theater is still missing: the postal code and WhatsApp number, hours,
- * phones, facilities, prices, photos.
+ * phones, facilities (or the #29 facilities on a theater seeded before them), prices, photos.
  */
 async function completeTheater(
   context: SeedContext,
@@ -191,7 +192,7 @@ async function completeTheater(
   if (current.phones.length === 0 && theater.phones.length > 0) {
     await api.write('PUT', `${path}/phones`, { phones: theater.phones });
   }
-  if (current.facilities.length === 0 && theater.facilities.length > 0) {
+  if (needsFacilities(current.facilities, theater.facilities)) {
     await api.write('PUT', `${path}/facilities`, { facilities: theater.facilities });
   }
   if (current.defaultPrices === null) {
@@ -221,15 +222,31 @@ async function completeTheater(
     });
   }
   if (current.photos.length === 0) {
-    const { width, height } = SEED_IMAGE_SIZES.gallery;
-    for (const caption of theater.galleryCaptions) {
+    for (const photo of theater.gallery) {
+      const seed = `${theater.name} ${photo.caption}`;
       await api.upload('POST', `${path}/photos`, {
-        fields: { usage: 'gallery', caption },
-        file: await placeholderImage(width, height, theater.colour, `${theater.name} ${caption}`),
-        filename: filename(caption),
+        fields: { usage: 'gallery', caption: photo.caption },
+        file: await image(photo.url, SEED_IMAGE_SIZES.gallery, theater.colour, seed),
+        filename: filename(photo.caption),
       });
     }
   }
+}
+
+/**
+ * Whether to send the dataset's facilities: the theater has none yet, or it has exactly the
+ * dataset's minus the facilities #29 added (`SEED_BACKFILL_FACILITIES`), as a theater seeded
+ * before them does. Facilities an admin changed otherwise are left alone.
+ */
+export function needsFacilities(current: readonly string[], dataset: readonly string[]): boolean {
+  if (dataset.length === 0) return false;
+  if (current.length === 0) return true;
+  const missing = dataset.filter((facility) => !current.includes(facility));
+  return (
+    missing.length > 0 &&
+    missing.every((facility) => SEED_BACKFILL_FACILITIES.includes(facility)) &&
+    current.every((facility) => dataset.includes(facility))
+  );
 }
 
 /** The dataset's postal code and WhatsApp number that the stored theater does not have yet. */
