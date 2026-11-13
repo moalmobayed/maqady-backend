@@ -306,6 +306,23 @@ describe('the seed halls step: format and screen size (#29 P4)', () => {
     expect(writes).toEqual([]);
   });
 
+  it('sends no PATCH on a re-run for a hall the dataset names as standard without a screen', async () => {
+    const { api, writes } = hallsApi([hallRow({ name: 'Hall 5' })]);
+    const { result } = await run(api, [{ name: 'Hall 5', format: 'standard' }]);
+    expect(result).toEqual({ created: 0, kept: 1 });
+    expect(writes).toEqual([]);
+  });
+
+  it('back-fills only the non-default values: a standard hall gets its screen alone', async () => {
+    const { api, writes } = hallsApi([hallRow({ name: 'Hall 6' })]);
+    await run(api, [
+      { name: 'Hall 6', format: 'standard', screenWidthMeters: 14, screenHeightMeters: 6.2 },
+    ]);
+    expect(writes.map((write) => write.body)).toEqual([
+      { screenWidthMeters: 14, screenHeightMeters: 6.2 },
+    ]);
+  });
+
   it.each(Object.values(SEED_DATASETS).map((dataset) => [dataset.name, dataset] as const))(
     'the %s dataset gives only hall formats and screen sizes the admin API accepts',
     async (_name, dataset) => {

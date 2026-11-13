@@ -115,6 +115,12 @@ function hallSpecOf(hall: SeedHall): SeedHallSpec {
   };
 }
 
+/** The dataset values a hall still at the defaults lacks: the spec without a `standard` format. */
+function backFillOf(spec: SeedHallSpec): SeedHallSpec {
+  const { format, ...screen } = spec;
+  return format === undefined || format === DEFAULT_HALL_FORMAT ? screen : spec;
+}
+
 /** A hall nobody gave a format or screen yet: what the halls seeded before #29 are. */
 function atHallDefaults(hall: SeedHallRow): boolean {
   return (
@@ -222,7 +228,7 @@ async function completeTheater(
 /**
  * Each theater to publish gets its halls (left out, only `SEED_HALL_NAME`), each with the
  * standard layout, its format and screen size (#29 P4), and made active. An existing hall still
- * at the defaults (`standard`, no screen) gets the dataset's format and screen in the same
+ * at the defaults (`standard`, no screen) gets the dataset's non-default values in the same
  * `PATCH` that activates it, or one of its own; a hall an admin already changed is left alone.
  */
 async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
@@ -247,7 +253,7 @@ async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
         created += 1;
       } else {
         kept += 1;
-        if (atHallDefaults(hall)) backFill = spec;
+        if (atHallDefaults(hall)) backFill = backFillOf(spec);
       }
       const changes = { ...backFill, ...(hall.status !== 'active' ? { status: 'active' } : {}) };
       if (Object.keys(changes).length > 0) {
