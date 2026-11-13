@@ -1,4 +1,4 @@
-import type { HallLayoutInput, HallStatus } from './types';
+import type { HallFormat, HallLayoutInput, HallStatus } from './types';
 
 /**
  * Row letters, front to back: A to P without I (PRD "Halls and seat maps" 1). Index 0 is the row
@@ -20,6 +20,16 @@ export const MAX_SEAT_MARKS = MAX_ROWS * MAX_SEATS_PER_ROW;
 
 /** Hall names: 1 to 40 characters after trimming (`chk_halls_name`). */
 export const HALL_NAME_LIMITS = { min: 1, max: 40 } as const;
+
+/** A new hall's format when the admin sends none, and every hall's before #29. */
+export const DEFAULT_HALL_FORMAT: HallFormat = 'standard';
+
+/**
+ * A screen side in metres (#29 P4): 1 m to 50 m with at most 2 decimals, stored as whole
+ * centimetres, so `chk_halls_screen_width_cm` and `chk_halls_screen_height_cm` hold 100 to 5000.
+ */
+export const SCREEN_METERS_LIMITS = { min: 1, max: 50 } as const;
+export const SCREEN_METERS_DECIMALS = 2;
 
 /**
  * A new hall's layout (PRD A4 "New halls start as a standard 12 × 16 layout"): rows A–C front,

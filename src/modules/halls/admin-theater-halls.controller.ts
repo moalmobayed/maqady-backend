@@ -15,6 +15,7 @@ import { HallListQuery } from './dto/hall-list.query';
 import { HallResponsePage } from './dto/hall-page.response';
 import { HallResponse } from './dto/hall.response';
 import { toHallResponse } from './hall-response.mapper';
+import { screenInput } from './dto/hall-fields';
 import { HallsService } from './halls.service';
 
 @ApiTags('Admin: halls')
@@ -53,7 +54,7 @@ export class AdminTheaterHallsController {
   @ApiOperation({
     summary: 'Add a hall',
     description:
-      'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. A theater is published only with an active hall. The name is unique among the theater\'s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.',
+      'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. Optionally give it its projection `format` (`standard` when left out) and its screen size in metres (`screenWidthMeters` with `screenHeightMeters`, 1 to 50 with at most 2 decimals, both or neither); customers see both on the theater page and the format on every showtime chip. A theater is published only with an active hall. The name is unique among the theater\'s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.',
   })
   @ApiBody({ type: CreateHallRequest })
   @ApiCreatedResponse({
@@ -67,6 +68,12 @@ export class AdminTheaterHallsController {
     @Param() params: TheaterIdParams,
     @Body() body: CreateHallRequest,
   ): Promise<HallResponse> {
-    return toHallResponse(await this.halls.create(principal, params.id, body.name));
+    return toHallResponse(
+      await this.halls.create(principal, params.id, {
+        name: body.name,
+        ...(body.format !== undefined ? { format: body.format } : {}),
+        ...screenInput(body),
+      }),
+    );
   }
 }

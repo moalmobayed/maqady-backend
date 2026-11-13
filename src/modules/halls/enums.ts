@@ -21,3 +21,24 @@ export const ZONES = ['front', 'middle', 'back'] as const;
  * - `no_seat`: a gap in the grid; not a seat.
  */
 export const SEAT_MARK_KINDS = ['wheelchair', 'no_seat'] as const;
+
+/**
+ * A hall's projection format (#29 P4, docs/gh-29-hall-screen-format), in display order: the
+ * movie page lists a theater's formats of a day in this order ("Standard, VIP"). A label shown
+ * on the hall and on its showtime chips; it never changes a price. Mirrored by
+ * `chk_halls_format`.
+ *
+ * - `standard`: a standard digital hall (the design's "2D"); every hall before #29.
+ * - `vip`: VIP recliners.
+ * - `imax`, `dolby_atmos` (the chip may say "Atmos"), `4dx`, `screenx`: those branded formats.
+ * - `max`: a premium large-format screen sold under the MAX name.
+ */
+export const HALL_FORMATS = [
+  'standard',
+  'vip',
+  'imax',
+  'dolby_atmos',
+  '4dx',
+  'screenx',
+  'max',
+] as const;

@@ -1,7 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { HALL_STATUSES } from '../enums';
-import { MAX_ROWS, MAX_SEATS_PER_ROW, MIN_ROWS, MIN_SEATS_PER_ROW } from '../halls.constants';
-import type { HallStatus } from '../types';
+import { HALL_FORMATS, HALL_STATUSES } from '../enums';
+import {
+  MAX_ROWS,
+  MAX_SEATS_PER_ROW,
+  MIN_ROWS,
+  MIN_SEATS_PER_ROW,
+  SCREEN_METERS_LIMITS,
+} from '../halls.constants';
+import type { HallFormat, HallStatus } from '../types';
 import { ZoneSeatCountsResponse } from './zone-seat-counts.response';
 
 /** A hall as the admin Halls tab shows it (PRD A4): name, seats, layout size, status. */
@@ -29,6 +35,38 @@ export class HallResponse {
       '`draft`: being set up, not schedulable. `active`: schedulable; a theater needs one to be published. `retired`: kept for history, hidden from scheduling; final.',
   })
   status!: HallStatus;
+
+  @ApiProperty({
+    enum: HALL_FORMATS,
+    enumName: 'HallFormat',
+    nullable: false,
+    example: 'dolby_atmos',
+    description:
+      'The projection format customers see on the hall and its showtime chips (a label, never a price): Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX.',
+  })
+  format!: HallFormat;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 22.1,
+    description:
+      'Screen width in metres (at most 2 decimals), the "22.1m" of "22.1m x 12.3m"; null with `screenHeightMeters` when the size is not set.',
+  })
+  screenWidthMeters!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 12.3,
+    description:
+      'Screen height in metres (at most 2 decimals); null with `screenWidthMeters` when the size is not set.',
+  })
+  screenHeightMeters!: number | null;
 
   @ApiProperty({
     type: 'integer',

@@ -23,6 +23,9 @@ function hallRow(overrides: Partial<HallRow> = {}): HallRow {
     status: 'draft',
     row_count: 12,
     seats_per_row: 16,
+    format: 'standard',
+    screen_width_cm: null,
+    screen_height_cm: null,
     created_at: NOW,
     updated_at: NOW,
     ...overrides,
@@ -37,6 +40,11 @@ function summaryOf(row: HallRow): HallSummary {
     status: row.status,
     rowCount: row.row_count,
     seatsPerRow: row.seats_per_row,
+    format: row.format,
+    screen:
+      row.screen_width_cm === null || row.screen_height_cm === null
+        ? null
+        : { widthMeters: row.screen_width_cm / 100, heightMeters: row.screen_height_cm / 100 },
     seatCount: 192,
     wheelchairCount: 0,
     zoneSeatCounts: { front: 48, middle: 80, back: 64 },
@@ -130,7 +138,7 @@ describe('HallsService', () => {
   describe('create', () => {
     it('locks the theater, inserts a 12 × 16 draft with its rows, and audits it', async () => {
       withHall(hallRow());
-      const view = await service.create(ACTOR, 2, 'Hall 1');
+      const view = await service.create(ACTOR, 2, { name: 'Hall 1' });
       expect(calls[0]).toBe('theater FOR SHARE');
       expect(halls.insert).toHaveBeenCalledWith({
         theater_id: 2,
@@ -138,6 +146,9 @@ describe('HallsService', () => {
         status: 'draft',
         row_count: 12,
         seats_per_row: 16,
+        format: 'standard',
+        screen_width_cm: null,
+        screen_height_cm: null,
         created_at: NOW,
         updated_at: NOW,
       });
@@ -155,9 +166,41 @@ describe('HallsService', () => {
       expect(view).toEqual(expect.objectContaining({ id: 7, deletable: true }));
     });
 
+    it('stores the format sent and the screen in whole centimetres', async () => {
+      withHall(hallRow({ format: 'dolby_atmos', screen_width_cm: 2210, screen_height_cm: 1235 }));
+      const view = await service.create(ACTOR, 2, {
+        name: 'Hall 1',
+        format: 'dolby_atmos',
+        screen: { widthMeters: 22.1, heightMeters: 12.35 },
+      });
+      expect(halls.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          format: 'dolby_atmos',
+          screen_width_cm: 2210,
+          screen_height_cm: 1235,
+        }),
+      );
+      expect(view).toEqual(
+        expect.objectContaining({
+          format: 'dolby_atmos',
+          screen: { widthMeters: 22.1, heightMeters: 12.35 },
+        }),
+      );
+    });
+
+    it('stores no screen for a null one', async () => {
+      withHall(hallRow());
+      await service.create(ACTOR, 2, { name: 'Hall 1', format: 'vip', screen: null });
+      expect(halls.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'vip', screen_width_cm: null, screen_height_cm: null }),
+      );
+    });
+
     it('refuses an unknown theater with NOT_FOUND and writes nothing', async () => {
       theaters.lockForShare.mockResolvedValueOnce(null);
-      expect((await rejection(service.create(ACTOR, 99, 'Hall 1'))).code).toBe('NOT_FOUND');
+      expect((await rejection(service.create(ACTOR, 99, { name: 'Hall 1' }))).code).toBe(
+        'NOT_FOUND',
+      );
       expect(halls.insert).not.toHaveBeenCalled();
     });
   });
@@ -241,6 +284,67 @@ describe('HallsService', () => {
         'hall.retired',
       ]);
       expect(audit.record.mock.calls[0]![0].changedFields).toEqual(['name']);
+    });
+
+    it('changes the format and screen with one hall.updated naming the changed fields', async () => {
+      withHall(hallRow({ status: 'active' }));
+      await service.update(ACTOR, 7, {
+        name: 'Hall 1',
+        format: 'imax',
+        screen: { widthMeters: 22.1, heightMeters: 12.3 },
+      });
+      expect(halls.update).toHaveBeenCalledWith(7, {
+        format: 'imax',
+        screen_width_cm: 2210,
+        screen_height_cm: 1230,
+        updated_at: NOW,
+      });
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith({
+        actor: { kind: 'staff', id: 3 },
+        action: 'hall.updated',
+        entity: { type: 'hall', id: 7 },
+        changedFields: ['format', 'screenWidthMeters', 'screenHeightMeters'],
+      });
+    });
+
+    it('writes both screen columns when one side changes, and names only that side', async () => {
+      withHall(hallRow({ screen_width_cm: 2210, screen_height_cm: 1230 }));
+      await service.update(ACTOR, 7, { screen: { widthMeters: 22.1, heightMeters: 12.5 } });
+      expect(halls.update).toHaveBeenCalledWith(7, {
+        screen_width_cm: 2210,
+        screen_height_cm: 1250,
+        updated_at: NOW,
+      });
+      expect(audit.record.mock.calls[0]![0].changedFields).toEqual(['screenHeightMeters']);
+    });
+
+    it('clears the screen with null, and writes nothing for the same format and screen', async () => {
+      withHall(hallRow({ format: 'vip', screen_width_cm: 1800, screen_height_cm: 900 }));
+      await service.update(ACTOR, 7, {
+        format: 'vip',
+        screen: { widthMeters: 18, heightMeters: 9 },
+      });
+      expect(halls.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+
+      await service.update(ACTOR, 7, { screen: null });
+      expect(halls.update).toHaveBeenCalledWith(7, {
+        screen_width_cm: null,
+        screen_height_cm: null,
+        updated_at: NOW,
+      });
+      expect(audit.record.mock.calls[0]![0].changedFields).toEqual([
+        'screenWidthMeters',
+        'screenHeightMeters',
+      ]);
+    });
+
+    it("changes a retired hall's format, which needs no status change", async () => {
+      withHall(hallRow({ status: 'retired' }));
+      await service.update(ACTOR, 7, { format: '4dx' });
+      expect(halls.update).toHaveBeenCalledWith(7, { format: '4dx', updated_at: NOW });
+      expect(audit.record.mock.calls.map(([event]) => event.action)).toEqual(['hall.updated']);
     });
 
     it('answers NOT_FOUND for an unknown hall, and for one deleted while it waited', async () => {

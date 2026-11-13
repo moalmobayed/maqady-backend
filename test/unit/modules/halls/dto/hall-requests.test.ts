@@ -6,6 +6,7 @@ import { HallIdParams } from '../../../../../src/modules/halls/dto/hall-id.param
 import { HallListQuery } from '../../../../../src/modules/halls/dto/hall-list.query';
 import { ReplaceHallLayoutRequest } from '../../../../../src/modules/halls/dto/replace-hall-layout.request';
 import { UpdateHallRequest } from '../../../../../src/modules/halls/dto/update-hall.request';
+import { HALL_FORMATS } from '../../../../../src/modules/halls/enums';
 
 /** The fields the global ValidationPipe refuses, or [] when the input is valid. */
 async function invalidFields(
@@ -78,6 +79,112 @@ describe('hall request DTOs', () => {
         [],
       );
       expect(await invalidFields(UpdateHallRequest, { status: 'closed' })).toEqual(['status']);
+    });
+  });
+
+  describe('format and screen size (#29 P4)', () => {
+    /** The first error message of a refused body. */
+    async function messageOf(
+      metatype: ArgumentMetadata['metatype'],
+      value: unknown,
+    ): Promise<string | undefined> {
+      try {
+        await createValidationPipe().transform(value, { type: 'body', metatype, data: '' });
+        return undefined;
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        return (error.details as { fields: { messages: string[] }[] }).fields[0]?.messages[0];
+      }
+    }
+
+    const SCREEN = { screenWidthMeters: 22.1, screenHeightMeters: 12.3 };
+
+    it.each([CreateHallRequest, UpdateHallRequest])(
+      '%p takes every format and a screen of two sides',
+      async (metatype) => {
+        for (const format of HALL_FORMATS) {
+          expect(await invalidFields(metatype, { name: 'Hall 1', format })).toEqual([]);
+        }
+        expect(await invalidFields(metatype, { name: 'Hall 1', ...SCREEN })).toEqual([]);
+        expect(
+          await invalidFields(metatype, {
+            name: 'Hall 1',
+            screenWidthMeters: 1,
+            screenHeightMeters: 50,
+          }),
+        ).toEqual([]);
+        expect(
+          await invalidFields(metatype, {
+            name: 'Hall 1',
+            screenWidthMeters: null,
+            screenHeightMeters: null,
+          }),
+        ).toEqual([]);
+      },
+    );
+
+    it('keeps the screen as metres and leaves a left-out format out', async () => {
+      expect(await transformed(CreateHallRequest, { name: 'Hall 1', ...SCREEN })).toEqual({
+        name: 'Hall 1',
+        ...SCREEN,
+      });
+    });
+
+    it.each<[string, Record<string, unknown>, string[]]>([
+      ['an unknown format', { format: 'IMAX' }, ['format']],
+      ['3D, which is not a hall format', { format: '3d' }, ['format']],
+      ['a null format', { format: null }, ['format']],
+      ['the width alone', { screenWidthMeters: 22.1 }, ['screenHeightMeters']],
+      ['the height alone', { screenHeightMeters: 12.3 }, ['screenWidthMeters']],
+      [
+        'a null height beside a width',
+        { screenWidthMeters: 22.1, screenHeightMeters: null },
+        ['screenHeightMeters'],
+      ],
+      [
+        'a null width beside a height',
+        { screenWidthMeters: null, screenHeightMeters: 12.3 },
+        ['screenWidthMeters'],
+      ],
+      ['a width of 0', { ...SCREEN, screenWidthMeters: 0 }, ['screenWidthMeters']],
+      ['a width under 1 m', { ...SCREEN, screenWidthMeters: 0.99 }, ['screenWidthMeters']],
+      ['a negative height', { ...SCREEN, screenHeightMeters: -12.3 }, ['screenHeightMeters']],
+      ['a height over 50 m', { ...SCREEN, screenHeightMeters: 50.01 }, ['screenHeightMeters']],
+      ['three decimals', { ...SCREEN, screenWidthMeters: 22.105 }, ['screenWidthMeters']],
+      ['a width written as text', { ...SCREEN, screenWidthMeters: '22.1' }, ['screenWidthMeters']],
+      [
+        'a width that is not finite',
+        { ...SCREEN, screenWidthMeters: Number.NaN },
+        ['screenWidthMeters'],
+      ],
+    ])('refuses %s, on create and on update', async (_, fields, expected) => {
+      expect(await invalidFields(CreateHallRequest, { name: 'Hall 1', ...fields })).toEqual(
+        expected,
+      );
+      expect(await invalidFields(UpdateHallRequest, fields)).toEqual(expected);
+    });
+
+    it('says which side is missing or wrongly null', async () => {
+      expect(await messageOf(UpdateHallRequest, { screenWidthMeters: 22.1 })).toBe(
+        'screenHeightMeters is required with screenWidthMeters',
+      );
+      expect(
+        await messageOf(UpdateHallRequest, { screenWidthMeters: null, screenHeightMeters: 12.3 }),
+      ).toBe('screenWidthMeters can be null only when screenHeightMeters is null too');
+      expect(await messageOf(UpdateHallRequest, { ...SCREEN, screenWidthMeters: 51 })).toBe(
+        'screenWidthMeters must be a number of metres from 1 to 50 with at most 2 decimals',
+      );
+    });
+
+    it('lets a PATCH change only the format or only the screen', async () => {
+      expect(await invalidFields(UpdateHallRequest, { format: 'vip' })).toEqual([]);
+      expect(await invalidFields(UpdateHallRequest, SCREEN)).toEqual([]);
+      expect(
+        await invalidFields(UpdateHallRequest, {
+          screenWidthMeters: null,
+          screenHeightMeters: null,
+        }),
+      ).toEqual([]);
     });
   });
 
