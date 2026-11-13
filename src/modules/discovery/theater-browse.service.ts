@@ -21,8 +21,8 @@ import type {
  * Theaters as customers browse them (PRD C1, C4, C5), read through U4b's exported services
  * only. Only `active` theaters appear: a draft, a paused or an unknown theater is `NOT_FOUND`.
  * Open states and "today" are judged at the Clock's now by the cinema day. A theater that hides
- * its contacts shows no phone, no email and no WhatsApp. Every method costs a fixed number of queries,
- * whatever the number of theaters.
+ * its contacts shows no phone, no email and no WhatsApp. Every method costs a fixed number of
+ * queries, whatever the number of theaters.
  */
 @Injectable()
 export class TheaterBrowseService {
