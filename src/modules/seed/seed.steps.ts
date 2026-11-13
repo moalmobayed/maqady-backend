@@ -128,8 +128,8 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
         parkingInfo: theater.parkingInfo,
         email: theater.email,
         showContactsPublic: theater.showContactsPublic,
-        postalCode: theater.postalCode,
-        whatsapp: theater.whatsapp,
+        postalCode: theater.postalCode ?? null,
+        whatsapp: theater.whatsapp ?? null,
       });
       id = (await api.write<SeedCreatedRow>('POST', '/admin/theaters', body)).id;
       created += 1;
