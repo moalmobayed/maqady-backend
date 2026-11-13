@@ -5,13 +5,20 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
-import { MAX_GENRES_PER_MOVIE, MAX_RUNTIME_MINUTES, TEXT_LIMITS } from '../catalog.constants';
+import {
+  MAX_GENRES_PER_MOVIE,
+  MAX_MOVIE_RATING,
+  MAX_RUNTIME_MINUTES,
+  MOVIE_RATING_DECIMALS,
+  TEXT_LIMITS,
+} from '../catalog.constants';
 import { AGE_RATINGS } from '../enums';
 import type { AgeRating } from '../types';
 import { IsCalendarDate, OptionalNotNull, TrimToNull } from './catalog.validators';
@@ -136,6 +143,35 @@ export class MovieDetailsFields {
   @IsString()
   @MaxLength(TEXT_LIMITS.filmingLocations)
   filmingLocations?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 0,
+    maximum: MAX_MOVIE_RATING,
+    example: 8.4,
+    description:
+      'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.',
+  })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: MOVIE_RATING_DECIMALS })
+  @Min(0)
+  @Max(MAX_MOVIE_RATING)
+  rating?: number | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: TEXT_LIMITS.ratingSource,
+    example: 'elCinema users',
+    description:
+      'Where the score comes from, shown small under it. Up to 80 characters; empty text is null, and null shows the score alone. Needs a rating on the movie: a source without one is `VALIDATION_FAILED` on `ratingSource`.',
+  })
+  @TrimToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(TEXT_LIMITS.ratingSource)
+  ratingSource?: string | null;
 
   @ApiPropertyOptional({
     type: 'integer',

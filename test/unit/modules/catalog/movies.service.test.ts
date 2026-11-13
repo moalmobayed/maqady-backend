@@ -30,6 +30,8 @@ function movieRow(overrides: Partial<MovieRow> = {}): MovieRow {
     production_company: null,
     budget_label: null,
     filming_locations: null,
+    rating: null,
+    rating_source: null,
     poster_image_id: null,
     backdrop_photo_id: null,
     hero_video_id: 11,

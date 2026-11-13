@@ -150,6 +150,7 @@ export class CatalogAssembler {
     const backdrop = photos.find((photo) => photo.id === row.backdrop_photo_id);
     return {
       ...toSummary(row, genres.get(row.id) ?? [], images),
+      ratingSource: row.rating_source,
       language: row.language,
       country: row.country,
       productionCompany: row.production_company,
@@ -310,6 +311,8 @@ function movieFields(row: MovieRow) {
     productionCompany: row.production_company,
     budgetLabel: row.budget_label,
     filmingLocations: row.filming_locations,
+    rating: row.rating,
+    ratingSource: row.rating_source,
   };
 }
 
@@ -350,6 +353,7 @@ function toSummary(
     ageRating: row.age_rating,
     genres,
     poster: imageOf(images, row.poster_image_id),
+    rating: row.rating,
   };
 }
 

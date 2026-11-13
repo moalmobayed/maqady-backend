@@ -18,6 +18,7 @@ function summary(id: number, status: MovieSummary['status']): MovieSummary {
     ageRating: '12+',
     genres: [],
     poster: null,
+    rating: null,
   };
 }
 

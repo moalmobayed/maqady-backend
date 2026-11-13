@@ -6,6 +6,7 @@ import type {
   FeatureBlocker,
   MovieFeatureState,
   MoviePublishState,
+  MovieRatingState,
   MovieStatus,
   PublicMovieStatus,
   PublishRequirement,
@@ -41,6 +42,14 @@ export function featureBlockers(state: MovieFeatureState): FeatureBlocker[] {
     no_hero_video: state.heroVideoId === null,
   };
   return FEATURE_BLOCKERS.filter((blocker) => blocked[blocker]);
+}
+
+/**
+ * True when a movie would have a score's source without a score (#29): the rule of
+ * `chk_movies_rating_source_needs_rating`, judged before the write so it is a field error.
+ */
+export function ratingSourceWithoutRating(state: MovieRatingState): boolean {
+  return state.ratingSource !== null && state.rating === null;
 }
 
 /**

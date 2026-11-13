@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ImageResponse } from '../../media/dto/image.response';
+import { MAX_MOVIE_RATING, TEXT_LIMITS } from '../catalog.constants';
 import { AGE_RATINGS, MOVIE_STATUSES, PUBLISH_REQUIREMENTS } from '../enums';
 import type { AgeRating, MovieStatus, PublishRequirement } from '../types';
 import { AdminMoviePhotoResponse } from './admin-movie-photo.response';
@@ -99,6 +100,26 @@ export class AdminMovieResponse {
     description: 'Free-text filming locations.',
   })
   filmingLocations!: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    minimum: 0,
+    maximum: MAX_MOVIE_RATING,
+    example: 8.4,
+    description:
+      'The rating score out of 10, one decimal, that customers see on the movie page with a star; null when none is set.',
+  })
+  rating!: number | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    maxLength: TEXT_LIMITS.ratingSource,
+    example: 'elCinema users',
+    description: 'Where the score comes from, shown small under it; null when none is set.',
+  })
+  ratingSource!: string | null;
 
   @ApiProperty({
     type: () => [GenreRefResponse],
