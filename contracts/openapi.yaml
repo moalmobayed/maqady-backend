@@ -8848,7 +8848,7 @@ paths:
       security:
         - staff: []
     post:
-      description: 'Admin only (box office staff get `FORBIDDEN`). "Add movie": creates a **draft** that only admins see. Only `title` is required; `ageRating` defaults to `12+`. Publish it later with `PATCH /admin/movies/{id}`. Requires an `Idempotency-Key`. Recorded in the activity log.'
+      description: 'Admin only (box office staff get `FORBIDDEN`). "Add movie": creates a **draft** that only admins see. Only `title` is required; `ageRating` defaults to `12+`. An optional `rating` (0 to 10, one decimal) with its `ratingSource` is the score customers see on the movie page; a source without a rating is `VALIDATION_FAILED` on `ratingSource`. Publish it later with `PATCH /admin/movies/{id}`. Requires an `Idempotency-Key`. Recorded in the activity log.'
       operationId: createMovie
       parameters:
         - name: Idempotency-Key
@@ -9550,6 +9550,7 @@ paths:
         - **Publishing.** A Coming soon or Now showing movie needs a synopsis, runtime, release date and at least one genre (a poster is optional): `MOVIE_NOT_PUBLISHABLE` with `details.missing`. Clearing one of them on a public movie is refused the same way.
         - **Carousel.** `featuredPosition` 1 to 5 needs a public movie with a hero video (`MOVIE_NOT_FEATURABLE` with `details.reasons`), and a position no other movie holds (`FEATURED_POSITION_TAKEN` with the holder's `movieId`). Moving to draft or archived frees the position.
         - **Media.** `heroVideoId` and `backdropPhotoId` must be this movie's own (`VALIDATION_FAILED`); a backdrop must be 16:9 and at least 1280 × 720 (`IMAGE_WRONG_SHAPE`).
+        - **Rating score.** `rating` is 0 to 10 with at most one decimal, or null to clear; `ratingSource` names where it comes from. A movie may have a rating without a source, never a source without a rating: `VALIDATION_FAILED` on `ratingSource`, so clear both together (`rating: null, ratingSource: null`).
         - An unknown genre id is `VALIDATION_FAILED` on `genreIds`. A change to the values the movie already has answers `200` and changes nothing.
         - Recorded in the activity log with the names of the changed fields.
       operationId: updateMovie
@@ -32712,6 +32713,19 @@ components:
           maxLength: 200
           example: Hurghada, Alexandria
           description: Optional free text; customers see it only when set.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: 'Where the score comes from, shown small under it. Up to 80 characters; empty text is null, and null shows the score alone. Needs a rating on the movie: a source without one is `VALIDATION_FAILED` on `ratingSource`.'
         genreIds:
           maxItems: 5
           uniqueItems: true
@@ -33010,6 +33024,19 @@ components:
           nullable: true
           example: Hurghada, Alexandria
           description: Free-text filming locations.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: The rating score out of 10, one decimal, that customers see on the movie page with a star; null when none is set.
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: Where the score comes from, shown small under it; null when none is set.
         genres:
           nullable: false
           description: Genres in display order.
@@ -33096,6 +33123,8 @@ components:
         - productionCompany
         - budgetLabel
         - filmingLocations
+        - rating
+        - ratingSource
         - genres
         - poster
         - backdropPhotoId
@@ -33210,6 +33239,19 @@ components:
           maxLength: 200
           example: Hurghada, Alexandria
           description: Optional free text; customers see it only when set.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: 'Where the score comes from, shown small under it. Up to 80 characters; empty text is null, and null shows the score alone. Needs a rating on the movie: a source without one is `VALIDATION_FAILED` on `ratingSource`.'
         genreIds:
           maxItems: 5
           uniqueItems: true
@@ -34423,6 +34465,13 @@ components:
           description: Now showing (bookable) or Coming soon (listed, no sales; show a "Soon" badge).
           allOf:
             - $ref: '#/components/schemas/MovieStatus'
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: The rating score out of 10, one decimal, the same as the movie page shows; null when the movie has none. Always sent by this API.
       description: 'A public movie as its card shows it: poster, title, genres, runtime, rating.'
       required:
         - id
@@ -34797,6 +34846,19 @@ components:
           description: Age certificate.
           allOf:
             - $ref: '#/components/schemas/AgeRating'
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score out of 10, one decimal, shown on the hero with a star (for example "8.4"). Null when the movie has none: hide the score.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: Where the score comes from, shown small under it. Null shows the score alone (always null when `rating` is null).
         language:
           type: string
           nullable: true
@@ -34872,6 +34934,8 @@ components:
         - runtimeMinutes
         - releaseDate
         - ageRating
+        - rating
+        - ratingSource
         - language
         - country
         - productionCompany

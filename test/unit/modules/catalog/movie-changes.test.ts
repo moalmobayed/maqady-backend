@@ -22,6 +22,8 @@ const movie: MovieRow = {
   production_company: null,
   budget_label: null,
   filming_locations: null,
+  rating: null,
+  rating_source: null,
   poster_image_id: null,
   backdrop_photo_id: null,
   hero_video_id: 4,
@@ -59,6 +61,22 @@ describe('diffMovie', () => {
     ).toEqual({
       columns: { runtime_minutes: 128, synopsis: 'New.', hero_video_id: null },
       changedFields: ['synopsis', 'runtimeMinutes', 'heroVideoId'],
+    });
+  });
+
+  it('maps the rating score and its source to their columns, leaving an unchanged score out', () => {
+    const rated = { ...movie, rating: 8.4, rating_source: null };
+    expect(diffMovie(rated, { rating: 8.4, ratingSource: 'elCinema users' })).toEqual({
+      columns: { rating_source: 'elCinema users' },
+      changedFields: ['ratingSource'],
+    });
+    expect(diffMovie(rated, { rating: 7.9 })).toEqual({
+      columns: { rating: 7.9 },
+      changedFields: ['rating'],
+    });
+    expect(diffMovie(rated, { rating: null, ratingSource: null })).toEqual({
+      columns: { rating: null },
+      changedFields: ['rating'],
     });
   });
 

@@ -5,14 +5,14 @@ gate (G5) checks it.
 
 | Doc | What it covers | Owner | Last verified |
 |---|---|---|---|
-| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-10-29 |
+| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-11-13 |
 | `docs/adr/0001-track-in-github-issues.md` | Decision: track work in GitHub Issues instead of Linear (recorded exception) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0002-nestjs-instead-of-express.md` | Decision: build the API on NestJS instead of plain Express (recorded exception to the pack) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0003-idempotency-in-postgres.md` | Decision: keep idempotency keys in Postgres instead of Redis; Redis leaves the stack (recorded exception to the pack) | Mohamed Tarek | 2026-10-19 |
 | `docs/adr/0004-email-through-resend.md` | Decision: send email through Resend and keep SMS simulated; no secret links in the Message log | Mohamed Tarek | 2026-10-20 |
 | `docs/reference/design-inventory.md` | What the design prototypes show, screen by screen: data, actions, enums, gaps G1–G22 (not decisions) | Mohamed Tarek | 2026-10-18 |
 | `docs/reference/prd.md` | Text extract of the PRD, "Movie Reservation System" v1.0 (Arabic/English); superseded by v2.0 | Mohamed Tarek | 2026-10-19 |
-| `docs/reference/prd-v2.md` | PRD v2.0: requirements after backend planning (copy of the shared doc) | Mohamed Tarek | 2026-10-20 |
+| `docs/reference/prd-v2.md` | PRD v2.0: requirements after backend planning (copy of the shared doc) | Mohamed Tarek | 2026-11-13 |
 | `docs/gh-1-scaffold/spec.md` | U0 spec: the NestJS scaffold, config, logging, errors, database, Swagger, health, tests, CI and deploy files | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-1-scaffold/qa.md` | U0 manual QA: curl evidence for health, readiness, error shapes, X-Request-Id, CORS, Swagger, database-down, fail-fast boot, logs, the replayed Docker image and shutdown | Mohamed Tarek | 2026-10-20 |
 | `docs/gh-1-scaffold/review.md` | U0 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-20 |
@@ -82,6 +82,9 @@ gate (G5) checks it.
 | `docs/gh-20-exports-activity/spec.md` | U19 spec: the four admin CSV exports (overview, bookings, customers, payments) with their list routes' filters and rows, streamed in keyset batches through `csv-stringify`, formula escaping, the `export.downloaded` audit event; the Activity log `GET /admin/activity` with its filters and cursor paging, no personal data; decisions and exported services | Mohamed Tarek | 2026-10-29 |
 | `docs/gh-20-exports-activity/qa.md` | U19 manual QA: curl evidence for the four CSV exports (headers, BOM, rows against their lists, each filter, formula-escaped names and phones, negative refunds, the Overview figure for figure), refusals (cursor and limit, inverted dates, unknown theater, box office and no token), the `export.downloaded` rows, the Activity log with every filter and its pages, and no personal data in it or in the server log | Mohamed Tarek | 2026-10-29 |
 | `docs/gh-20-exports-activity/review.md` | U19 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-29 |
+| `docs/gh-29-movie-rating/spec.md` | #29 P2 spec: the admin-entered movie rating score (`rating` 0–10 with one decimal, `ratingSource`), its migration and CHECKs, the admin create/edit/read fields and audit, `MovieDetails` and the shared `MovieCard` (additive in the home-page draft), the seed's set and back-fill; decisions and tests | Mohamed Tarek | 2026-11-13 |
+| `docs/gh-29-movie-rating/qa.md` | #29 P2 manual QA: curl evidence for setting, reading and clearing the score as an admin, its audit row, the public details, the Movies page, similar, home and theater-showtimes cards, every refusal (range, decimals, text, length, a source without a score), the CHECKs in the database and log hygiene | Mohamed Tarek | 2026-11-13 |
+| `docs/gh-29-movie-rating/review.md` | #29 P2 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-11-13 |
 | `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
 | `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |

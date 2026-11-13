@@ -8,6 +8,7 @@ import {
   isBackdropShaped,
   isPublicStatus,
   missingPublishRequirements,
+  ratingSourceWithoutRating,
 } from '../../../../src/modules/catalog/movie-rules';
 
 function image(sourceWidth: number, sourceHeight: number): StoredImage {
@@ -120,6 +121,18 @@ describe('isBackdropShaped', () => {
       width: 1200,
       height: 900,
     });
+  });
+});
+
+describe('ratingSourceWithoutRating', () => {
+  it.each([
+    [null, null, false],
+    [8.4, null, false],
+    [0, 'elCinema users', false],
+    [8.4, 'elCinema users', false],
+    [null, 'elCinema users', true],
+  ])('rating %p with source %p is refused: %p', (rating, ratingSource, refused) => {
+    expect(ratingSourceWithoutRating({ rating, ratingSource })).toBe(refused);
   });
 });
 

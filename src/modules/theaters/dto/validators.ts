@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { ValidateBy, type ValidationArguments } from 'class-validator';
+import { ValidateBy, type ValidationArguments, type ValidationOptions } from 'class-validator';
 import { isCalendarDate } from '../../../common/time/time';
 import {
   CLOSED_WITH_TIMES_MESSAGE,
@@ -29,16 +29,19 @@ export function Trim(): PropertyDecorator {
  * decimals from `toString()`, which writes numbers below 1e-6 with an exponent (`1e-7`) and then
  * throws instead of refusing; `toExponential()` always has the exponent, so it is read here.
  */
-export function HasAtMostDecimals(places: number): PropertyDecorator {
-  return ValidateBy({
-    name: 'hasAtMostDecimals',
-    validator: {
-      validate: (value: unknown) =>
-        typeof value === 'number' && Number.isFinite(value) && decimalsOf(value) <= places,
-      defaultMessage: (args?: ValidationArguments) =>
-        `${args?.property ?? 'value'} must be a number with at most ${places} decimals`,
+export function HasAtMostDecimals(places: number, options?: ValidationOptions): PropertyDecorator {
+  return ValidateBy(
+    {
+      name: 'hasAtMostDecimals',
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'number' && Number.isFinite(value) && decimalsOf(value) <= places,
+        defaultMessage: (args?: ValidationArguments) =>
+          `${args?.property ?? 'value'} must be a number with at most ${places} decimals`,
+      },
     },
-  });
+    options,
+  );
 }
 
 /**

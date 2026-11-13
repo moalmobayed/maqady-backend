@@ -1,4 +1,5 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { MAX_MOVIE_RATING } from '../../catalog/catalog.constants';
 import { GenreRefResponse } from '../../catalog/dto/genre-ref.response';
 import { AGE_RATINGS, PUBLIC_MOVIE_STATUSES } from '../../catalog/enums';
 import type { AgeRating, PublicMovieStatus } from '../../catalog/types';
@@ -62,6 +63,20 @@ export class MovieCardResponse {
     description: 'Now showing (bookable) or Coming soon (listed, no sales; show a "Soon" badge).',
   })
   status!: PublicMovieStatus;
+
+  // Optional in the schema only: it joined the home-page contract after it was agreed (#29), so
+  // it is additive there. This API always sends it.
+  @ApiProperty({
+    type: Number,
+    required: false,
+    nullable: true,
+    minimum: 0,
+    maximum: MAX_MOVIE_RATING,
+    example: 8.4,
+    description:
+      'The rating score out of 10, one decimal, the same as the movie page shows; null when the movie has none. Always sent by this API.',
+  })
+  rating?: number | null;
 }
 
 /** The first movies of a home page row and the size of the whole list (contract `MovieCardList`). */

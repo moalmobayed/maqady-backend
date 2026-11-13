@@ -128,6 +128,13 @@ export interface SeedMovie {
   readonly productionCompany: string | null;
   readonly budgetLabel: string | null;
   readonly filmingLocations: string | null;
+  /**
+   * The rating score out of 10, one decimal (#29); left out, none. Set on create, and on an
+   * existing movie whose score is still empty.
+   */
+  readonly rating?: number;
+  /** Where the score comes from, such as "elCinema users"; only with a `rating`. */
+  readonly ratingSource?: string;
   /** Genre slugs, in display order. */
   readonly genres: readonly string[];
   readonly videos: readonly SeedVideo[];
@@ -268,6 +275,7 @@ export interface SeedAdminTheater {
 export interface SeedAdminMovie {
   readonly id: number;
   readonly status: string;
+  readonly rating: number | null;
   readonly poster: unknown;
   readonly backdropPhotoId: number | null;
   readonly heroVideoId: number | null;
