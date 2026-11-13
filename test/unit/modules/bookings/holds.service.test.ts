@@ -41,6 +41,7 @@ const CONTEXT: ShowtimeContext = {
     theaterId: 2,
     hallId: 5,
     hallName: 'Hall 1',
+    hallFormat: 'standard',
     startsAt: STARTS_AT,
     endsAt: new Date('2026-10-16T23:00:00+03:00'),
     cleaningEndsAt: new Date('2026-10-16T23:20:00+03:00'),
