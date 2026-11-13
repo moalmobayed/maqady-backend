@@ -154,6 +154,8 @@ pages and the admin dashboard.
   A dataset movie's optional `rating` and `ratingSource` (#29) are sent when the movie is created,
   and set on an existing movie whose score is still empty, so a re-run gives the movies seeded
   before they had scores their scores; a score already set (by an admin) is left alone.
+  A dataset theater's optional `postalCode` and `whatsapp` (#29) work the same way: sent on
+  create, and set on an existing theater only where the stored value is still empty.
 - Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
   active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,

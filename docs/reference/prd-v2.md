@@ -248,6 +248,7 @@ Every data screen has loading, empty and error states, and every screen works on
 ### C4 Theaters `/theaters`
 
 - Cards and map as designed: photo, name, address, open state, today's and weekly hours, box office phone, up to 5 facilities, Showtimes & info, Directions, Call.
+- Since #29: each card shows the postal code with the city (for example "Cairo 11211") when the theater has one, and the page header shows the total of active halls of the matching theaters ("25 HALLS") next to the theater count, whatever page is shown.
 - Filters: All, Open now, Parking (free or valet). The IMAX and VIP filters are removed.
 - Open state follows the cinema day, so 01:30 on Thursday is judged by Wednesday's hours.
 
@@ -256,6 +257,7 @@ Every data screen has loading, empty and error states, and every screen works on
 - As designed, without formats. Halls read "Hall 3 · 186 seats · 4 wheelchair spaces".
 - Opening hours show any special dates in the next 7 days.
 - Phones and email appear only when the theater's "show contacts" setting is on.
+- Since #29: a dedicated WhatsApp number, for the header's WhatsApp button and the Contact section, follows the same "show contacts" setting; the address shows the postal code with the city.
 - Photos come from the admin's uploads.
 - Showtimes here: 7 cinema days, each film with its time chips.
 
@@ -366,7 +368,8 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - List as designed, with status Draft, Active or Sales paused.
 - New theater wizard as designed. New halls start as a standard 12 × 16 layout. The theater is created as a Draft.
 - Header: a Publish button for drafts and the Selling toggle (Active or Sales paused).
-- Facilities: Wheelchair access, Free parking, Valet parking, Street parking, Café & bar, Food court, Kids room. Format facilities (IMAX, 4DX, Dolby Atmos, 3D, VIP recliners) are removed.
+- Facilities: Wheelchair access, Free parking, Valet parking, Street parking, Café & bar, Food court, Kids room, and since #29 Prayer room. Format facilities (IMAX, 4DX, Dolby Atmos, 3D, VIP recliners) are removed.
+- Location and contacts (#29): an optional postal code (5 digits) and an optional WhatsApp number, beside the address and the phones.
 - New Photos tab: a cover photo and a gallery, uploaded.
 - Halls tab: name, seats, layout ("15 × 20"), status (Draft, Active, Retired), Edit layout, Add hall, Delete or Retire. No format column.
 - Pricing tab: one row of default prices for Front, Middle and Back. The booking fee and pay-at-cinema settings are removed.
