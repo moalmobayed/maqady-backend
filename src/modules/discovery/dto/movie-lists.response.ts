@@ -1,5 +1,6 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
 import { SIMILAR_MOVIES_LIMIT } from '../../catalog/catalog.constants';
+import { MovieFacetsResponse } from './movie-facets.response';
 import { MovieCardResponse } from './movie-card.response';
 
 /** How many movies each tab of the Movies page has with the current filters. */
@@ -12,7 +13,7 @@ export class MovieTabCountsResponse {
   comingSoon!: number;
 }
 
-/** `GET /movies`: one page of a tab, with both tabs' counts. */
+/** `GET /movies`: one page of a tab, with both tabs' counts and the sidebar facets. */
 @ApiSchema({ name: 'MovieCardPage' })
 export class MovieCardPageResponse {
   @ApiProperty({
@@ -42,6 +43,13 @@ export class MovieCardPageResponse {
     description: 'Both tabs’ totals with the same filters, for the tab labels.',
   })
   tabCounts!: MovieTabCountsResponse;
+
+  @ApiProperty({
+    type: () => MovieFacetsResponse,
+    description:
+      'The sidebar counts (#29): genres, cast and show dates, computed over every movie of the tab matching the filters, never only this page. Each facet ignores its own filter so the alternatives stay visible.',
+  })
+  facets!: MovieFacetsResponse;
 }
 
 /** `GET /movies/{id}/similar`: "More like this". */

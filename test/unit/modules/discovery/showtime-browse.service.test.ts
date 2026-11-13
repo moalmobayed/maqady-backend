@@ -64,7 +64,7 @@ async function rejection(promise: Promise<unknown>): Promise<AppError> {
 
 describe('ShowtimeBrowseService', () => {
   let reads: jest.Mocked<
-    Pick<ShowtimeReadService, 'listScheduled' | 'movieIdsScheduled' | 'nextScheduledPerMovie'>
+    Pick<ShowtimeReadService, 'listScheduled' | 'movieDatesScheduled' | 'nextScheduledPerMovie'>
   >;
   let theaters: jest.Mocked<Pick<TheaterReadService, 'listActive' | 'findActive'>>;
   let catalog: jest.Mocked<Pick<CatalogReadService, 'findMoviesByIds' | 'findPublicMoviesByIds'>>;
@@ -74,7 +74,7 @@ describe('ShowtimeBrowseService', () => {
   beforeEach(() => {
     reads = {
       listScheduled: jest.fn().mockResolvedValue([]),
-      movieIdsScheduled: jest.fn().mockResolvedValue(new Set()),
+      movieDatesScheduled: jest.fn().mockResolvedValue([]),
       nextScheduledPerMovie: jest.fn(),
     };
     theaters = {
@@ -360,12 +360,12 @@ describe('ShowtimeBrowseService', () => {
     });
   });
 
-  describe('movieIdsShowing', () => {
-    it("asks for the show date's cinema dates at the active theaters, starting after now", async () => {
-      reads.movieIdsScheduled.mockResolvedValue(new Set([9, 3]));
-      expect(await service.movieIdsShowing('weekend')).toEqual([3, 9]);
-      // Friday 16 October: this weekend is today and tomorrow.
-      expect(reads.movieIdsScheduled).toHaveBeenCalledWith({
+  describe('showDateOptions', () => {
+    it('reads the range covering every option once, at the active theaters, starting after now', async () => {
+      await service.showDateOptions();
+      // Friday 16 October: today, tomorrow and this weekend all lie in the 16th and the 17th.
+      expect(reads.movieDatesScheduled).toHaveBeenCalledTimes(1);
+      expect(reads.movieDatesScheduled).toHaveBeenCalledWith({
         from: '2026-10-16',
         to: '2026-10-17',
         theaterIds: [1, 2, 3],
@@ -373,10 +373,45 @@ describe('ShowtimeBrowseService', () => {
       });
     });
 
-    it('matches nothing when no theater is active', async () => {
+    it('gives each option its cinema dates and the movies showing on them, by id', async () => {
+      reads.movieDatesScheduled.mockResolvedValue([
+        { movieId: 9, cinemaDate: '2026-10-16' },
+        { movieId: 3, cinemaDate: '2026-10-16' },
+        { movieId: 3, cinemaDate: '2026-10-17' },
+        { movieId: 5, cinemaDate: '2026-10-17' },
+      ]);
+      expect(await service.showDateOptions()).toEqual([
+        { value: 'today', cinemaDates: ['2026-10-16'], movieIds: [3, 9] },
+        { value: 'tomorrow', cinemaDates: ['2026-10-17'], movieIds: [3, 5] },
+        { value: 'weekend', cinemaDates: ['2026-10-16', '2026-10-17'], movieIds: [3, 5, 9] },
+      ]);
+    });
+
+    it('reaches the coming Saturday from a Sunday, and judges dates by the cinema day', async () => {
+      // 01:00 on Monday 19 October is still Sunday the 18th's cinema day.
+      clock.set(new Date('2026-10-19T01:00:00+03:00'));
+      reads.movieDatesScheduled.mockResolvedValue([
+        { movieId: 4, cinemaDate: '2026-10-18' },
+        { movieId: 6, cinemaDate: '2026-10-21' },
+        { movieId: 8, cinemaDate: '2026-10-24' },
+      ]);
+      const options = await service.showDateOptions();
+      expect(reads.movieDatesScheduled).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-10-18', to: '2026-10-24' }),
+      );
+      expect(options).toEqual([
+        { value: 'today', cinemaDates: ['2026-10-18'], movieIds: [4] },
+        { value: 'tomorrow', cinemaDates: ['2026-10-19'], movieIds: [] },
+        { value: 'weekend', cinemaDates: ['2026-10-23', '2026-10-24'], movieIds: [8] },
+      ]);
+    });
+
+    it('matches nothing, and asks no showtimes, when no theater is active', async () => {
       theaters.listActive.mockResolvedValue([]);
-      expect(await service.movieIdsShowing('today')).toEqual([]);
-      expect(reads.movieIdsScheduled).not.toHaveBeenCalled();
+      const options = await service.showDateOptions();
+      expect(options.map((option) => option.movieIds)).toEqual([[], [], []]);
+      expect(options[0]!.cinemaDates).toEqual(['2026-10-16']);
+      expect(reads.movieDatesScheduled).not.toHaveBeenCalled();
     });
   });
 });
