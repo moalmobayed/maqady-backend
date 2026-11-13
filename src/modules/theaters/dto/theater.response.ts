@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ImageResponse } from '../../media/dto/image.response';
 import { FACILITIES, THEATER_STATUSES } from '../enums';
-import { POSTAL_CODE_PATTERN } from '../theaters.constants';
+import { PHONE_NUMBER_PATTERN, POSTAL_CODE_PATTERN } from '../theaters.constants';
 import type { Facility, TheaterStatus } from '../types';
 import { DayHoursResponse } from './day-hours.response';
 import { OpenStateResponse } from './open-state.response';
@@ -86,6 +86,7 @@ export class TheaterResponse {
   @ApiProperty({
     type: String,
     nullable: true,
+    pattern: PHONE_NUMBER_PATTERN.source,
     example: '+201001234567',
     description:
       'Dedicated WhatsApp number, E.164; null when none. Customers see it only while `showContactsPublic` is true.',

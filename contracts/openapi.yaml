@@ -31611,6 +31611,7 @@ components:
         whatsapp:
           type: string
           nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
           example: '+201001234567'
           description: Dedicated WhatsApp number, E.164; null when none. Customers see it only while `showContactsPublic` is true.
         phones:
