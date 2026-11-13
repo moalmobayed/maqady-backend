@@ -74,7 +74,7 @@ export class MovieCardResponse {
     maximum: MAX_MOVIE_RATING,
     example: 8.4,
     description:
-      'The rating score out of 10, one decimal, for a star on the card where the design shows one; null when the movie has none. Always sent by this API.',
+      'The rating score out of 10, one decimal, the same as the movie page shows; null when the movie has none. Always sent by this API.',
   })
   rating?: number | null;
 }

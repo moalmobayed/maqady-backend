@@ -328,8 +328,8 @@ components:
         rating:
           description: |
             Added by #29 (optional, so additive): the rating score out of 10 with one decimal,
-            for a star on the card where the design shows one; null when the movie has none.
-            Always sent by the API.
+            the same as the movie page shows; null when the movie has none. Always sent by the
+            API.
           type: number
           nullable: true
           minimum: 0
