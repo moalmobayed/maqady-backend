@@ -184,6 +184,8 @@ SEED_DATASET=egypt-2026 npm run seed:remote   # a deployed environment (below)
 
 Real Egyptian cinema as it stood on 2026-10-29, instead of the invented demo. Seed it into an
 empty database: the two datasets don't share names, so seeding one over the other mixes them.
+Mixing them works (staging holds both): the second dataset leaves a carousel position the
+first already holds to that movie.
 
 - **13 Egyptian films of 2026**: 9 Now showing (Naseeb, Matloub Aaeleyan, Wala Kan Ala El-Bal,
   Saqr w Kanarya, El Gawahergy in the carousel; Mahmoud El Tany, Red Flag, Shish Doo, Khally

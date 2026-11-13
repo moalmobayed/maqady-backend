@@ -1,6 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import type { HomeResponse } from '../../../../src/modules/discovery/dto/home.response';
 import type { TheaterShowtimesResponse } from '../../../../src/modules/discovery/dto/theater-showtimes.response';
+import { SeedApiClient } from '../../../../src/modules/seed/seed-api.client';
 import { runRemoteSeed, runSeed } from '../../../../src/modules/seed/seed.command';
 import {
   DEFAULT_SEED_ADMIN_PASSWORD,
@@ -235,5 +236,38 @@ describe('npm run seed', () => {
       (showtime) => showtime.startsAt === '2026-10-23T00:15:00+03:00',
     );
     expect(late).toMatchObject({ cinemaDate: '2026-10-22' });
+  });
+
+  it('leaves a carousel position another movie holds to that movie, and finishes the run', async () => {
+    // Another dataset seeded before this one may hold the position, as egypt-2026 does on
+    // staging when the demo seed runs over it (#29).
+    const api = new SeedApiClient(baseUrl);
+    await api.signIn(SEED_ADMIN_EMAIL, DEFAULT_SEED_ADMIN_PASSWORD);
+    const movies = (
+      await api.get<{
+        items: { id: number; title: string; status: string; featuredPosition: number | null }[];
+      }>('/admin/movies?limit=100')
+    ).items;
+    const lighthouse = movies.find((movie) => movie.title === 'The Last Lighthouse')!;
+    const holder = movies.find(
+      (movie) => movie.status === 'now_showing' && movie.featuredPosition === null,
+    )!;
+    expect(lighthouse.featuredPosition).toBe(1);
+    await api.write('PATCH', `/admin/movies/${lighthouse.id}`, { featuredPosition: null });
+    await api.write('PATCH', `/admin/movies/${holder.id}`, { featuredPosition: 1 });
+
+    const lines: string[] = [];
+    await runSeed(testApp.app, baseUrl, {}, (line) => lines.push(line));
+
+    expect(lines).toContain('featured: 0 created, 5 already there');
+    expect(lines).toContain('showtimes: 0 created, 172 already there');
+    expect(
+      (await api.get<{ featuredPosition: number | null }>(`/admin/movies/${holder.id}`))
+        .featuredPosition,
+    ).toBe(1);
+    expect(
+      (await api.get<{ featuredPosition: number | null }>(`/admin/movies/${lighthouse.id}`))
+        .featuredPosition,
+    ).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'supertest';
+import { OutboxDrainService } from '../../../../src/modules/messaging/outbox-drain.service';
 import { EmailSender } from '../../../../src/modules/messaging/senders/email-sender';
 import {
   listAdminBookings,
@@ -262,6 +263,8 @@ describe('Admin bookings (integration)', () => {
 
     it('reads a page in a fixed number of queries, whatever its size', async () => {
       const countQueries = async () => {
+        // Paying starts an outbox drain after the response; its queries must not land in the count.
+        await testApp.app.get(OutboxDrainService).whenIdle();
         let count = 0;
         const listener = () => {
           count += 1;

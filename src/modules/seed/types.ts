@@ -288,6 +288,12 @@ export interface SeedTitledRow {
   readonly title: string;
 }
 
+/** A `GET /admin/movies` row as the featured step reads it: who holds which carousel position. */
+export interface SeedFeaturedRow {
+  readonly id: number;
+  readonly featuredPosition: number | null;
+}
+
 export interface SeedPersonRow {
   readonly id: number;
   readonly fullName: string;
