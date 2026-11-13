@@ -7,6 +7,8 @@ import { addDays, cinemaDateOf } from '../../common/time/time';
 import type { CalendarDate } from '../../common/time/types';
 import { CatalogReadService } from '../catalog/catalog-read.service';
 import { isPublicStatus } from '../catalog/movie-rules';
+import { HALL_FORMATS } from '../halls/enums';
+import type { HallFormat } from '../halls/types';
 import type { MovieSummary } from '../catalog/types';
 import { ShowtimeReadService } from '../showtimes/showtime-read.service';
 import type { ShowtimeView } from '../showtimes/types';
@@ -14,14 +16,14 @@ import { TheaterReadService } from '../theaters/theater-read.service';
 import type { TheaterDetails } from '../theaters/types';
 import { SHOWTIME_DAYS } from './discovery.constants';
 import { compareByNameThenId } from './in-memory-page';
-import { cinemaDatesFrom, showDateRange } from './show-dates';
+import { cinemaDatesFrom, cinemaDatesOf, showDateRanges } from './show-dates';
 import type {
   MovieShowtimeDay,
   MovieShowtimeSummary,
   MovieShowtimesView,
   PublicMovieRef,
   PublicShowtimeView,
-  ShowDate,
+  ShowDateOption,
   ShowtimeTheaterRef,
   TheaterShowtimeCount,
   TheaterShowtimeDay,
@@ -47,7 +49,7 @@ export class ShowtimeBrowseService {
 
   /**
    * `GET /movies/{id}/showtimes`: the 7 cinema days from today's, theaters by name within a day,
-   * and the theater picker. A Coming soon movie has none; a movie that isn't public is
+   * each with the formats of its showtimes that day, and the theater picker. A Coming soon movie has none; a movie that isn't public is
    * `NOT_FOUND`.
    */
   async movieShowtimes(movieId: number): Promise<MovieShowtimesView> {
@@ -75,6 +77,7 @@ export class ShowtimeBrowseService {
           .map(([theaterId, showtimes]) => ({
             theater: theaterRef(theaters.get(theaterId)!),
             showtimes,
+            formats: formatsOf(showtimes),
           }))
           .sort((first, second) => compareByNameThenId(first.theater, second.theater)),
       };
@@ -156,20 +159,31 @@ export class ShowtimeBrowseService {
   }
 
   /**
-   * The movies with a scheduled showtime of an active theater on the "show date"'s cinema dates
-   * that starts after now (the Movies page filter, PRD C2), in id order.
+   * The Movies page "show date" options (PRD C2, #29), in `SHOW_DATES` order, seen from the
+   * Clock's now: each with its cinema dates and the movies with a scheduled showtime of an active
+   * theater on them that starts after now, in id order. Feeds both the `showDate` filter and its
+   * counts. Two queries whatever the number of showtimes: the active theaters' ids, then the
+   * distinct (movie, cinema date) pairs of the range covering every option.
    */
-  async movieIdsShowing(showDate: ShowDate): Promise<readonly number[]> {
+  async showDateOptions(): Promise<readonly ShowDateOption[]> {
     const now = this.clock.now();
-    const range = showDateRange(showDate, cinemaDateOf(now));
-    const theaters = await this.activeTheaters();
-    if (theaters.size === 0) return [];
-    const ids = await this.showtimes.movieIdsScheduled({
-      ...range,
-      theaterIds: [...theaters.keys()],
-      startsAfter: now,
-    });
-    return [...ids].sort((first, second) => first - second);
+    const { options, covering } = showDateRanges(cinemaDateOf(now));
+    const theaterIds = await this.theaters.listActiveIds();
+    const pairs =
+      theaterIds.length === 0
+        ? []
+        : await this.showtimes.movieDatesScheduled({ ...covering, theaterIds, startsAfter: now });
+    return options.map(({ value, range }) => ({
+      value,
+      cinemaDates: cinemaDatesOf(range),
+      movieIds: [
+        ...new Set(
+          pairs
+            .filter((pair) => pair.cinemaDate >= range.from && pair.cinemaDate <= range.to)
+            .map((pair) => pair.movieId),
+        ),
+      ].sort((first, second) => first - second),
+    }));
   }
 
   /** The active theaters, by id. */
@@ -226,6 +240,12 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => number): Map<number
     else groups.set(key, [item]);
   }
   return groups;
+}
+
+/** The distinct hall formats of these showtimes, in `HALL_FORMATS` order ("Standard, VIP"). */
+function formatsOf(showtimes: readonly ShowtimeView[]): HallFormat[] {
+  const present = new Set(showtimes.map((showtime) => showtime.hallFormat));
+  return HALL_FORMATS.filter((format) => present.has(format));
 }
 
 function theaterRef(theater: TheaterDetails): ShowtimeTheaterRef {

@@ -1,4 +1,5 @@
 import type { AgeRating, CreditRole, MoviePhotoKind, VideoKind } from '../catalog/types';
+import type { HallFormat } from '../halls/types';
 import type { Facility } from '../theaters/types';
 import type { CalendarDate } from '../../common/time/types';
 
@@ -33,7 +34,8 @@ export interface SeedTheater {
   readonly hours: readonly SeedDayHours[];
   /** Holiday hours this many days after today's cinema date, or none. */
   readonly specialDate: SeedSpecialDate | null;
-  readonly galleryCaptions: readonly string[];
+  /** Uploaded on a theater whose gallery is empty, in order. */
+  readonly gallery: readonly SeedGalleryPhoto[];
   /** Published (`active`) by the `publish-theaters` step, or left a draft. */
   readonly publish: boolean;
   /** Base colour of the generated pictures. */
@@ -42,8 +44,47 @@ export interface SeedTheater {
   readonly coverUrl?: string | null;
   /** Zone prices; left out, `SEED_PRICES`. */
   readonly prices?: SeedPrices;
-  /** The halls to create and make active; left out, only `SEED_HALL_NAME`. */
-  readonly halls?: readonly string[];
+  /**
+   * The halls to create and make active, each a name (a standard hall without a screen size) or
+   * a `SeedHall`; left out, only `SEED_HALL_NAME`.
+   */
+  readonly halls?: readonly (string | SeedHall)[];
+  /** 5 digits (#29); left out or null, none. Back-filled on a theater that has none. */
+  readonly postalCode?: string | null;
+  /** The WhatsApp number, E.164 (#29); left out or null, none. Back-filled likewise. */
+  readonly whatsapp?: string | null;
+}
+
+/**
+ * A gallery photo of a seed theater. A real dataset names a freely licensed picture and credits
+ * its author and licence in the caption (#29); left out, the picture is generated.
+ */
+export interface SeedGalleryPhoto {
+  /** At most 120 characters (`chk_theater_photos_caption`). */
+  readonly caption: string;
+  /** The picture to download, `https://`; left out, a generated one. */
+  readonly url?: string;
+}
+
+/**
+ * A hall of a seed theater with its projection format and screen size (#29 P4). Set on create,
+ * and on an existing hall still at the defaults (`standard`, no screen).
+ */
+export interface SeedHall {
+  readonly name: string;
+  /** Left out, `standard`. */
+  readonly format?: HallFormat;
+  /** Metres, at most 2 decimals, 1 to 50; only with `screenHeightMeters`. */
+  readonly screenWidthMeters?: number;
+  /** Metres, at most 2 decimals, 1 to 50; only with `screenWidthMeters`. */
+  readonly screenHeightMeters?: number;
+}
+
+/** The format and screen fields of a hall write, only those the dataset sets. */
+export interface SeedHallSpec {
+  readonly format?: HallFormat;
+  readonly screenWidthMeters?: number;
+  readonly screenHeightMeters?: number;
 }
 
 /** A theater's default price per zone, in piastres. */
@@ -128,6 +169,13 @@ export interface SeedMovie {
   readonly productionCompany: string | null;
   readonly budgetLabel: string | null;
   readonly filmingLocations: string | null;
+  /**
+   * The rating score out of 10, one decimal (#29); left out, none. Set on create, and on an
+   * existing movie whose score is still empty.
+   */
+  readonly rating?: number;
+  /** Where the score comes from, such as "elCinema users"; only with a `rating`. */
+  readonly ratingSource?: string;
   /** Genre slugs, in display order. */
   readonly genres: readonly string[];
   readonly videos: readonly SeedVideo[];
@@ -251,23 +299,35 @@ export interface SeedHallRow {
   readonly id: number;
   readonly name: string;
   readonly status: string;
+  readonly format: string;
+  readonly screenWidthMeters: number | null;
+  readonly screenHeightMeters: number | null;
 }
 
 export interface SeedAdminTheater {
   readonly id: number;
   readonly status: string;
+  readonly postalCode: string | null;
+  readonly whatsapp: string | null;
   readonly phones: readonly unknown[];
-  readonly facilities: readonly unknown[];
+  readonly facilities: readonly string[];
   readonly hours: readonly unknown[];
   readonly specialDates: readonly unknown[];
   readonly defaultPrices: unknown;
   readonly cover: unknown;
-  readonly photos: readonly unknown[];
+  /** The gallery, in order. */
+  readonly photos: readonly SeedAdminPhoto[];
+}
+
+/** A gallery photo of `GET /admin/theaters/{id}`, as the seed reads it. */
+export interface SeedAdminPhoto {
+  readonly caption: string | null;
 }
 
 export interface SeedAdminMovie {
   readonly id: number;
   readonly status: string;
+  readonly rating: number | null;
   readonly poster: unknown;
   readonly backdropPhotoId: number | null;
   readonly heroVideoId: number | null;

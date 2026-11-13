@@ -59,6 +59,11 @@ export class TheaterReadService {
     return this.detailsOf(await this.theaters.listByStatus('active'));
   }
 
+  /** The ids of the `active` theaters, in one query (U8: the Movies page show-date options). */
+  async listActiveIds(): Promise<readonly number[]> {
+    return (await this.theaters.listByStatus('active')).map((row) => row.id);
+  }
+
   /** An `active` theater; null for a draft, a paused or a missing one (U8: theater page). */
   async findActive(id: number): Promise<TheaterDetails | null> {
     const [row] = await this.theaters.findByIdsWithStatus([id], 'active');

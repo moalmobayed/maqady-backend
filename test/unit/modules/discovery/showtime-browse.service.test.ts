@@ -3,6 +3,7 @@ import { money } from '../../../../src/common/money/money';
 import type { CatalogReadService } from '../../../../src/modules/catalog/catalog-read.service';
 import type { MovieRef, MovieSummary } from '../../../../src/modules/catalog/types';
 import { ShowtimeBrowseService } from '../../../../src/modules/discovery/showtime-browse.service';
+import type { HallFormat } from '../../../../src/modules/halls/types';
 import type { ShowtimeReadService } from '../../../../src/modules/showtimes/showtime-read.service';
 import type { ShowtimeView } from '../../../../src/modules/showtimes/types';
 import type { TheaterReadService } from '../../../../src/modules/theaters/theater-read.service';
@@ -14,7 +15,13 @@ const NOW = new Date('2026-10-16T18:00:00+03:00');
 
 function showtime(
   id: number,
-  fields: { movieId?: number; theaterId?: number; cinemaDate?: string; startsAt: string },
+  fields: {
+    movieId?: number;
+    theaterId?: number;
+    cinemaDate?: string;
+    startsAt: string;
+    hallFormat?: HallFormat;
+  },
   runtimeMinutes = 100,
   from = 15000,
 ): ShowtimeView {
@@ -25,6 +32,7 @@ function showtime(
     theaterId: fields.theaterId ?? 1,
     hallId: 40 + id,
     hallName: `Hall ${id}`,
+    hallFormat: fields.hallFormat ?? 'standard',
     startsAt,
     endsAt: new Date(startsAt.getTime() + runtimeMinutes * 60_000),
     cleaningEndsAt: new Date(startsAt.getTime() + (runtimeMinutes + 20) * 60_000),
@@ -64,9 +72,11 @@ async function rejection(promise: Promise<unknown>): Promise<AppError> {
 
 describe('ShowtimeBrowseService', () => {
   let reads: jest.Mocked<
-    Pick<ShowtimeReadService, 'listScheduled' | 'movieIdsScheduled' | 'nextScheduledPerMovie'>
+    Pick<ShowtimeReadService, 'listScheduled' | 'movieDatesScheduled' | 'nextScheduledPerMovie'>
   >;
-  let theaters: jest.Mocked<Pick<TheaterReadService, 'listActive' | 'findActive'>>;
+  let theaters: jest.Mocked<
+    Pick<TheaterReadService, 'listActive' | 'listActiveIds' | 'findActive'>
+  >;
   let catalog: jest.Mocked<Pick<CatalogReadService, 'findMoviesByIds' | 'findPublicMoviesByIds'>>;
   let clock: TestClock;
   let service: ShowtimeBrowseService;
@@ -74,7 +84,7 @@ describe('ShowtimeBrowseService', () => {
   beforeEach(() => {
     reads = {
       listScheduled: jest.fn().mockResolvedValue([]),
-      movieIdsScheduled: jest.fn().mockResolvedValue(new Set()),
+      movieDatesScheduled: jest.fn().mockResolvedValue([]),
       nextScheduledPerMovie: jest.fn(),
     };
     theaters = {
@@ -85,6 +95,7 @@ describe('ShowtimeBrowseService', () => {
           theater(2, 'downtown'),
           theater(3, 'Heliopolis'),
         ]),
+      listActiveIds: jest.fn().mockResolvedValue([1, 2, 3]),
       findActive: jest.fn().mockResolvedValue(theater(1, 'Zamalek')),
     };
     catalog = {
@@ -204,6 +215,40 @@ describe('ShowtimeBrowseService', () => {
       const view = await service.movieShowtimes(7);
       expect(view.days.every((day) => day.showtimeCount === 0)).toBe(true);
       expect(reads.listScheduled).not.toHaveBeenCalled();
+    });
+
+    it("gives each theater's day its distinct formats in the format order, ended ones left out", async () => {
+      reads.listScheduled.mockResolvedValue([
+        // Ended at 16:40, so it is not listed and its IMAX does not count.
+        showtime(1, { startsAt: '2026-10-16T15:00:00+03:00', hallFormat: 'imax' }),
+        showtime(2, { startsAt: '2026-10-16T19:00:00+03:00', hallFormat: 'vip' }),
+        showtime(3, { startsAt: '2026-10-16T20:00:00+03:00', hallFormat: 'standard' }),
+        showtime(4, { startsAt: '2026-10-16T21:00:00+03:00', hallFormat: 'vip' }),
+        showtime(5, {
+          startsAt: '2026-10-16T21:30:00+03:00',
+          theaterId: 2,
+          hallFormat: 'dolby_atmos',
+        }),
+        showtime(6, {
+          startsAt: '2026-10-17T19:00:00+03:00',
+          cinemaDate: '2026-10-17',
+          hallFormat: '4dx',
+        }),
+      ]);
+      const view = await service.movieShowtimes(7);
+      const formats = (index: number) =>
+        view.days[index]!.theaters.map((group) => [group.theater.name, group.formats]);
+      // Theaters by name: "downtown" (2) before "Zamalek" (1).
+      expect(formats(0)).toEqual([
+        ['downtown', ['dolby_atmos']],
+        ['Zamalek', ['standard', 'vip']],
+      ]);
+      expect(formats(1)).toEqual([['Zamalek', ['4dx']]]);
+      expect(view.days[0]!.theaters[1]!.showtimes.map((row) => row.hallFormat)).toEqual([
+        'vip',
+        'standard',
+        'vip',
+      ]);
     });
   });
 
@@ -360,12 +405,12 @@ describe('ShowtimeBrowseService', () => {
     });
   });
 
-  describe('movieIdsShowing', () => {
-    it("asks for the show date's cinema dates at the active theaters, starting after now", async () => {
-      reads.movieIdsScheduled.mockResolvedValue(new Set([9, 3]));
-      expect(await service.movieIdsShowing('weekend')).toEqual([3, 9]);
-      // Friday 16 October: this weekend is today and tomorrow.
-      expect(reads.movieIdsScheduled).toHaveBeenCalledWith({
+  describe('showDateOptions', () => {
+    it('reads the range covering every option once, at the active theaters, starting after now', async () => {
+      await service.showDateOptions();
+      // Friday 16 October: today, tomorrow and this weekend all lie in the 16th and the 17th.
+      expect(reads.movieDatesScheduled).toHaveBeenCalledTimes(1);
+      expect(reads.movieDatesScheduled).toHaveBeenCalledWith({
         from: '2026-10-16',
         to: '2026-10-17',
         theaterIds: [1, 2, 3],
@@ -373,10 +418,45 @@ describe('ShowtimeBrowseService', () => {
       });
     });
 
-    it('matches nothing when no theater is active', async () => {
-      theaters.listActive.mockResolvedValue([]);
-      expect(await service.movieIdsShowing('today')).toEqual([]);
-      expect(reads.movieIdsScheduled).not.toHaveBeenCalled();
+    it('gives each option its cinema dates and the movies showing on them, by id', async () => {
+      reads.movieDatesScheduled.mockResolvedValue([
+        { movieId: 9, cinemaDate: '2026-10-16' },
+        { movieId: 3, cinemaDate: '2026-10-16' },
+        { movieId: 3, cinemaDate: '2026-10-17' },
+        { movieId: 5, cinemaDate: '2026-10-17' },
+      ]);
+      expect(await service.showDateOptions()).toEqual([
+        { value: 'today', cinemaDates: ['2026-10-16'], movieIds: [3, 9] },
+        { value: 'tomorrow', cinemaDates: ['2026-10-17'], movieIds: [3, 5] },
+        { value: 'weekend', cinemaDates: ['2026-10-16', '2026-10-17'], movieIds: [3, 5, 9] },
+      ]);
+    });
+
+    it('reaches the coming Saturday from a Sunday, and judges dates by the cinema day', async () => {
+      // 01:00 on Monday 19 October is still Sunday the 18th's cinema day.
+      clock.set(new Date('2026-10-19T01:00:00+03:00'));
+      reads.movieDatesScheduled.mockResolvedValue([
+        { movieId: 4, cinemaDate: '2026-10-18' },
+        { movieId: 6, cinemaDate: '2026-10-21' },
+        { movieId: 8, cinemaDate: '2026-10-24' },
+      ]);
+      const options = await service.showDateOptions();
+      expect(reads.movieDatesScheduled).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-10-18', to: '2026-10-24' }),
+      );
+      expect(options).toEqual([
+        { value: 'today', cinemaDates: ['2026-10-18'], movieIds: [4] },
+        { value: 'tomorrow', cinemaDates: ['2026-10-19'], movieIds: [] },
+        { value: 'weekend', cinemaDates: ['2026-10-23', '2026-10-24'], movieIds: [8] },
+      ]);
+    });
+
+    it('matches nothing, and asks no showtimes, when no theater is active', async () => {
+      theaters.listActiveIds.mockResolvedValue([]);
+      const options = await service.showDateOptions();
+      expect(options.map((option) => option.movieIds)).toEqual([[], [], []]);
+      expect(options[0]!.cinemaDates).toEqual(['2026-10-16']);
+      expect(reads.movieDatesScheduled).not.toHaveBeenCalled();
     });
   });
 });

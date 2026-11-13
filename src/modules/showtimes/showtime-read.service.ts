@@ -11,6 +11,7 @@ import { MAX_READ_RANGE_DAYS } from './showtimes.constants';
 import { ShowtimesRepository } from './showtimes.repository';
 import type {
   NextShowtimeFilter,
+  ScheduledMovieDate,
   ScheduledShowtimeFilter,
   ShowtimeRow,
   ShowtimeView,
@@ -21,9 +22,10 @@ import type {
  * touches the `showtimes` table (design §5):
  *
  * - U8 discovery: `listScheduled()` by movie and by theater over up to 31 cinema dates,
- *   `nextScheduledPerMovie()` for the home ticker, `movieIdsScheduled()` for the "show date"
- *   filter. They return scheduled showtimes of any theater asked for; U8 passes the `active`
- *   theaters and hides started ones itself, from the same `Clock`.
+ *   `nextScheduledPerMovie()` for the home ticker, `movieIdsScheduled()` and
+ *   `movieDatesScheduled()` for the Movies page "show date" filter and options (#29). They
+ *   return scheduled showtimes of any theater asked for; U8 passes the `active` theaters and
+ *   hides started ones itself, from the same `Clock`.
  * - U10 holds and the public showtime page: `findById()` in any status, and `lockForShare()`
  *   in a hold's transaction (design §7.1 step 2), before the hall.
  * - U10's seat claims: `listUnendedInHall()`.
@@ -108,6 +110,18 @@ export class ShowtimeReadService {
   async movieIdsScheduled(filter: ScheduledShowtimeFilter): Promise<ReadonlySet<number>> {
     checkRange(filter.from, filter.to);
     return new Set(await this.showtimes.movieIdsScheduled(filter));
+  }
+
+  /**
+   * The distinct (movie, cinema date) pairs of the scheduled showtimes matching the filter, by
+   * movie then date (U8's "show date" options, all of them in one query).
+   */
+  async movieDatesScheduled(
+    filter: ScheduledShowtimeFilter,
+  ): Promise<readonly ScheduledMovieDate[]> {
+    checkRange(filter.from, filter.to);
+    const rows = await this.showtimes.movieDatesScheduled(filter);
+    return rows.map((row) => ({ movieId: row.movie_id, cinemaDate: row.cinema_date }));
   }
 
   /**

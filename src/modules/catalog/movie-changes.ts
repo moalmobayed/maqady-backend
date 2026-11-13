@@ -19,6 +19,8 @@ const MOVIE_FIELD_COLUMNS = [
   ['productionCompany', 'production_company'],
   ['budgetLabel', 'budget_label'],
   ['filmingLocations', 'filming_locations'],
+  ['rating', 'rating'],
+  ['ratingSource', 'rating_source'],
   ['heroVideoId', 'hero_video_id'],
   ['backdropPhotoId', 'backdrop_photo_id'],
 ] as const satisfies readonly (readonly [keyof MovieChanges, keyof MovieRow])[];

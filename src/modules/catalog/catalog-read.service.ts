@@ -18,6 +18,7 @@ import type {
   MovieRef,
   MovieSchedulingInfo,
   MovieSummary,
+  PublicCastCounts,
   PublicMovieCountFilter,
   PublicMovieFilter,
   PublicMovieStatus,
@@ -102,6 +103,32 @@ export class CatalogReadService {
       (row) => row,
     );
     return { ...rowPage, items: await this.assembler.summaries(rowPage.items) };
+  }
+
+  /** The ids of the public movies (of `status`, or both) matching the filters, ascending. */
+  async listPublicMovieIds(filter: PublicMovieCountFilter): Promise<readonly number[]> {
+    return this.movies.publicIds(filter);
+  }
+
+  /**
+   * The cast (actors and voices) of the public movies matching the filters, with how many of
+   * them each person is in: most first, then by name and id, at most `limit`, and how many
+   * people match in all (the Movies page people facet). Two queries at most.
+   */
+  async countPublicCast(filter: PublicMovieCountFilter, limit: number): Promise<PublicCastCounts> {
+    const rows = await this.movies.publicCastCounts(filter, limit);
+    const images = await this.media.findByIds(
+      rows.flatMap((row) => (row.photo_image_id === null ? [] : [row.photo_image_id])),
+    );
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        fullName: row.full_name,
+        photo: row.photo_image_id === null ? null : (images.get(row.photo_image_id) ?? null),
+        count: row.count,
+      })),
+      total: rows[0]?.total ?? 0,
+    };
   }
 
   /** These movies when public, by id; drafts, archived and unknown ids are absent. */

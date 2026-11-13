@@ -104,7 +104,7 @@ export class AdminTheatersController {
   @ApiOperation({
     summary: 'Get a theater',
     description:
-      'Admin only: the theater page, in any status. Location, contacts, facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.',
+      'Admin only: the theater page, in any status. Location (with the postal code), contacts (with the WhatsApp number), facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.',
   })
   @ApiOkResponse({
     type: TheaterResponse,
@@ -121,7 +121,7 @@ export class AdminTheatersController {
   @ApiOperation({
     summary: 'Change, publish or pause a theater',
     description:
-      'Admin only: edits the Location and Contacts fields, and changes the status, in one transaction (fields first).\n\n- `status: active` on a draft publishes it. It needs the zone prices, the weekly hours (all seven days set, at least one open) and an active hall; otherwise `THEATER_NOT_PUBLISHABLE`, with `details.missing` naming what is missing.\n- `sales_paused` and `active` toggle selling on a published theater. A paused theater is hidden from customers; existing tickets stay valid.\n- A published theater never returns to `draft`, and a draft cannot be paused: `CONFLICT` with `details.from` and `details.to`.\n- A request that changes nothing answers `200` and records nothing.\n- Recorded in the activity log with the names of the changed fields.',
+      'Admin only: edits the Location and Contacts fields (`postalCode` and `whatsapp` included; null clears them), and changes the status, in one transaction (fields first).\n\n- `status: active` on a draft publishes it. It needs the zone prices, the weekly hours (all seven days set, at least one open) and an active hall; otherwise `THEATER_NOT_PUBLISHABLE`, with `details.missing` naming what is missing.\n- `sales_paused` and `active` toggle selling on a published theater. A paused theater is hidden from customers; existing tickets stay valid.\n- A published theater never returns to `draft`, and a draft cannot be paused: `CONFLICT` with `details.from` and `details.to`.\n- A request that changes nothing answers `200` and records nothing.\n- Recorded in the activity log with the names of the changed fields.',
   })
   @ApiBody({ type: UpdateTheaterRequest })
   @ApiOkResponse(THEATER_OK)
@@ -200,7 +200,8 @@ export class AdminTheatersController {
   @Admin()
   @ApiOperation({
     summary: "Replace a theater's facilities",
-    description: 'Admin only: the Facilities tab. The whole set. Recorded in the activity log.',
+    description:
+      'Admin only: the Facilities tab. The whole set, from the `Facility` list (`prayer_room` since #29). An unknown facility is `VALIDATION_FAILED`. Recorded in the activity log.',
   })
   @ApiBody({ type: ReplaceFacilitiesRequest })
   @ApiOkResponse(THEATER_OK)

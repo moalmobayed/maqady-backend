@@ -9,7 +9,8 @@ export const THEATER_STATUSES = ['draft', 'active', 'sales_paused'] as const;
 
 /**
  * Facilities a theater can list (PRD A4), in display order. Mirrored by
- * `chk_theater_facilities_facility` and the home-page contract's `Facility`.
+ * `chk_theater_facilities_facility` and the home-page contract's `Facility`. `prayer_room` was
+ * added by #29 (migration `0290_21`), appended so the earlier order stays.
  */
 export const FACILITIES = [
   'wheelchair_access',
@@ -19,6 +20,7 @@ export const FACILITIES = [
   'cafe_bar',
   'food_court',
   'kids_room',
+  'prayer_room',
 ] as const;
 
 /** What an uploaded theater photo becomes: the cover, or one more gallery photo. */

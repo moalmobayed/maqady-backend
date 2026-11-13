@@ -42,9 +42,16 @@ import {
   MovieShowtimeTheaterResponse,
   MovieShowtimesResponse,
 } from './dto/movie-showtimes.response';
+import {
+  GenreFacetResponse,
+  MovieFacetsResponse,
+  PersonFacetResponse,
+  ShowDateFacetResponse,
+} from './dto/movie-facets.response';
 import { PublicPersonPageResponse, PublicPersonResponse } from './dto/public-person.response';
 import { PublicShowtimeResponse, ShowtimeTheaterRefResponse } from './dto/public-showtime.response';
 import {
+  HallScreenResponse,
   PublicHallResponse,
   PublicTheaterListItemResponse,
   PublicTheaterPageResponse,
@@ -63,6 +70,7 @@ import type {
   HomeTickerEntry,
   HomeView,
   MovieCardListView,
+  MovieFacets,
   MovieListView,
   MovieShowtimeSummary,
   MovieShowtimesView,
@@ -70,9 +78,11 @@ import type {
   PublicShowtimeView,
   PublicTheaterView,
   ShowtimeTheaterRef,
+  TheaterCardPage,
   TheaterCardView,
   TheaterShowtimesView,
 } from './types';
+import { whatsAppUrl } from './whatsapp';
 
 /**
  * Turns the discovery read models into response DTOs (exported for U8b's showtime reads). Every
@@ -155,6 +165,7 @@ export class DiscoveryResponseMapper {
       ageRating: movie.ageRating,
       releaseDate: movie.releaseDate,
       status: movie.status,
+      rating: movie.rating,
     });
   }
 
@@ -174,6 +185,36 @@ export class DiscoveryResponseMapper {
         nowShowing: view.tabCounts.now_showing,
         comingSoon: view.tabCounts.coming_soon,
       }),
+      facets: this.movieFacets(view.facets),
+    });
+  }
+
+  movieFacets(facets: MovieFacets): MovieFacetsResponse {
+    return Object.assign(new MovieFacetsResponse(), {
+      genres: facets.genres.map((genre) =>
+        Object.assign(new GenreFacetResponse(), {
+          id: genre.id,
+          name: genre.name,
+          slug: genre.slug,
+          count: genre.count,
+        }),
+      ),
+      people: facets.people.map((person) =>
+        Object.assign(new PersonFacetResponse(), {
+          id: person.id,
+          fullName: person.fullName,
+          photo: this.image(person.photo, person.fullName),
+          count: person.count,
+        }),
+      ),
+      peopleTotal: facets.peopleTotal,
+      showDates: facets.showDates.map((option) =>
+        Object.assign(new ShowDateFacetResponse(), {
+          value: option.value,
+          count: option.count,
+          cinemaDates: [...option.cinemaDates],
+        }),
+      ),
     });
   }
 
@@ -193,6 +234,8 @@ export class DiscoveryResponseMapper {
       runtimeMinutes: movie.runtimeMinutes,
       releaseDate: movie.releaseDate,
       ageRating: movie.ageRating,
+      rating: movie.rating,
+      ratingSource: movie.ratingSource,
       language: movie.language,
       country: movie.country,
       productionCompany: movie.productionCompany,
@@ -243,6 +286,7 @@ export class DiscoveryResponseMapper {
       endsAt: formatCairoIso(showtime.endsAt),
       cinemaDate: showtime.cinemaDate,
       hall: this.hallRef(showtime),
+      format: showtime.hallFormat,
       prices: toShowtimePricesResponse(showtime.prices),
       fromPrice: toMoney(showtime.fromPrice),
       hasStarted: showtime.hasStarted,
@@ -268,6 +312,7 @@ export class DiscoveryResponseMapper {
             Object.assign(new MovieShowtimeTheaterResponse(), {
               theater: this.showtimeTheater(group.theater),
               showtimes: group.showtimes.map((showtime) => this.publicShowtime(showtime)),
+              formats: [...group.formats],
             }),
           ),
         }),
@@ -301,6 +346,13 @@ export class DiscoveryResponseMapper {
       name: hall.name,
       seatCount: hall.seatCount,
       wheelchairCount: hall.wheelchairCount,
+      format: hall.format,
+      screen: hall.screen
+        ? Object.assign(new HallScreenResponse(), {
+            widthMeters: hall.screen.widthMeters,
+            heightMeters: hall.screen.heightMeters,
+          })
+        : null,
     });
   }
 
@@ -323,7 +375,7 @@ export class DiscoveryResponseMapper {
     return Object.assign(new TheaterCardResponse(), this.cardFields(card));
   }
 
-  theaterPage(page: Page<TheaterCardView>): PublicTheaterPageResponse {
+  theaterPage(page: TheaterCardPage): PublicTheaterPageResponse {
     return Object.assign(new PublicTheaterPageResponse(), {
       items: page.items.map((card) =>
         Object.assign(new PublicTheaterListItemResponse(), {
@@ -336,6 +388,7 @@ export class DiscoveryResponseMapper {
       ),
       nextCursor: page.nextCursor,
       total: page.total,
+      totalHalls: page.totalHalls,
     });
   }
 
@@ -346,11 +399,14 @@ export class DiscoveryResponseMapper {
       address: view.address,
       district: view.district,
       city: view.city,
+      postalCode: view.postalCode,
       latitude: view.latitude,
       longitude: view.longitude,
       transitInfo: view.transitInfo,
       parkingInfo: view.parkingInfo,
       email: view.email,
+      whatsapp: view.whatsapp,
+      whatsappUrl: view.whatsapp === null ? null : whatsAppUrl(view.whatsapp),
       phones: view.phones.map(toPhoneResponse),
       facilities: [...view.facilities],
       cover: this.image(view.cover, view.name),
@@ -377,6 +433,7 @@ export class DiscoveryResponseMapper {
       district: card.district,
       city: card.city,
       address: card.address,
+      postalCode: card.postalCode,
       cover: this.image(card.cover, card.name),
       openState: toOpenStateResponse(card.openState),
       mainPhone: card.mainPhone ? toPhoneResponse(card.mainPhone) : null,

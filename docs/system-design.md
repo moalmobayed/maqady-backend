@@ -2,7 +2,7 @@
 title: Maqady backend — system design
 owner: Mohamed Tarek
 status: Approved — 2026-10-20
-last_verified: 2026-10-29
+last_verified: 2026-11-13
 tags: [architecture, system-design, backend]
 ---
 
@@ -209,7 +209,7 @@ Rules:
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `genres` | Fixed genre list, seeded by migration | `name` UNIQUE; `slug` UNIQUE (`sci-fi`), for URLs and the contract's `GenreRef` |
-| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes` 1–600; `release_date DATE`; `synopsis` (≤ 600), `language`, `country`, `production_company`; a public movie has a synopsis, runtime and release date (CHECK); `featured_position` 1–5, UNIQUE where not NULL, and only on a public movie with a hero video (CHECK); `hero_video_id` and `backdrop_photo_id` with composite FKs onto the movie's own video and photo (`(id, movie_id)`); `poster_image_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
+| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes` 1–600; `release_date DATE`; `synopsis` (≤ 600), `language`, `country`, `production_company`; a public movie has a synopsis, runtime and release date (CHECK); `featured_position` 1–5, UNIQUE where not NULL, and only on a public movie with a hero video (CHECK); `hero_video_id` and `backdrop_photo_id` with composite FKs onto the movie's own video and photo (`(id, movie_id)`); `poster_image_id`; optional `budget_label` and `filming_locations`; optional `rating NUMERIC(3,1)` 0–10 and `rating_source` (≤ 80), a source only with a rating (CHECK; #29, `docs/gh-29-movie-rating/spec.md`); `updated_by_staff_id` |
 | `movie_genres` | Movie ↔ genre, at most 5 in display order | PK (`movie_id`, `genre_id`); `sort_order` 0–4, UNIQUE per movie |
 | `people` | Actors and crew | `full_name`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three `https` social links |
 | `person_roles` | Roles shown on a person, even without credits | PK (`person_id`, `role`); `role` is one of the 7 credit roles |
@@ -222,13 +222,13 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `theaters` | Theaters | `name CITEXT` UNIQUE (case-insensitive); `status` (`draft`, `active`, `sales_paused`); `address`, `district`, `city`; `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; optional `transit_info`, `parking_info`, `email`; `default_price_front`, `_middle`, `_back INT` plus `currency`, set all together or not at all, and required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` (an `images` row of kind `backdrop`, UNIQUE). Hard-deleted: only a draft goes (U4b, `docs/gh-5-theaters/spec.md`) |
+| `theaters` | Theaters | `name CITEXT` UNIQUE (case-insensitive); `status` (`draft`, `active`, `sales_paused`); `address`, `district`, `city`; `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; optional `transit_info`, `parking_info`, `email`; optional `postal_code VARCHAR(10)` (5 digits, CHECK) and `whatsapp VARCHAR(16)` (E.164, CHECK) (#29, `docs/gh-29-theater-fields/spec.md`); `default_price_front`, `_middle`, `_back INT` plus `currency`, set all together or not at all, and required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` (an `images` row of kind `backdrop`, UNIQUE). Hard-deleted: only a draft goes (U4b, `docs/gh-5-theaters/spec.md`) |
 | `theater_phones` | Labelled phone numbers | `label`, `number` (E.164, CHECK), `sort_order` (0 is the main phone); at most 10 per theater, replaced as a whole |
-| `theater_facilities` | Facilities | PK (`theater_id`, `facility`); `facility` is one of `wheelchair_access`, `free_parking`, `valet_parking`, `street_parking`, `cafe_bar`, `food_court`, `kids_room` |
+| `theater_facilities` | Facilities | PK (`theater_id`, `facility`); `facility` is one of `wheelchair_access`, `free_parking`, `valet_parking`, `street_parking`, `cafe_bar`, `food_court`, `kids_room`, `prayer_room` (#29: the CHECK replaced by migration `0290_21`) |
 | `theater_photos` | Gallery | `image_id` (UNIQUE, kind `gallery`), optional `caption` (the photo's alt text), `sort_order` kept contiguous from 0; at most 20 per theater |
 | `theater_hours` | Weekly hours, by cinema-day weekday | PK (`theater_id`, `weekday`); `is_closed`, or `opens_minute` and `closes_minute` counted from midnight at the start of the cinema date, with CHECK `360 <= opens_minute < closes_minute <= 1800` (06:00 to 06:00 next day) |
 | `theater_special_dates` | Holiday hours | UNIQUE (`theater_id`, `cinema_date`); `label`; hours as above, or closed |
-| `halls` | Halls | `name CITEXT`, UNIQUE (`theater_id`, `name`), so unique per theater ignoring case, in any status; `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes`. Hard-deleted, children cascading: only a hall that never had a showtime goes (U5, `docs/gh-6-halls/spec.md`) |
+| `halls` | Halls | `name CITEXT`, UNIQUE (`theater_id`, `name`), so unique per theater ignoring case, in any status; `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; `format` (`standard`, `vip`, `imax`, `dolby_atmos`, `4dx`, `screenx`, `max`; `DEFAULT 'standard'` kept while the release before #29 may still insert halls, then dropped in a contract-phase migration; the service always writes it); optional `screen_width_cm`, `screen_height_cm` 100–5000, both or neither (CHECK; #29, `docs/gh-29-hall-screen-format/spec.md`); UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes`. Hard-deleted, children cascading: only a hall that never had a showtime goes (U5, `docs/gh-6-halls/spec.md`) |
 | `hall_rows` | One zone per row | PK (`hall_id`, `row_index`); `row_label` (A–P without I), CHECKed to be the letter at `row_index`, UNIQUE (`hall_id`, `row_label`); `zone` (`front`, `middle`, `back`) |
 | `hall_seat_marks` | Exceptions to the full grid | PK (`hall_id`, `row_label`, `seat_number`); FK (`hall_id`, `row_label`) → `hall_rows`, so a mark sits in an existing row and goes with it; `kind` (`wheelchair`, `no_seat`) |
 
@@ -807,6 +807,11 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - The cover is an image of kind `backdrop`; gallery photos are kind `gallery`. Both upload
     through `POST /admin/theaters/{id}/photos` (`usage`); `DELETE /admin/theaters/{id}/cover`
     removes the cover.
+  - The postal code and the WhatsApp number (#29) are optional fields of the theater, set on
+    create and `PATCH` (null clears). The postal code is public on the cards and the theater
+    page, beside the address (never folded into it); the WhatsApp number and its `wa.me` link
+    are public only while the theater shows its contacts, like its phones and email
+    (`docs/gh-29-theater-fields/spec.md`).
 - **Hall layouts.**
   - A new hall is a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M
     back). Status changes: `draft → active`, `draft → retired`, `active → retired`; `retired`
@@ -830,6 +835,13 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
       hall's scheduled showtimes that haven't ended, and U10 answers which have a live claim by
       rebinding `ShowtimeSeatClaimService` (`docs/gh-8-showtimes/spec.md`).
   - Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`, deduplicated.
+  - Format and screen (#29): a hall's projection format is a label (Standard, VIP, IMAX, Dolby
+    Atmos, 4DX, ScreenX, MAX), `standard` unless set, shown on the theater page halls and on every
+    showtime chip from the hall's current value; it never changes a price (prices stay by zone)
+    and nothing filters by it. The screen size is typed in metres (1 to 50, two decimals, width
+    and height together, null clears) and stored in whole centimetres. Both change through the
+    hall create and `PATCH` in any status; `hall.updated` names the changed fields
+    (`docs/gh-29-hall-screen-format/spec.md`).
   - A hall that ever had a showtime can only be retired (`PATCH` with `status: retired`), which
     requires no future scheduled showtimes (`HALL_NOT_RETIRABLE`); deleting it is
     `HALL_NOT_DELETABLE`. Retiring the last active hall of a published theater is allowed: the
@@ -845,6 +857,11 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - Deletion is refused by blockers other units register with `MovieLifecycleRegistry`: U7
     `has_showtimes`, U10 `has_bookings`.
   - The budget is a free-text label.
+  - The rating score (#29) is typed by an admin from an outside source (0 to 10, one decimal,
+    with an optional source such as "elCinema users"); it is not Maqady's own ratings: no votes,
+    and nothing sorts or filters by it. Customers see it on the movie page and on movie cards.
+    A source needs a score, judged on the movie after the write (`VALIDATION_FAILED` on
+    `ratingSource`), backed by a CHECK (`docs/gh-29-movie-rating/spec.md`).
 - **YouTube.** The API accepts watch, youtu.be, shorts and embed URLs, and stores only the
   11-character video id. Thumbnails and the privacy-enhanced embed URL are derived from the id.
   Titles and optional durations are typed by the admin, so there is no YouTube API key.
@@ -1251,8 +1268,12 @@ of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
 `active` theaters; anything else is `NOT_FOUND`. `/genres`, `/movies`, `/people` and `/theaters`
 are cursor-paginated (`/genres` and `/theaters` page in memory over the short sets the read
-services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts`;
-`/theaters` takes `openNow` and `parking`; `/movies/{id}/similar` is a bounded `{ items }` of at
+services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts` and (#29,
+`docs/gh-29-movie-facets/spec.md`) `facets`: every genre's count, the cast (actors and voices,
+top 30 with `peopleTotal`) and the show-date options with their cinema dates and counts, over
+every matching movie of the tab, each facet ignoring its own filter;
+`/theaters` takes `openNow` and `parking`, and adds `totalHalls`, the sum of `hallCount` over
+every theater that matches, whatever the page (#29); `/movies/{id}/similar` is a bounded `{ items }` of at
 most 4. The ticker and `hallCount` come from the `HomeTickerSource` and `TheaterHallCountSource`
 seams, bound by U8b (`docs/gh-9-discovery-showtimes/spec.md`) to the showtimes (per Now showing
 movie, its next scheduled showtime of today's cinema date at an active theater that starts after
@@ -1260,7 +1281,8 @@ now, soonest first) and to the active halls. `/movies/{id}/showtimes` answers th
 from today with a theater picker, `/theaters/{id}/showtimes` the 7 days or one `date` (a date
 outside them answers an empty day); both show only scheduled showtimes of active theaters and Now
 showing movies, grouped by the stored `cinemaDate`, leave out ended ones and mark started ones
-(`hasStarted`), with the zone prices and the "from" price (§7.10). `/movies?showDate=`
+(`hasStarted`), with the zone prices and the "from" price (§7.10), and since #29 the hall's
+`format` on every chip and, on `/movies/{id}/showtimes`, each theater-day's distinct `formats`. `/movies?showDate=`
 (`today`, `tomorrow`, `weekend`: Friday and Saturday) keeps the Now showing movies with a showtime
 still to start then; `/movies/{id}` adds the side panel (`showtimeSummary`: next show today,
 cinemas, lowest "from" price) and `/theaters/{id}` its active `halls`. `npm run seed` fills a
@@ -1810,7 +1832,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | G3 Booking before payment, no ids | A hold is a `held` booking with a reference; guest hold code and claim; live map over WebSocket (§7.3, §12) |
 | G4 Refund and cancel policy | Admin cancel always refunds in full, per charge and rail; counter refunds pay out at the counter; customers can't cancel (§7.7) |
 | G5 No admin identity | Staff accounts, two roles, audit on every staff write (§10, §13.5) |
-| G6 Fields without admin input | Optional budget label and filming locations, photo kinds and captions, theater photos; scores and the free tag chip dropped |
+| G6 Fields without admin input | Optional budget label and filming locations, photo kinds and captions, theater photos; the free tag chip dropped; scores dropped, then brought back by #29 as an admin-entered score with its source (no votes) |
 | G7 Hero video source | Every video is YouTube, so any video can be the hero (§9) |
 | G8 Hold and decline behaviour | A decline keeps the hold; the clock decides Failed or Abandoned; processing extends the hold; claims are locked during payment (§7.4, §7.5) |
 | G9 Booking reference | `MQ-` plus 6 random characters from an unambiguous alphabet (§7.9) |
@@ -1820,7 +1842,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | G13 "Sold out" | No seat claimable right now, one rule for both sites |
 | G14 Date filter | Computed from showtimes per cinema day; the weekend is Friday and Saturday |
 | G15 KPI definitions | PRD "Dashboard numbers"; revenue on the show's cinema day (§13.3) |
-| G16 Role and format lists | One 7-role credit list; formats removed; facilities list includes street parking |
+| G16 Role and format lists | One 7-role credit list; formats removed as prices, facilities and filters, then brought back by #29 as a hall's format label (with an optional screen size); facilities list includes street parking |
 | G17 Status vocabulary | Held, Confirmed, Completed, Refunded, Failed, Abandoned (§7.4) |
 | G18 Missing screens | All in scope except person pages (dropped) and end-of-day cash report entry (unneeded: every counter payment is recorded) |
 | G19 Concurrency and integrity | Seat-claim upsert, the lock order, idempotency in the write transaction, the exclusion constraint, no timers, the server-side 8-seat limit, the layout lock, notifications in the same transaction |
@@ -1864,6 +1886,10 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-30 | Catalog: genres seeded with slugs; movies need a synopsis, runtime, release date and a genre to be public, a poster optional; Now showing never goes back; a taken carousel position is refused; the hero is any of the movie's videos; poster routes and the person-side filmography route added to §11; deletion blockers registered by U7 and U10 | Builder (U6, `docs/gh-7-catalog/spec.md`) |
 | D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
 | D-32 | Discovery showtimes: customers see only scheduled showtimes of `active` theaters and Now showing movies; lists group by the stored cinema date, leave out ended showtimes and mark started ones; the ticker and the side panel count only showtimes still to start; "this weekend" is the Friday and Saturday cinema dates (today only on a Saturday); `hallCount` counts active halls; the seed schedules a week through the dry run, so a re-run never conflicts | Builder (U8b, `docs/gh-9-discovery-showtimes/spec.md`) |
+| D-33 | Movie rating score (#29 P2): an admin-entered `rating NUMERIC(3,1)` 0–10 with an optional `rating_source`, a source only with a rating (judged after the write, backed by a CHECK); on `AdminMovie`, `MovieDetails` and the shared `MovieCard` (optional there, additive in the home-page draft); no votes, sorting or filtering; the seed sets it and back-fills an unrated movie | Builder (#29, `docs/gh-29-movie-rating/spec.md`) |
+| D-34 | Hall format and screen (#29 P4): `halls.format` (seven values, `standard` by default and for every hall before it) and an optional screen size stored in centimetres, typed in metres, both or neither; on the admin hall routes, `PublicHall` (`format`, `screen`), `PublicShowtime.format` from the hall's current value, and each movie-matrix theater-day's `formats`; read with the hall rows already read (no query added); a label only, never a price or filter; the seed sets it and fills a hall still at the defaults | Builder (#29, `docs/gh-29-hall-screen-format/spec.md`) |
+| D-35 | Theater fields (#29 P3): `prayer_room` appended to the facilities (the CHECK dropped and re-added); optional `postal_code` (5 digits) and `whatsapp` (E.164) on theaters, set by admins; `postalCode` on the shared `TheaterCard` (optional there, additive in the home-page draft) and the theater page; `whatsapp` and a built `whatsappUrl` (`https://wa.me/<digits>`) on the theater page only, behind `showContactsPublic`; `totalHalls` on `GET /theaters` summed from the matching cards' `hallCount`; the seed sets both fields and back-fills a theater that lacks them | Builder (#29, `docs/gh-29-theater-fields/spec.md`) |
+| D-36 | Seed data for #29 (P5): the `egypt-2026` dataset carries only values a public source confirms (elCinema user ratings, Egypt Post postal codes, the Mall of Egypt prayer room, the VOX hall formats from elCinema's per-showtime experience with the VOX slots re-packed into halls by experience, CC BY-SA Wikimedia Commons gallery photos credited in their captions) and leaves the rest empty (no WhatsApp, no screen size); the demo invents every field; the seed back-fills `prayer_room` only onto facilities exactly as seeded, and finishes a gallery whose captions are the dataset's first ones; picture downloads retry `429`/`5xx`; staging is re-seeded with `egypt-2026` every morning by the Seed staging workflow so its showtimes cover the next 7 cinema days | Builder (#29, `docs/gh-29-seed-staging-data/spec.md`) |
 
 ## 19. Kit and process reconciliations
 

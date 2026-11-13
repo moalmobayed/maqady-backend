@@ -210,6 +210,27 @@ describe('GET /home', () => {
     expect(body.ticker).toEqual([]);
   });
 
+  it('sends the rating score on every movie card, still within the draft (#29)', async () => {
+    const rated = ids.nowShowing[0]!;
+    expectStatus(
+      await adminWrite(testApp, admin, 'patch', `/api/v1/admin/movies/${rated}`).send({
+        rating: 8.4,
+        ratingSource: 'elCinema users',
+      }),
+      200,
+    );
+    const body = await home();
+    const validate = draftValidator('HomeResponse');
+    expect({ valid: validate(body), errors: validate.errors ?? [] }).toEqual({
+      valid: true,
+      errors: [],
+    });
+    const cards = [...body.nowShowing.items, ...body.comingSoon.items];
+    expect(cards.every((card) => 'rating' in card)).toBe(true);
+    expect(cards.find((card) => card.id === rated)!.rating).toBe(8.4);
+    expect(cards.filter((card) => card.rating !== null).map((card) => card.id)).toEqual([rated]);
+  });
+
   it('refuses a response that breaks the contract (the validator really checks)', async () => {
     const body = await home();
     const validate = draftValidator('HomeResponse');

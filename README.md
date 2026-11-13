@@ -140,9 +140,13 @@ pages and the admin dashboard.
   idempotency, audit rows and the image pipeline all apply. Sign in to the dashboard with the
   same account (password `SEED_ADMIN_PASSWORD`, default `Maqady-seed-2026`).
 - What the default `demo` dataset adds: 6 theaters (5 published, Dokki left a draft) with weekly
-  hours, some past midnight, a special date, prices, phones, facilities, a cover and gallery photos;
-  18 people with photos; 12 movies (7 Now showing, 4 Coming soon, 1 draft) with posters, stills (the
-  first is the backdrop), two YouTube videos each and credits; 5 of them in the home carousel;
+  hours, some past midnight, a special date, prices, phones, facilities (a prayer room at New Cairo
+  and Sheikh Zayed), invented postal codes and WhatsApp numbers, a cover and three gallery photos,
+  and halls with a format and screen size (Heliopolis's `Hall 1` is an IMAX 22.1 m × 12.3 m;
+  Zamalek and New Cairo have a second hall);
+  18 people with photos; 12 movies (7 Now showing with an invented "Demo audience" score, 4 Coming
+  soon, 1 draft) with posters, stills (the first is the backdrop), two YouTube videos each and
+  credits; 5 of them in the home carousel;
   showtimes over the 7 cinema days from today in each published theater's hall (13:30, 16:15, 19:00
   and 21:45, plus an after-midnight slot at Downtown and New Cairo on their late Thursday and Friday
   nights), so the ticker, the movie and theater showtime lists and the show-date filter have data.
@@ -151,6 +155,20 @@ pages and the admin dashboard.
   videos are Blender Foundation open movies on YouTube, so the embeds play.
 - It is idempotent: each step finds what exists by name or title and adds only what is missing,
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
+  A dataset movie's optional `rating` and `ratingSource` (#29) are sent when the movie is created,
+  and set on an existing movie whose score is still empty, so a re-run gives the movies seeded
+  before they had scores their scores; a score already set (by an admin) is left alone.
+  A dataset theater's optional `postalCode` and `whatsapp` (#29) work the same way: sent on
+  create, and set on an existing theater only where the stored value is still empty.
+  A theater's `halls` entries are hall names (standard halls without a screen size) or
+  `{ name, format?, screenWidthMeters?, screenHeightMeters? }` (#29): the format and screen are
+  sent when the hall is created, and set on an existing hall still at the defaults (`standard`, no
+  screen) in the same `PATCH` that activates it; a hall an admin already changed is left alone.
+  A theater whose facilities are exactly the dataset's without `prayer_room` (seeded before #29)
+  gets the dataset's list. A theater's `gallery` is a list of `{ caption, url? }`: a URL is
+  downloaded, otherwise the picture is generated; the photos go to an empty gallery, or finish one
+  a run stopped part way (its captions are the dataset's first ones, in order). A picture that
+  answers `429` or `5xx` is tried up to 6 times, a little longer each time.
 - Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
   active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,
@@ -177,18 +195,26 @@ empty database: the two datasets don't share names, so seeding one over the othe
 - **8 cinemas** in Cairo and Giza (VOX City Centre Almaza, City Stars, Cairo Festival Scene,
   Cosmos, Galaxy El Manyal, VOX Mall of Egypt, Galaxy Cineplex Mall of Arabia, Cairo Mall),
   with their address, map position, phones, standard ticket price, as many halls as they ran at
-  once, and the 238 showtimes they actually ran that day, repeated on each of the 7 days.
+  once, and the 243 showtimes they actually ran that day, repeated on each of the 7 days.
+- **#29 fields, only where a source confirms them**: the elCinema user rating of the 9 Now
+  showing films (`ratingSource: "elCinema users"`); the Egypt Post postal code of the five Cairo
+  cinemas; a prayer room at VOX Mall of Egypt (the mall's facilities page); the VOX halls by the
+  experience elCinema lists for each showtime (MAX is `max`, Gold and VIP `vip`); and CC BY-SA
+  Wikimedia Commons photos of City Stars (4) and Cosmos (2) for their galleries, each caption
+  crediting its author and licence. No cinema publishes a WhatsApp number or a screen size, so
+  none is given.
 - **Sources**: elCinema.com for the films, people, cinemas, showtimes and pictures; YouTube for
   the videos; The Numbers and Arabic Wikipedia for two runtimes; the Egyptian press for two
-  release dates. Each movie's comment in `src/modules/seed/datasets/egypt-2026.ts` names its
-  sources.
+  release dates; Egypt Post's office list (via egpostal.com) for the postal codes; Wikimedia
+  Commons for the gallery photos. Each movie's and theater's comment in
+  `src/modules/seed/datasets/egypt-2026.ts` names its sources.
 - **Estimates**: runtimes are mostly unpublished, so five are estimated from how often the
   cinemas repeat the film, and Shish Doo, El Gawahergy and the Coming soon films have a 110
   minute placeholder. Mamsos's release date is estimated (the press says December 2026).
   Opening hours run from each cinema's first show to its last; facilities are by venue type;
   zone prices all equal the standard ticket.
 - **Pictures** are downloaded from their sources when the seed runs (allow a few minutes, and
-  network access to `media0106.elcinema.com` and `i.ytimg.com`). Each is cropped to the
+  network access to `media0106.elcinema.com`, `i.ytimg.com` and `upload.wikimedia.org`). Each is cropped to the
   pipeline's size around its most salient part. They belong to their owners: use this dataset
   for staging and demos, not for a public launch.
 - To refresh it, add a dataset beside it in `src/modules/seed/datasets/` and register it in
@@ -252,7 +278,7 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
   the admin routes.
 - `test/support/halls.ts` adds halls through the admin routes: `createHall()`,
-  `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
+  `setHallStatus()`, `setHallSpec()` (format and screen size, #29), and `addActiveHall()`, which a theater needs before it can be published;
   `test/support/halls-probe.module.ts` adds a scripted layout participant beside the real ones
   (`HallLifecycleRegistry`).
 - `test/support/showtimes.ts` schedules through the admin routes: `createSchedulingFixture()`
@@ -372,8 +398,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
   `toShowtimePricesResponse()`).
 - **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`,
-  `docs/gh-9-discovery-showtimes/spec.md`): the public reads (`GET /home`, `/genres`, `/movies`
-  with the `showDate` filter, `/movies/{id}` with its side panel, `/movies/{id}/showtimes`,
+  `docs/gh-9-discovery-showtimes/spec.md`, `docs/gh-29-movie-facets/spec.md`): the public reads
+  (`GET /home`, `/genres`, `/movies` with the `showDate` filter and the sidebar `facets`, `/movies/{id}` with its side panel, `/movies/{id}/showtimes`,
   `/movies/{id}/similar`, `/people`, `/theaters`, `/theaters/{id}` with its halls,
   `/theaters/{id}/showtimes`) through the catalog, theater, hall and showtime read services. The
   home ticker and the cards' `hallCount` come from `HomeTickerSource` (bound to
@@ -756,8 +782,34 @@ SEED_DATASET=egypt-2026 \
 npm run seed:remote
 ```
 
-It is idempotent, so it can run again. Never run it against production. The **Seed staging**
-workflow runs it from Actions, with the dataset as an input.
+It is idempotent, so it can run again. Never run it against production.
+
+The **Seed staging** workflow (`.github/workflows/seed-staging.yml`) runs it:
+
+- **every morning at 05:17 UTC** (07:17 in Cairo in winter, 08:17 in summer, after the cinema day
+  turns at 06:00) with `SEED_DATASET=egypt-2026`. The seed schedules the server's cinema date and
+  the 6 after, so staging's showtime lists, movie matrix and show-date counts always cover the
+  next 7 cinema days; each run adds only the days that are missing and back-fills any new dataset
+  value. GitHub runs schedules only from the default branch's (`main`) copy of the workflow, and
+  checks out that branch's seed code and dataset; it pauses them after 60 days without a commit
+  to the repository. The demo's showtimes are not refreshed by it: they cover the 7 days after a
+  manual demo run;
+- **by hand** from Actions → Seed staging → Run workflow, with the dataset as an input (`demo` by
+  default);
+- on a push to `main-jf8hqi` that changes the workflow, with `egypt-2026`.
+
+**Staging holds both datasets today**: the demo was seeded there before `egypt-2026`, so the
+Maqady theaters and invented movies show beside the real ones. To reset it to one dataset:
+
+1. In the Supabase SQL editor, run `DROP SCHEMA maqady CASCADE;` (every table, and nothing
+   outside the schema).
+2. In Supabase Storage, empty the `media` bucket (`STORAGE_BUCKET`): its pictures belong to the
+   rows just dropped.
+3. Redeploy staging (Vercel → Deployments → Redeploy) and open the API once
+   (`GET /api/v1/health/ready`): the app migrates and creates the first admin from
+   `BOOTSTRAP_ADMIN_*` only when an instance boots, so an instance still warm from before the
+   drop would answer from the missing schema.
+4. Run Seed staging by hand with `egypt-2026` (or wait for the next morning's run).
 
 ## Layout
 

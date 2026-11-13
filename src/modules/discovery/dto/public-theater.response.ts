@@ -5,6 +5,10 @@ import { OpenStateResponse } from '../../theaters/dto/open-state.response';
 import { SpecialDateResponse } from '../../theaters/dto/special-date.response';
 import { TheaterPhoneResponse } from '../../theaters/dto/theater-phone.response';
 import { TodayHoursResponse } from '../../theaters/dto/today-hours.response';
+import { PHONE_NUMBER_PATTERN, POSTAL_CODE_PATTERN } from '../../theaters/theaters.constants';
+import { HALL_FORMATS } from '../../halls/enums';
+import { SCREEN_METERS_LIMITS } from '../../halls/halls.constants';
+import type { HallFormat } from '../../halls/types';
 import type { Facility } from '../../theaters/types';
 import { FACILITY_ENUM, TheaterCardResponse } from './theater-card.response';
 
@@ -54,9 +58,43 @@ export class PublicTheaterPageResponse {
     description: 'How many theaters match.',
   })
   total!: number;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    example: 25,
+    description:
+      'How many active halls the matching theaters have in all ("25 HALLS" next to `total`): the sum of `hallCount` over every theater that matches `openNow` and `parking`, whatever the page.',
+  })
+  totalHalls!: number;
 }
 
-/** An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"). */
+/** A hall's screen size, "22.1m x 12.3m" (#29 P4). */
+@ApiSchema({ name: 'HallScreen' })
+export class HallScreenResponse {
+  @ApiProperty({
+    type: Number,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 22.1,
+    description: 'Width in metres, at most 2 decimals: the "22.1m" of "22.1m x 12.3m".',
+  })
+  widthMeters!: number;
+
+  @ApiProperty({
+    type: Number,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 12.3,
+    description: 'Height in metres, at most 2 decimals: the "12.3m".',
+  })
+  heightMeters!: number;
+}
+
+/**
+ * An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"), with
+ * its projection format and screen size (#29 P4).
+ */
 @ApiSchema({ name: 'PublicHall' })
 export class PublicHallResponse {
   @ApiProperty({ type: 'integer', example: 3, description: 'Hall id.' })
@@ -80,6 +118,23 @@ export class PublicHallResponse {
     description: 'Wheelchair spaces among them.',
   })
   wheelchairCount!: number;
+
+  @ApiProperty({
+    enum: HALL_FORMATS,
+    enumName: 'HallFormat',
+    nullable: false,
+    example: 'dolby_atmos',
+    description:
+      'Its projection format, shown beside the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX).',
+  })
+  format!: HallFormat;
+
+  @ApiProperty({
+    type: () => HallScreenResponse,
+    nullable: true,
+    description: 'Its screen size, shown as "22.1m x 12.3m"; null when not known: show none.',
+  })
+  screen!: HallScreenResponse | null;
 }
 
 /** A gallery photo of a theater page. */
@@ -122,6 +177,16 @@ export class PublicTheaterResponse {
   @ApiProperty({ type: String, example: 'Cairo', description: 'City.' })
   city!: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description:
+      'Postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none.',
+  })
+  postalCode!: string | null;
+
   @ApiProperty({ type: Number, example: 30.0609, description: 'Latitude ("Directions").' })
   latitude!: number;
 
@@ -151,6 +216,26 @@ export class PublicTheaterResponse {
     description: 'Contact email; null when none is set or the theater hides its contacts.',
   })
   email!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    pattern: PHONE_NUMBER_PATTERN.source,
+    example: '+201001234567',
+    description:
+      'The dedicated WhatsApp number (E.164) for the Contact section; null when none is set or the theater hides its contacts.',
+  })
+  whatsapp!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uri',
+    nullable: true,
+    example: 'https://wa.me/201001234567',
+    description:
+      'The link of the WhatsApp button in the header and the Contact section (WhatsApp click-to-chat); null exactly when `whatsapp` is.',
+  })
+  whatsappUrl!: string | null;
 
   @ApiProperty({
     type: () => [TheaterPhoneResponse],

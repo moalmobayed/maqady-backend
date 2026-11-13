@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { ValidateBy, type ValidationArguments } from 'class-validator';
+import { ValidateBy, type ValidationArguments, type ValidationOptions } from 'class-validator';
 import { isCalendarDate } from '../../../common/time/time';
 import {
   CLOSED_WITH_TIMES_MESSAGE,
@@ -29,16 +29,19 @@ export function Trim(): PropertyDecorator {
  * decimals from `toString()`, which writes numbers below 1e-6 with an exponent (`1e-7`) and then
  * throws instead of refusing; `toExponential()` always has the exponent, so it is read here.
  */
-export function HasAtMostDecimals(places: number): PropertyDecorator {
-  return ValidateBy({
-    name: 'hasAtMostDecimals',
-    validator: {
-      validate: (value: unknown) =>
-        typeof value === 'number' && Number.isFinite(value) && decimalsOf(value) <= places,
-      defaultMessage: (args?: ValidationArguments) =>
-        `${args?.property ?? 'value'} must be a number with at most ${places} decimals`,
+export function HasAtMostDecimals(places: number, options?: ValidationOptions): PropertyDecorator {
+  return ValidateBy(
+    {
+      name: 'hasAtMostDecimals',
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'number' && Number.isFinite(value) && decimalsOf(value) <= places,
+        defaultMessage: (args?: ValidationArguments) =>
+          `${args?.property ?? 'value'} must be a number with at most ${places} decimals`,
+      },
     },
-  });
+    options,
+  );
 }
 
 /**
@@ -110,7 +113,7 @@ export function IsClosesTime(options: { optional?: boolean } = {}): PropertyDeco
 }
 
 /** The decimals of a finite number: `3.00609e+1` has 5 digits after the point, less 1. */
-function decimalsOf(value: number): number {
+export function decimalsOf(value: number): number {
   const [mantissa = '', exponent = '0'] = value.toExponential().split('e');
   const fractionDigits = mantissa.split('.')[1]?.length ?? 0;
   return Math.max(0, fractionDigits - Number(exponent));

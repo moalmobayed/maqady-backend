@@ -1,4 +1,6 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { HALL_FORMATS } from '../../halls/enums';
+import type { HallFormat } from '../../halls/types';
 import { SHOWTIME_DAYS } from '../discovery.constants';
 import { PublicShowtimeResponse, ShowtimeTheaterRefResponse } from './public-showtime.response';
 
@@ -13,6 +15,18 @@ export class MovieShowtimeTheaterResponse {
     description: 'Its showtimes that day, by start time.',
   })
   showtimes!: PublicShowtimeResponse[];
+
+  @ApiProperty({
+    enum: HALL_FORMATS,
+    enumName: 'HallFormat',
+    isArray: true,
+    minItems: 1,
+    uniqueItems: true,
+    example: ['standard', 'vip'],
+    description:
+      'The formats of its showtimes that day, each once, in the order Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX, MAX: the "Standard, VIP" chips beside the theater, without scanning `showtimes`.',
+  })
+  formats!: HallFormat[];
 }
 
 /** One cinema date of a movie's showtimes. */

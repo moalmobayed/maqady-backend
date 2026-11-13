@@ -2,13 +2,20 @@ import type { SeedDayHours, SeedMovie, SeedPerson, SeedShowtimeSlot, SeedTheater
 
 /**
  * The development seed's data: invented Cairo and Giza theaters, people and movies. Every name
- * is fictional, and the phone numbers, emails and coordinates are placeholders. The videos are
- * Blender Foundation open movies on YouTube (Creative Commons), so the embeds play.
+ * is fictional, and the phone and WhatsApp numbers, emails, postal codes and coordinates are
+ * placeholders; so are the hall formats and screen sizes and the movies' "Demo audience" scores
+ * (#29), there so every field has an example. The videos are Blender Foundation open movies on
+ * YouTube (Creative Commons), so the embeds play.
  */
 
 /** Every weekday from `opens` to `closes`; a closing at or before 06:00 is the next day. */
 function daily(opens: string, closes: string): SeedDayHours[] {
   return [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, closed: false, opens, closes }));
+}
+
+/** Generated gallery pictures, one per caption. */
+function gallery(...captions: string[]): SeedTheater['gallery'] {
+  return captions.map((caption) => ({ caption }));
 }
 
 /** `daily()` with later closings on Thursday (4) and Friday (5) nights. */
@@ -43,9 +50,15 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
       opens: '10:00',
       closes: '03:00',
     },
-    galleryCaptions: ['The lobby', 'Hall 1 from the back row'],
+    gallery: gallery('The lobby', 'Hall 1 from the back row', 'The VIP lounge'),
     publish: true,
     colour: '#1f4e79',
+    halls: [
+      { name: 'Hall 1', format: 'vip', screenWidthMeters: 12.4, screenHeightMeters: 5.2 },
+      { name: 'Hall 2', format: 'standard', screenWidthMeters: 14.6, screenHeightMeters: 6.1 },
+    ],
+    postalCode: '11211',
+    whatsapp: '+201001234567',
   },
   {
     name: 'Maqady Downtown',
@@ -62,9 +75,14 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
     facilities: ['street_parking', 'cafe_bar'],
     hours: lateWeekend('10:00', '00:00', '02:00'),
     specialDate: null,
-    galleryCaptions: ['The 1940s facade on Talaat Harb'],
+    gallery: gallery('The 1940s facade on Talaat Harb', 'The foyer', 'The balcony'),
     publish: true,
     colour: '#7a2e2e',
+    halls: [
+      { name: 'Hall 1', format: 'standard', screenWidthMeters: 11.8, screenHeightMeters: 4.9 },
+    ],
+    postalCode: '11511',
+    whatsapp: '+201112345678',
   },
   {
     name: 'Maqady Heliopolis',
@@ -81,9 +99,12 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
     facilities: ['wheelchair_access', 'free_parking', 'kids_room', 'food_court'],
     hours: daily('11:00', '00:30'),
     specialDate: null,
-    galleryCaptions: ['The kids room'],
+    gallery: gallery('The kids room', 'The IMAX hall', 'The ticket hall'),
     publish: true,
     colour: '#2e6b4f',
+    halls: [{ name: 'Hall 1', format: 'imax', screenWidthMeters: 22.1, screenHeightMeters: 12.3 }],
+    postalCode: '11757',
+    whatsapp: '+201223456789',
   },
   {
     name: 'Maqady New Cairo',
@@ -97,12 +118,25 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
     email: 'newcairo@maqady.example',
     showContactsPublic: true,
     phones: [{ label: 'Main line', number: '+20226148800' }],
-    facilities: ['wheelchair_access', 'free_parking', 'valet_parking', 'food_court', 'cafe_bar'],
+    facilities: [
+      'wheelchair_access',
+      'free_parking',
+      'valet_parking',
+      'food_court',
+      'cafe_bar',
+      'prayer_room',
+    ],
     hours: lateWeekend('12:00', '01:00', '02:30'),
     specialDate: null,
-    galleryCaptions: ['The concourse', 'The cafe bar'],
+    gallery: gallery('The concourse', 'The cafe bar', 'The 4DX hall'),
     publish: true,
     colour: '#5b3f8c',
+    halls: [
+      { name: 'Hall 1', format: 'dolby_atmos', screenWidthMeters: 18, screenHeightMeters: 7.6 },
+      { name: 'Hall 2', format: '4dx', screenWidthMeters: 12.5, screenHeightMeters: 5.2 },
+    ],
+    postalCode: '11835',
+    whatsapp: '+201554567890',
   },
   {
     name: 'Maqady Sheikh Zayed',
@@ -116,12 +150,13 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
     email: null,
     showContactsPublic: false,
     phones: [{ label: 'Main line', number: '+20238514400' }],
-    facilities: ['free_parking', 'food_court'],
+    facilities: ['free_parking', 'food_court', 'prayer_room'],
     hours: daily('13:00', '01:00'),
     specialDate: null,
-    galleryCaptions: [],
+    gallery: gallery('Arkan Plaza at night', 'The MAX hall', 'The food court'),
     publish: true,
     colour: '#8c6a1f',
+    halls: [{ name: 'Hall 1', format: 'max', screenWidthMeters: 20.5, screenHeightMeters: 8.6 }],
   },
   {
     name: 'Maqady Dokki',
@@ -138,7 +173,8 @@ export const SEED_THEATERS: readonly SeedTheater[] = [
     facilities: ['wheelchair_access', 'street_parking'],
     hours: daily('14:00', '23:00'),
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
+    postalCode: '12311',
     // Still being set up: a draft never appears on the customer site.
     publish: false,
     colour: '#3d5a66',
@@ -215,6 +251,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Nile Light Pictures',
     budgetLabel: 'EGP 48M',
     filmingLocations: 'Marsa Alam, Red Sea',
+    rating: 8.4,
+    ratingSource: 'Demo audience',
     genres: ['mystery', 'drama'],
     videos: videos(SINTEL, TEARS_OF_STEEL),
     photos: STILLS,
@@ -243,6 +281,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Corniche Films',
     budgetLabel: null,
     filmingLocations: 'Downtown Cairo and Zamalek',
+    rating: 7.1,
+    ratingSource: 'Demo audience',
     genres: ['romance', 'drama'],
     videos: videos(TEARS_OF_STEEL, SINTEL),
     photos: STILLS,
@@ -269,6 +309,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Falcon Studios',
     budgetLabel: 'EGP 90M',
     filmingLocations: 'Siwa Oasis and the White Desert',
+    rating: 6.6,
+    ratingSource: 'Demo audience',
     genres: ['action', 'thriller', 'sci-fi'],
     videos: videos(TEARS_OF_STEEL, BIG_BUCK_BUNNY),
     photos: STILLS,
@@ -296,6 +338,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Corniche Films',
     budgetLabel: null,
     filmingLocations: 'Khan el-Khalili, Old Cairo',
+    rating: 7.8,
+    ratingSource: 'Demo audience',
     genres: ['comedy', 'family'],
     videos: videos(BIG_BUCK_BUNNY, SINTEL),
     photos: STILLS,
@@ -322,6 +366,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Falcon Studios',
     budgetLabel: 'EGP 65M',
     filmingLocations: 'Hurghada and Giftun Island',
+    rating: 5.9,
+    ratingSource: 'Demo audience',
     genres: ['adventure', 'thriller'],
     videos: videos(SINTEL, BIG_BUCK_BUNNY),
     photos: STILLS,
@@ -348,6 +394,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Papyrus Animation',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 8.9,
+    ratingSource: 'Demo audience',
     genres: ['animation', 'family', 'comedy'],
     videos: videos(BIG_BUCK_BUNNY, TEARS_OF_STEEL),
     photos: [{ kind: 'still', caption: 'Falafel and Taameya' }],
@@ -373,6 +421,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Nile Light Pictures',
     budgetLabel: null,
     filmingLocations: 'Garden City, Cairo',
+    rating: 6.2,
+    ratingSource: 'Demo audience',
     genres: ['romance', 'comedy'],
     videos: videos(SINTEL, TEARS_OF_STEEL),
     photos: STILLS,
@@ -506,7 +556,8 @@ export const SEED_MOVIES: readonly SeedMovie[] = [
  * The seed's showtimes, in each published theater's `Hall 1`: four slots a day everywhere (each
  * leaves the 20-minute cleaning gap before the next, and ends before the theater closes), plus
  * an after-midnight slot at Downtown and New Cairo that fits only their late Thursday and Friday
- * nights. Every movie is Now showing; most play in several theaters.
+ * nights, and two a day in the `Hall 2` of Zamalek and New Cairo, so their days show two hall
+ * formats. Every movie is Now showing; most play in several theaters.
  */
 export const SEED_SHOWTIMES: readonly SeedShowtimeSlot[] = [
   ...slots('Maqady Zamalek', [
@@ -521,6 +572,8 @@ export const SEED_SHOWTIMES: readonly SeedShowtimeSlot[] = [
     'Red Sea Rising',
     'Garden City Romance',
   ]),
+  { theater: 'Maqady Zamalek', hall: 'Hall 2', startTime: '14:30', movie: 'Garden City Romance' },
+  { theater: 'Maqady Zamalek', hall: 'Hall 2', startTime: '20:00', movie: 'The Last Lighthouse' },
   { theater: 'Maqady Downtown', startTime: '00:15', movie: 'Khan el-Khalili Blues' },
   ...slots('Maqady Heliopolis', [
     'Little Falafel Detectives',
@@ -535,6 +588,8 @@ export const SEED_SHOWTIMES: readonly SeedShowtimeSlot[] = [
     'Nile After Midnight',
   ]),
   { theater: 'Maqady New Cairo', startTime: '00:20', movie: 'Nile After Midnight' },
+  { theater: 'Maqady New Cairo', hall: 'Hall 2', startTime: '15:00', movie: 'Sandstorm Protocol' },
+  { theater: 'Maqady New Cairo', hall: 'Hall 2', startTime: '20:30', movie: 'Red Sea Rising' },
   ...slots('Maqady Sheikh Zayed', [
     'Red Sea Rising',
     'Sandstorm Protocol',

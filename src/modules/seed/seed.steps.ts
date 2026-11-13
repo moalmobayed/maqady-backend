@@ -1,5 +1,7 @@
 import { addDays } from '../../common/time/time';
+import { DEFAULT_HALL_FORMAT } from '../halls/halls.constants';
 import {
+  SEED_BACKFILL_FACILITIES,
   SEED_HALL_NAME,
   SEED_IMAGE_SIZES,
   SEED_LIST_LIMIT,
@@ -9,12 +11,16 @@ import {
 import { downloadedImage, placeholderImage } from './seed-images';
 import type {
   SeedAdminMovie,
+  SeedAdminPhoto,
   SeedAdminTheater,
   SeedApi,
   SeedContext,
   SeedCreatedRow,
+  SeedGalleryPhoto,
   SeedGenreRow,
+  SeedHall,
   SeedHallRow,
+  SeedHallSpec,
   SeedImageSize,
   SeedMovie,
   SeedNamedRow,
@@ -97,6 +103,36 @@ async function picture(
   return url === null ? null : image(url, size, colour, seed);
 }
 
+/** A dataset hall entry as a `SeedHall`: a name alone is a standard hall without a screen. */
+export function seedHallOf(entry: string | SeedHall): SeedHall {
+  return typeof entry === 'string' ? { name: entry } : entry;
+}
+
+/** The format and screen of a dataset hall, only the fields it sets. */
+function hallSpecOf(hall: SeedHall): SeedHallSpec {
+  return {
+    ...(hall.format !== undefined ? { format: hall.format } : {}),
+    ...(hall.screenWidthMeters !== undefined && hall.screenHeightMeters !== undefined
+      ? { screenWidthMeters: hall.screenWidthMeters, screenHeightMeters: hall.screenHeightMeters }
+      : {}),
+  };
+}
+
+/** The dataset values a hall still at the defaults lacks: the spec without a `standard` format. */
+function backFillOf(spec: SeedHallSpec): SeedHallSpec {
+  const { format, ...screen } = spec;
+  return format === undefined || format === DEFAULT_HALL_FORMAT ? screen : spec;
+}
+
+/** A hall nobody gave a format or screen yet: what the halls seeded before #29 are. */
+function atHallDefaults(hall: SeedHallRow): boolean {
+  return (
+    hall.format === DEFAULT_HALL_FORMAT &&
+    hall.screenWidthMeters === null &&
+    hall.screenHeightMeters === null
+  );
+}
+
 /** Where `context.hallIds` keeps a theater's hall. */
 function hallKey(theater: string, hall: string): string {
   return `${theater}|${hall}`;
@@ -128,6 +164,8 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
         parkingInfo: theater.parkingInfo,
         email: theater.email,
         showContactsPublic: theater.showContactsPublic,
+        postalCode: theater.postalCode ?? null,
+        whatsapp: theater.whatsapp ?? null,
       });
       id = (await api.write<SeedCreatedRow>('POST', '/admin/theaters', body)).id;
       created += 1;
@@ -138,7 +176,11 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
   return { created, kept: theaters.length - created };
 }
 
-/** Sets whatever of the theater is still missing: hours, phones, facilities, prices, photos. */
+/**
+ * Sets whatever of the theater is still missing: the postal code and WhatsApp number, hours,
+ * phones, facilities (or the #29 facilities on a theater seeded before them), prices, the cover
+ * and the gallery photos (or the rest of them after a run that stopped part way).
+ */
 async function completeTheater(
   context: SeedContext,
   id: number,
@@ -147,11 +189,13 @@ async function completeTheater(
   const { api } = context;
   const path = `/admin/theaters/${id}`;
   const current = await api.get<SeedAdminTheater>(path);
+  const missing = missingTheaterFields(current, theater);
+  if (Object.keys(missing).length > 0) await api.write('PATCH', path, missing);
   if (current.hours.length === 0) await api.write('PUT', `${path}/hours`, { days: theater.hours });
   if (current.phones.length === 0 && theater.phones.length > 0) {
     await api.write('PUT', `${path}/phones`, { phones: theater.phones });
   }
-  if (current.facilities.length === 0 && theater.facilities.length > 0) {
+  if (needsFacilities(current.facilities, theater.facilities)) {
     await api.write('PUT', `${path}/facilities`, { facilities: theater.facilities });
   }
   if (current.defaultPrices === null) {
@@ -180,21 +224,61 @@ async function completeTheater(
       filename: filename(`${theater.name} cover`),
     });
   }
-  if (current.photos.length === 0) {
-    const { width, height } = SEED_IMAGE_SIZES.gallery;
-    for (const caption of theater.galleryCaptions) {
-      await api.upload('POST', `${path}/photos`, {
-        fields: { usage: 'gallery', caption },
-        file: await placeholderImage(width, height, theater.colour, `${theater.name} ${caption}`),
-        filename: filename(caption),
-      });
-    }
+  for (const photo of missingGallery(current.photos, theater.gallery)) {
+    const seed = `${theater.name} ${photo.caption}`;
+    await api.upload('POST', `${path}/photos`, {
+      fields: { usage: 'gallery', caption: photo.caption },
+      file: await image(photo.url, SEED_IMAGE_SIZES.gallery, theater.colour, seed),
+      filename: filename(photo.caption),
+    });
   }
 }
 
 /**
+ * The dataset's gallery photos still to upload: all of them on an empty gallery, or the rest of
+ * them after a run that stopped part way (the stored captions are the dataset's first ones, in
+ * order). A gallery an admin changed is left alone.
+ */
+export function missingGallery(
+  current: readonly SeedAdminPhoto[],
+  gallery: readonly SeedGalleryPhoto[],
+): readonly SeedGalleryPhoto[] {
+  const seededFirst = current.every((photo, index) => photo.caption === gallery[index]?.caption);
+  return seededFirst ? gallery.slice(current.length) : [];
+}
+
+/**
+ * Whether to send the dataset's facilities: the theater has none yet, or it has exactly the
+ * dataset's minus the facilities #29 added (`SEED_BACKFILL_FACILITIES`), as a theater seeded
+ * before them does. Facilities an admin changed otherwise are left alone.
+ */
+export function needsFacilities(current: readonly string[], dataset: readonly string[]): boolean {
+  if (dataset.length === 0) return false;
+  if (current.length === 0) return true;
+  const missing = dataset.filter((facility) => !current.includes(facility));
+  return (
+    missing.length > 0 &&
+    missing.every((facility) => SEED_BACKFILL_FACILITIES.includes(facility)) &&
+    current.every((facility) => dataset.includes(facility))
+  );
+}
+
+/** The dataset's postal code and WhatsApp number that the stored theater does not have yet. */
+function missingTheaterFields(
+  current: SeedAdminTheater,
+  theater: SeedTheater,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+  if (current.postalCode === null && theater.postalCode) fields.postalCode = theater.postalCode;
+  if (current.whatsapp === null && theater.whatsapp) fields.whatsapp = theater.whatsapp;
+  return fields;
+}
+
+/**
  * Each theater to publish gets its halls (left out, only `SEED_HALL_NAME`), each with the
- * standard layout and made active.
+ * standard layout, its format and screen size (#29 P4), and made active. An existing hall still
+ * at the defaults (`standard`, no screen) gets the dataset's non-default values in the same
+ * `PATCH` that activates it, or one of its own; a hall an admin already changed is left alone.
  */
 async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
   const { api } = context;
@@ -204,16 +288,25 @@ async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
     const id = context.theaterIds.get(theater.name);
     if (id === undefined || !theater.publish) continue;
     const existing = await listAll<SeedHallRow>(api, `/admin/theaters/${id}/halls`);
-    for (const name of theater.halls ?? [SEED_HALL_NAME]) {
+    for (const entry of theater.halls ?? [SEED_HALL_NAME]) {
+      const seedHall = seedHallOf(entry);
+      const { name } = seedHall;
+      const spec = hallSpecOf(seedHall);
       let hall = existing.find((row) => row.name === name);
+      let backFill: SeedHallSpec = {};
       if (hall === undefined) {
-        hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, { name });
+        hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, {
+          name,
+          ...spec,
+        });
         created += 1;
       } else {
         kept += 1;
+        if (atHallDefaults(hall)) backFill = backFillOf(spec);
       }
-      if (hall.status !== 'active') {
-        await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
+      const changes = { ...backFill, ...(hall.status !== 'active' ? { status: 'active' } : {}) };
+      if (Object.keys(changes).length > 0) {
+        await api.write('PATCH', `/admin/halls/${hall.id}`, changes);
       }
       context.hallIds.set(hallKey(theater.name, name), hall.id);
     }
@@ -303,6 +396,7 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
         productionCompany: movie.productionCompany,
         budgetLabel: movie.budgetLabel,
         filmingLocations: movie.filmingLocations,
+        ...ratingOf(movie),
         genreIds: movie.genres.map((slug) => {
           const genreId = genres.get(slug);
           if (genreId === undefined) throw new Error(`Seed: no genre "${slug}"`);
@@ -318,7 +412,19 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
   return { created, kept: movies.length - created };
 }
 
-/** Sets whatever of the movie is still missing: poster, photos, videos, credits, status. */
+/** The dataset's score and its source, as the admin movie routes take them; none when left out. */
+function ratingOf(movie: SeedMovie): Record<string, unknown> {
+  if (movie.rating === undefined) return {};
+  return {
+    rating: movie.rating,
+    ...(movie.ratingSource === undefined ? {} : { ratingSource: movie.ratingSource }),
+  };
+}
+
+/**
+ * Sets whatever of the movie is still missing: poster, photos, videos, credits, the score (on a
+ * movie seeded before it had one), status.
+ */
 async function completeMovie(context: SeedContext, id: number, movie: SeedMovie): Promise<void> {
   const { api } = context;
   const path = `/admin/movies/${id}`;
@@ -378,6 +484,7 @@ async function completeMovie(context: SeedContext, id: number, movie: SeedMovie)
   if (current.backdropPhotoId === null && backdrop) changes.backdropPhotoId = backdrop.id;
   const hero = current.videos.find((video) => video.youtubeId === movie.videos[0]?.youtubeId);
   if (current.heroVideoId === null && hero) changes.heroVideoId = hero.id;
+  if (current.rating === null) Object.assign(changes, ratingOf(movie));
   if (movie.status !== 'draft' && current.status !== movie.status) changes.status = movie.status;
   if (Object.keys(changes).length > 0) await api.write('PATCH', path, changes);
 }

@@ -104,6 +104,8 @@ export class TheaterResponseMapper {
       parkingInfo: theater.parkingInfo,
       email: theater.email,
       showContactsPublic: theater.showContactsPublic,
+      postalCode: theater.postalCode,
+      whatsapp: theater.whatsapp,
       phones: theater.phones.map(toPhoneResponse),
       facilities: [...theater.facilities],
       hours: view.hours.map(toDayHoursResponse),

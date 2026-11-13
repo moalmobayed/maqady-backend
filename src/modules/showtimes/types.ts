@@ -3,7 +3,7 @@ import type { StaffPrincipal } from '../../common/auth/types';
 import type { Currency, Money } from '../../common/money/types';
 import type { CalendarDate } from '../../common/time/types';
 import type { MovieRef, MovieSchedulingInfo } from '../catalog/types';
-import type { HallSummary } from '../halls/types';
+import type { HallFormat, HallSummary } from '../halls/types';
 import type { OpeningWindow, TheaterStatus, TheaterSummary, ZonePrices } from '../theaters/types';
 import type {
   BATCH_RESULTS,
@@ -247,6 +247,8 @@ export interface ShowtimeView extends ShowtimeSpan {
   readonly theaterId: number;
   readonly hallId: number;
   readonly hallName: string;
+  /** The hall's current projection format (#29 P4): a label, never a price. */
+  readonly hallFormat: HallFormat;
   readonly cinemaDate: CalendarDate;
   readonly status: ShowtimeStatus;
   readonly cancelReason: CancelReason | null;
@@ -321,6 +323,18 @@ export interface ScheduledShowtimeFilter {
   readonly movieIds?: readonly number[];
   readonly theaterIds?: readonly number[];
   readonly startsAfter?: Date;
+}
+
+/** A movie with a scheduled showtime on a cinema date (U8 "show date" options). */
+export interface ScheduledMovieDate {
+  readonly movieId: number;
+  readonly cinemaDate: CalendarDate;
+}
+
+/** A distinct `(movie_id, cinema_date)` pair of scheduled showtimes. */
+export interface ScheduledMovieDateRow {
+  readonly movie_id: number;
+  readonly cinema_date: CalendarDate;
 }
 
 /** The first scheduled showtime per movie on `cinemaDate` starting after `after` (U8 ticker). */

@@ -2,7 +2,7 @@
 title: PRD v2.0 — Maqady (copy of the shared doc)
 owner: Mohamed Tarek
 status: Reference
-last_verified: 2026-10-20
+last_verified: 2026-11-13
 tags: [reference, prd, requirements]
 ---
 
@@ -24,10 +24,10 @@ Version 2.0 keeps the goals of PRD v1.0 and all 20 designed screens, but changes
 | Box office sales | Sell, or reserve with "Pay later" | Sell and take payment on the spot (cash or card terminal). No reservations. |
 | Payment provider | Stripe | A simulated provider that behaves like a real one. No real money moves. |
 | Booking fee | EGP 12 per seat | None |
-| Hall formats | 2D, 3D, IMAX, 4DX, Dolby Atmos, VIP recliners | None. Every hall is a standard hall. |
+| Hall formats | 2D, 3D, IMAX, 4DX, Dolby Atmos, VIP recliners | None until #29. Since #29: each hall has a format label (Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX, MAX; standard by default) and an optional screen size, shown to customers; never a price or a filter |
 | Ticket prices | Several conflicting models (by format, by zone, a format × zone grid) | By row zone: Front, Middle, Back. Each theater sets defaults; a showtime can override them. |
 | Seat maps | One 12 × 16 grid for every hall | Each hall has its own grid, up to 15 rows × 20 seats |
-| Movie scores | "Maqady rating" with votes, sort by rating | Removed |
+| Movie scores | "Maqady rating" with votes, sort by rating | Removed. Since #29: an admin-entered score out of 10 from an outside source (for example "elCinema users"), shown on the movie page; no votes, no sorting by score |
 | Videos | Uploads up to 2 GB, or YouTube links | YouTube links only. Photos are still uploaded. |
 | Cancelling | Separate Cancel and Refund; "tickets only" refunds | Cancelling a paid booking always refunds it in full |
 | Staff | One hard-coded admin | Staff accounts with two roles: Admin and Box office |
@@ -115,7 +115,7 @@ v1 delivers all 20 designed screens working on real data, updated by this PRD, p
 
 - Pay at the cinema and unpaid reservations
 - Promo codes, discounts, gift cards and loyalty points
-- Movie ratings, reviews and watchlists
+- Movie ratings, reviews and watchlists (customers rating movies; an admin-entered score from an outside source is in, #29)
 - Video uploads (videos are YouTube links)
 - Saved cards (see Calls open for veto)
 - Social sign-in, phone sign-in, guest checkout without an account
@@ -178,6 +178,7 @@ The server enforces every rule below; the UI only explains them. Anything that e
 3. Aisles fall after seat 4 and 4 seats before the end of each row.
 4. A hall's layout is locked while any upcoming showtime in it has an active booking. The editor names the showtimes that block it.
 5. A hall that has never had a showtime can be deleted. Otherwise it is retired: kept for history, hidden from scheduling.
+6. Since #29, a hall has a projection format (Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX; Standard by default) and an optional screen size in metres (width and height together). The format is a label on the hall and its showtimes: prices stay by zone, and nothing filters by format.
 
 ### Theaters and movies
 
@@ -234,12 +235,12 @@ Every data screen has loading, empty and error states, and every screen works on
 
 ### C3 Movie Details `/movies/:movieId`
 
-- Header: title, genres, runtime, age rating, release date, language. The "Maqady rating" line is removed.
+- Header: title, genres, runtime, age rating, release date, language. The "Maqady rating" line is removed; since #29 the hero shows the admin-entered score with a star (for example 8.4) and its source small under it, when the movie has one.
 - Media viewer: YouTube videos (title, type, optional length) and photos (type Still or Behind the scenes, with caption). Counts of each.
 - Synopsis. Tag chips are the movie's genres only.
 - Credits: Director, Writers, Stars, and the full cast and crew grid. Each name opens Movies filtered by that person.
 - Side panel: Book tickets, Watch trailer, the real next show today, how many cinemas show it, and "From EGP x · pay online".
-- Showtimes: 7 cinema days, a theater picker with counts, and time chips with start–end time, hall, "from" price and a Sold out or Started state. No format.
+- Showtimes: 7 cinema days, a theater picker with counts, and time chips with start–end time, hall, "from" price and a Sold out or Started state. Since #29 each chip also shows its hall's format, and each theater's day lists its formats ("Standard, VIP").
 - An after-midnight chip names its real day, for example "00:30 Sat" under Friday.
 - Notes: "Prices vary by seat zone." and "Showtimes that have started can't be booked."
 - Details table: release date, runtime, age rating, language, country, production company. Budget and filming locations appear only when an admin filled them in.
@@ -248,14 +249,16 @@ Every data screen has loading, empty and error states, and every screen works on
 ### C4 Theaters `/theaters`
 
 - Cards and map as designed: photo, name, address, open state, today's and weekly hours, box office phone, up to 5 facilities, Showtimes & info, Directions, Call.
+- Since #29: each card shows the postal code with the city (for example "Cairo 11211") when the theater has one, and the page header shows the total of active halls of the matching theaters ("25 HALLS") next to the theater count, whatever page is shown.
 - Filters: All, Open now, Parking (free or valet). The IMAX and VIP filters are removed.
 - Open state follows the cinema day, so 01:30 on Thursday is judged by Wednesday's hours.
 
 ### C5 Theater Details `/theaters/:theaterId`
 
-- As designed, without formats. Halls read "Hall 3 · 186 seats · 4 wheelchair spaces".
+- As designed. Halls read "Hall 3 · 186 seats · 4 wheelchair spaces"; since #29 each hall also shows its format and, when set, its screen size ("22.1m x 12.3m"), and the showtime chips their hall's format.
 - Opening hours show any special dates in the next 7 days.
 - Phones and email appear only when the theater's "show contacts" setting is on.
+- Since #29: a dedicated WhatsApp number, for the header's WhatsApp button and the Contact section, follows the same "show contacts" setting; the address shows the postal code with the city.
 - Photos come from the admin's uploads.
 - Showtimes here: 7 cinema days, each film with its time chips.
 
@@ -350,6 +353,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - Details tab adds optional Budget and Filming locations, and drops "Original title (Arabic)".
 - Media tab: poster upload (2:3); backdrop picked from the photos; videos are YouTube links only, each with title, type and optional length; photos upload as JPG or PNG up to 10 MB, each with type (Still or Behind the scenes) and caption. The "Upload from computer" video tab is removed.
 - Cast & crew roles: Actor, Voice, Director, Writer, Producer, Cinematographer, Composer. Actor and Voice take a character name.
+- Details tab (#29): an optional rating score, 0 to 10 with one decimal, and its source (for example "elCinema users"); a source needs a score.
 - Publishing: status, "Feature in the home carousel" with its position (1 to 5), and the hero trailer. The "Tickets on sale from" and "Hide after" dates are removed.
 - Header shows the real "Last edited by" staff member and time.
 - Delete is allowed only for a movie that never had a booking; otherwise archive.
@@ -365,9 +369,10 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - List as designed, with status Draft, Active or Sales paused.
 - New theater wizard as designed. New halls start as a standard 12 × 16 layout. The theater is created as a Draft.
 - Header: a Publish button for drafts and the Selling toggle (Active or Sales paused).
-- Facilities: Wheelchair access, Free parking, Valet parking, Street parking, Café & bar, Food court, Kids room. Format facilities (IMAX, 4DX, Dolby Atmos, 3D, VIP recliners) are removed.
+- Facilities: Wheelchair access, Free parking, Valet parking, Street parking, Café & bar, Food court, Kids room, and since #29 Prayer room. Format facilities (IMAX, 4DX, Dolby Atmos, 3D, VIP recliners) are removed.
+- Location and contacts (#29): an optional postal code (5 digits) and an optional WhatsApp number, beside the address and the phones.
 - New Photos tab: a cover photo and a gallery, uploaded.
-- Halls tab: name, seats, layout ("15 × 20"), status (Draft, Active, Retired), Edit layout, Add hall, Delete or Retire. No format column.
+- Halls tab: name, seats, layout ("15 × 20"), status (Draft, Active, Retired), Edit layout, Add hall, Delete or Retire. Since #29 also the format and the screen size (metres, width and height together), set when adding a hall or editing it.
 - Pricing tab: one row of default prices for Front, Middle and Back. The booking fee and pay-at-cinema settings are removed.
 - Hall layout editor: rows 4–15, seats per row 8–20, a zone per row, wheelchair spaces, "no seat" gaps, automatic aisles and a live seat summary. Saving a hall in use is refused and lists the showtimes that block it.
 - Delete theater is enabled only for a Draft with no showtimes.

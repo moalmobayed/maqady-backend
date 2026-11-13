@@ -2603,7 +2603,7 @@ paths:
         - staff: []
   /admin/theaters/{id}:
     get:
-      description: 'Admin only: the theater page, in any status. Location, contacts, facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.'
+      description: 'Admin only: the theater page, in any status. Location (with the postal code), contacts (with the WhatsApp number), facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.'
       operationId: getTheater
       parameters:
         - name: id
@@ -2801,7 +2801,7 @@ paths:
         - staff: []
     patch:
       description: |-
-        Admin only: edits the Location and Contacts fields, and changes the status, in one transaction (fields first).
+        Admin only: edits the Location and Contacts fields (`postalCode` and `whatsapp` included; null clears them), and changes the status, in one transaction (fields first).
 
         - `status: active` on a draft publishes it. It needs the zone prices, the weekly hours (all seven days set, at least one open) and an active hall; otherwise `THEATER_NOT_PUBLISHABLE`, with `details.missing` naming what is missing.
         - `sales_paused` and `active` toggle selling on a published theater. A paused theater is hidden from customers; existing tickets stay valid.
@@ -3899,7 +3899,7 @@ paths:
         - staff: []
   /admin/theaters/{id}/facilities:
     put:
-      description: 'Admin only: the Facilities tab. The whole set. Recorded in the activity log.'
+      description: 'Admin only: the Facilities tab. The whole set, from the `Facility` list (`prayer_room` since #29). An unknown facility is `VALIDATION_FAILED`. Recorded in the activity log.'
       operationId: replaceFacilities
       parameters:
         - name: id
@@ -8848,7 +8848,7 @@ paths:
       security:
         - staff: []
     post:
-      description: 'Admin only (box office staff get `FORBIDDEN`). "Add movie": creates a **draft** that only admins see. Only `title` is required; `ageRating` defaults to `12+`. Publish it later with `PATCH /admin/movies/{id}`. Requires an `Idempotency-Key`. Recorded in the activity log.'
+      description: 'Admin only (box office staff get `FORBIDDEN`). "Add movie": creates a **draft** that only admins see. Only `title` is required; `ageRating` defaults to `12+`. An optional `rating` (0 to 10, one decimal) with its `ratingSource` is the score customers see on the movie page; a source without a rating is `VALIDATION_FAILED` on `ratingSource`. Publish it later with `PATCH /admin/movies/{id}`. Requires an `Idempotency-Key`. Recorded in the activity log.'
       operationId: createMovie
       parameters:
         - name: Idempotency-Key
@@ -9550,6 +9550,7 @@ paths:
         - **Publishing.** A Coming soon or Now showing movie needs a synopsis, runtime, release date and at least one genre (a poster is optional): `MOVIE_NOT_PUBLISHABLE` with `details.missing`. Clearing one of them on a public movie is refused the same way.
         - **Carousel.** `featuredPosition` 1 to 5 needs a public movie with a hero video (`MOVIE_NOT_FEATURABLE` with `details.reasons`), and a position no other movie holds (`FEATURED_POSITION_TAKEN` with the holder's `movieId`). Moving to draft or archived frees the position.
         - **Media.** `heroVideoId` and `backdropPhotoId` must be this movie's own (`VALIDATION_FAILED`); a backdrop must be 16:9 and at least 1280 × 720 (`IMAGE_WRONG_SHAPE`).
+        - **Rating score.** `rating` is 0 to 10 with at most one decimal, or null to clear; `ratingSource` names where it comes from. A movie may have a rating without a source, never a source without a rating: `VALIDATION_FAILED` on `ratingSource`, so clear both together (`rating: null, ratingSource: null`).
         - An unknown genre id is `VALIDATION_FAILED` on `genreIds`. A change to the values the movie already has answers `200` and changes nothing.
         - Recorded in the activity log with the names of the changed fields.
       operationId: updateMovie
@@ -15040,7 +15041,7 @@ paths:
       security:
         - staff: []
     post:
-      description: 'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. A theater is published only with an active hall. The name is unique among the theater''s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.'
+      description: 'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. Optionally give it its projection `format` (`standard` when left out) and its screen size in metres (`screenWidthMeters` with `screenHeightMeters`, 1 to 50 with at most 2 decimals, both or neither); customers see both on the theater page and the format on every showtime chip. A theater is published only with an active hall. The name is unique among the theater''s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.'
       operationId: createHall
       parameters:
         - name: id
@@ -15532,14 +15533,15 @@ paths:
         - staff: []
     patch:
       description: |-
-        Admin only: renames the hall and changes its status, in one transaction (name first).
+        Admin only: renames the hall, changes its projection format and screen size, and changes its status, in one transaction (the status last).
 
+        - `format` is the label customers see on the hall and on its showtime chips; prices stay by seat zone. `screenWidthMeters` and `screenHeightMeters` (metres, 1 to 50, at most 2 decimals) are sent together; both null clears the size. One side alone, or a number beside a null, is `VALIDATION_FAILED`. These change in any status, a retired hall's too.
         - `status: active` on a draft makes it schedulable; a theater is published only with an active hall.
         - `status: retired` (from draft or active) keeps the hall for history and hides it from scheduling. It needs no scheduled showtime that has not ended (`HALL_NOT_RETIRABLE`, with `details.reasons`). Retiring is final. Retiring the last active hall of a published theater is allowed: the theater stays published.
         - Any other status change (back to draft, out of retired) is `CONFLICT` with `details.from` and `details.to`.
         - The name is unique among the theater's halls, ignoring letter case (`CONFLICT`).
         - A request that changes nothing answers `200` and records nothing.
-        - Recorded in the activity log.
+        - Recorded in the activity log: one `hall.updated` naming the changed fields, and the status change.
       operationId: updateHall
       parameters:
         - name: id
@@ -15828,7 +15830,7 @@ paths:
                       message: Something went wrong on our side.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
-      summary: Rename, activate or retire a hall
+      summary: Edit, activate or retire a hall
       tags:
         - 'Admin: halls'
       security:
@@ -16856,6 +16858,8 @@ paths:
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
         One page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): `genres` (slugs) and `people` (person ids) match any of their values, `q` a title or a credited person's name. `total` counts the tab with the filters ("Showing n of total"); `tabCounts` counts both tabs with the same filters, for the tab labels. Load more with `cursor` = `nextCursor`; pages never repeat or skip a movie. `showDate` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, `tabCounts.nowShowing` is the filtered total and `tabCounts.comingSoon` ignores it, and with `status=coming_soon` it is `400 VALIDATION_FAILED`.
+
+        `facets` (#29) is the sidebar, counted on the server over every movie of the tab matching the filters, never only this page: `genres` (every genre with its count, the `genres` filter ignored), `people` (the cast, actors and voices, with how many matching movies each is in, most first, at most 30, with `peopleTotal`; the `people` filter ignored) and `showDates` (Today, Tomorrow, This weekend with their cinema dates and how many movies `showDate` would list; the `showDate` filter ignored; 0 on Coming soon). Each facet keeps every other filter, so picking a genre narrows the cast and the show dates but leaves the other genres' counts.
       operationId: listPublicMovies
       parameters:
         - name: cursor
@@ -16915,7 +16919,7 @@ paths:
             $ref: '#/components/schemas/ShowDate'
       responses:
         '200':
-          description: One page of movie cards and the tab counts
+          description: One page of movie cards, the tab counts and the sidebar facets
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -17471,7 +17475,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location, its facilities and `hallCount` (its active halls). `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100).
+        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location and postal code, its facilities and `hallCount` (its active halls). `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100). `total` counts the matching theaters and `totalHalls` their active halls ("25 HALLS"), both over every page.
       operationId: listPublicTheaters
       parameters:
         - name: cursor
@@ -17622,7 +17626,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones and email appear only when the theater shows its contacts (`phones` is empty and `email` null otherwise). A draft, a paused or an unknown theater is `404 NOT_FOUND`. `halls` lists its active halls by name (seats and wheelchair spaces), and `hallCount` is their number. Its showtimes are `GET /theaters/{id}/showtimes`.
+        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones, email and the WhatsApp number (with its ready `whatsappUrl`) appear only when the theater shows its contacts (`phones` is empty and `email`, `whatsapp` and `whatsappUrl` are null otherwise). `postalCode` goes with the city ("Cairo 11211"). A draft, a paused or an unknown theater is `404 NOT_FOUND`. `halls` lists its active halls by name (seats and wheelchair spaces), and `hallCount` is their number. Its showtimes are `GET /theaters/{id}/showtimes`.
       operationId: getPublicTheater
       parameters:
         - name: id
@@ -31376,6 +31380,18 @@ components:
           default: false
           example: true
           description: '"Show phone numbers and email on the website". Default false: phones and email stay admin-only.'
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: 'Postal code: 5 digits. Customers see it with the city on the Theaters page cards and the theater page ("Cairo 11211"). Null or omitted: none. Trimmed.'
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: 'Dedicated WhatsApp number, E.164 (`+`, the country code and the number, digits only). The theater page''s WhatsApp button and Contact section use it, only while `showContactsPublic` is true. Null or omitted: none.'
       required:
         - name
         - address
@@ -31393,6 +31409,7 @@ components:
         - cafe_bar
         - food_court
         - kids_room
+        - prayer_room
       description: Facilities, in the order of the facility list.
     DayHoursResponse:
       type: object
@@ -31588,6 +31605,18 @@ components:
           type: boolean
           example: true
           description: True when phones and email are shown on the website.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: Postal code (5 digits), shown with the city ("Cairo 11211"); null when none.
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: Dedicated WhatsApp number, E.164; null when none. Customers see it only while `showContactsPublic` is true.
         phones:
           description: Phones in display order; the first is the main phone.
           type: array
@@ -31663,6 +31692,8 @@ components:
         - parkingInfo
         - email
         - showContactsPublic
+        - postalCode
+        - whatsapp
         - phones
         - facilities
         - hours
@@ -31745,6 +31776,18 @@ components:
           nullable: false
           example: true
           description: '"Show phone numbers and email on the website".'
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: 'Postal code: 5 digits, shown with the city ("Cairo 11211"). Null removes it. Trimmed.'
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: Dedicated WhatsApp number, E.164; public only while `showContactsPublic` is true. Null removes it.
         status:
           nullable: false
           example: active
@@ -31828,7 +31871,7 @@ components:
       properties:
         facilities:
           type: array
-          maxItems: 7
+          maxItems: 8
           uniqueItems: true
           example:
             - wheelchair_access
@@ -32712,6 +32755,19 @@ components:
           maxLength: 200
           example: Hurghada, Alexandria
           description: Optional free text; customers see it only when set.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: 'Where the score comes from, shown small under it. Up to 80 characters; empty text is null, and null shows the score alone. Needs a rating on the movie: a source without one is `VALIDATION_FAILED` on `ratingSource`.'
         genreIds:
           maxItems: 5
           uniqueItems: true
@@ -33010,6 +33066,19 @@ components:
           nullable: true
           example: Hurghada, Alexandria
           description: Free-text filming locations.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: The rating score out of 10, one decimal, that customers see on the movie page with a star; null when none is set.
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: Where the score comes from, shown small under it; null when none is set.
         genres:
           nullable: false
           description: Genres in display order.
@@ -33096,6 +33165,8 @@ components:
         - productionCompany
         - budgetLabel
         - filmingLocations
+        - rating
+        - ratingSource
         - genres
         - poster
         - backdropPhotoId
@@ -33210,6 +33281,19 @@ components:
           maxLength: 200
           example: Hurghada, Alexandria
           description: Optional free text; customers see it only when set.
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: 'Where the score comes from, shown small under it. Up to 80 characters; empty text is null, and null shows the score alone. Needs a rating on the movie: a source without one is `VALIDATION_FAILED` on `ratingSource`.'
         genreIds:
           maxItems: 5
           uniqueItems: true
@@ -33865,6 +33949,17 @@ components:
         - draft
         - active
         - retired
+    HallFormat:
+      type: string
+      enum:
+        - standard
+        - vip
+        - imax
+        - dolby_atmos
+        - 4dx
+        - screenx
+        - max
+      description: 'The projection format customers see on the hall and its showtime chips (a label, never a price): Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX.'
     ZoneSeatCountsResponse:
       type: object
       properties:
@@ -33909,6 +34004,26 @@ components:
           description: '`draft`: being set up, not schedulable. `active`: schedulable; a theater needs one to be published. `retired`: kept for history, hidden from scheduling; final.'
           allOf:
             - $ref: '#/components/schemas/HallStatus'
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and its showtime chips (a label, never a price): Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres (at most 2 decimals), the "22.1m" of "22.1m x 12.3m"; null with `screenHeightMeters` when the size is not set.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres (at most 2 decimals); null with `screenWidthMeters` when the size is not set.
         rowCount:
           type: integer
           minimum: 4
@@ -33954,6 +34069,9 @@ components:
         - theaterId
         - name
         - status
+        - format
+        - screenWidthMeters
+        - screenHeightMeters
         - rowCount
         - seatsPerRow
         - seatCount
@@ -33989,6 +34107,26 @@ components:
     CreateHallRequest:
       type: object
       properties:
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and on each of its showtime chips: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: prices stay by seat zone. A new hall without one is `standard`; null is refused.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres, 1 to 50 with at most 2 decimals; customers see "22.1m x 12.3m". Sent with `screenHeightMeters`, or both null to clear the size (the hall then shows none). One side alone, or a number beside a null, is `VALIDATION_FAILED`.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres, 1 to 50 with at most 2 decimals. Sent with `screenWidthMeters`, or both null to clear the size.
         name:
           type: string
           nullable: false
@@ -34001,6 +34139,26 @@ components:
     UpdateHallRequest:
       type: object
       properties:
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and on each of its showtime chips: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: prices stay by seat zone. A new hall without one is `standard`; null is refused.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres, 1 to 50 with at most 2 decimals; customers see "22.1m x 12.3m". Sent with `screenHeightMeters`, or both null to clear the size (the hall then shows none). One side alone, or a number beside a null, is `VALIDATION_FAILED`.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres, 1 to 50 with at most 2 decimals. Sent with `screenWidthMeters`, or both null to clear the size.
         name:
           type: string
           nullable: false
@@ -34423,6 +34581,13 @@ components:
           description: Now showing (bookable) or Coming soon (listed, no sales; show a "Soon" badge).
           allOf:
             - $ref: '#/components/schemas/MovieStatus'
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: The rating score out of 10, one decimal, the same as the movie page shows; null when the movie has none. Always sent by this API.
       description: 'A public movie as its card shows it: poster, title, genres, runtime, rating.'
       required:
         - id
@@ -34473,6 +34638,12 @@ components:
           type: string
           example: 26 July Street, Zamalek
           description: Street address.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: The postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none. Always sent by this API.
         cover:
           nullable: true
           description: Cover photo, or null when none is set
@@ -34609,6 +34780,113 @@ components:
       required:
         - nowShowing
         - comingSoon
+    GenreFacet:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Genre id.
+          example: 9
+        name:
+          type: string
+          description: Display name.
+          example: Sci-fi
+        slug:
+          type: string
+          example: sci-fi
+          description: Stable URL-safe name, for links such as `/movies?genres=sci-fi`
+        count:
+          type: integer
+          minimum: 0
+          example: 3
+          description: How many movies of the tab match every current filter except `genres` and have this genre ("Action 3"). 0 when none; a movie with two genres counts in both.
+      required:
+        - id
+        - name
+        - slug
+        - count
+    PersonFacet:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 4
+          description: Person id; filter with `/movies?people=<id>`.
+        fullName:
+          type: string
+          example: Karim Fahmy
+          description: Full name, as the chip shows it.
+        photo:
+          nullable: true
+          description: Square photo for the avatar, or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        count:
+          type: integer
+          minimum: 1
+          example: 2
+          description: How many movies of the tab matching every current filter except `people` credit this person as an actor or a voice.
+      required:
+        - id
+        - fullName
+        - photo
+        - count
+    ShowDateFacet:
+      type: object
+      properties:
+        value:
+          example: today
+          description: 'The option, as `showDate` takes it: Today, Tomorrow or This weekend.'
+          allOf:
+            - $ref: '#/components/schemas/ShowDate'
+        count:
+          type: integer
+          minimum: 0
+          example: 5
+          description: 'How many movies of the tab matching every current filter except `showDate` have a showtime still to start on these cinema dates at a theater open for sales: what `showDate=<value>` would list. Always 0 on the Coming soon tab (only Now showing movies have showtimes).'
+        cinemaDates:
+          example:
+            - '2026-10-16'
+            - '2026-10-17'
+          description: 'The cinema dates the option covers, seen from now (a cinema day runs 06:00 to 06:00 Cairo time, so a 00:30 show belongs to the date before): today, tomorrow, or this weekend (Friday and Saturday; on a Friday from today, on a Saturday today only). For a label such as "This weekend · Fri 16 – Sat 17".'
+          type: array
+          items:
+            type: string
+            format: date
+      required:
+        - value
+        - count
+        - cinemaDates
+    MovieFacets:
+      type: object
+      properties:
+        genres:
+          description: Every genre, alphabetical (the order of `GET /genres`), with its count. Ignores the `genres` filter so the other genres stay selectable; follows `status`, `q`, `people` and `showDate`.
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreFacet'
+        people:
+          maxItems: 30
+          description: The cast (actors and voices) of the matching movies, most movies first, then by name; at most 30. Ignores the `people` filter; follows `status`, `q`, `genres` and `showDate`. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonFacet'
+        peopleTotal:
+          type: integer
+          minimum: 0
+          example: 42
+          description: How many cast members match before the cap of 30 ("Show all 42"; find the others with `GET /people?q=`).
+        showDates:
+          description: The show date options in the order `today`, `tomorrow`, `weekend`, each with its count and cinema dates. Ignores the `showDate` filter; follows `status`, `q`, `genres` and `people`.
+          type: array
+          items:
+            $ref: '#/components/schemas/ShowDateFacet'
+      required:
+        - genres
+        - people
+        - peopleTotal
+        - showDates
     MovieCardPage:
       type: object
       properties:
@@ -34631,11 +34909,16 @@ components:
           description: Both tabs’ totals with the same filters, for the tab labels.
           allOf:
             - $ref: '#/components/schemas/MovieTabCounts'
+        facets:
+          description: 'The sidebar counts (#29): genres, cast and show dates, computed over every movie of the tab matching the filters, never only this page. Each facet ignores its own filter so the alternatives stay visible.'
+          allOf:
+            - $ref: '#/components/schemas/MovieFacets'
       required:
         - items
         - nextCursor
         - total
         - tabCounts
+        - facets
     MoviePhoto:
       type: object
       properties:
@@ -34797,6 +35080,19 @@ components:
           description: Age certificate.
           allOf:
             - $ref: '#/components/schemas/AgeRating'
+        rating:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
+          example: 8.4
+          description: 'The rating score out of 10, one decimal, shown on the hero with a star (for example "8.4"). Null when the movie has none: hide the score.'
+        ratingSource:
+          type: string
+          nullable: true
+          maxLength: 80
+          example: elCinema users
+          description: Where the score comes from, shown small under it. Null shows the score alone (always null when `rating` is null).
         language:
           type: string
           nullable: true
@@ -34872,6 +35168,8 @@ components:
         - runtimeMinutes
         - releaseDate
         - ageRating
+        - rating
+        - ratingSource
         - language
         - country
         - productionCompany
@@ -34970,6 +35268,12 @@ components:
           type: string
           example: 26 July Street, Zamalek
           description: Street address.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: The postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none. Always sent by this API.
         cover:
           nullable: true
           description: Cover photo, or null when none is set
@@ -35050,10 +35354,16 @@ components:
           minimum: 0
           example: 5
           description: How many theaters match.
+        totalHalls:
+          type: integer
+          minimum: 0
+          example: 25
+          description: 'How many active halls the matching theaters have in all ("25 HALLS" next to `total`): the sum of `hallCount` over every theater that matches `openNow` and `parking`, whatever the page.'
       required:
         - items
         - nextCursor
         - total
+        - totalHalls
     TheaterGalleryPhoto:
       type: object
       properties:
@@ -35074,6 +35384,24 @@ components:
         - id
         - caption
         - image
+    HallScreen:
+      type: object
+      properties:
+        widthMeters:
+          type: number
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: 'Width in metres, at most 2 decimals: the "22.1m" of "22.1m x 12.3m".'
+        heightMeters:
+          type: number
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: 'Height in metres, at most 2 decimals: the "12.3m".'
+      required:
+        - widthMeters
+        - heightMeters
     PublicHall:
       type: object
       properties:
@@ -35095,11 +35423,25 @@ components:
           minimum: 0
           example: 4
           description: Wheelchair spaces among them.
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'Its projection format, shown beside the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX).'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screen:
+          nullable: true
+          description: 'Its screen size, shown as "22.1m x 12.3m"; null when not known: show none.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/HallScreen'
       required:
         - id
         - name
         - seatCount
         - wheelchairCount
+        - format
+        - screen
     PublicTheater:
       type: object
       properties:
@@ -35123,6 +35465,12 @@ components:
           type: string
           example: Cairo
           description: City.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: Postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none.
         latitude:
           type: number
           example: 30.0609
@@ -35146,6 +35494,18 @@ components:
           nullable: true
           example: zamalek@maqady.example
           description: Contact email; null when none is set or the theater hides its contacts.
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: The dedicated WhatsApp number (E.164) for the Contact section; null when none is set or the theater hides its contacts.
+        whatsappUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://wa.me/201001234567
+          description: The link of the WhatsApp button in the header and the Contact section (WhatsApp click-to-chat); null exactly when `whatsapp` is.
         phones:
           description: Phones, the main one first; empty when the theater hides its contacts.
           type: array
@@ -35204,11 +35564,14 @@ components:
         - address
         - district
         - city
+        - postalCode
         - latitude
         - longitude
         - transitInfo
         - parkingInfo
         - email
+        - whatsapp
+        - whatsappUrl
         - phones
         - facilities
         - cover
@@ -35294,6 +35657,12 @@ components:
           description: The hall.
           allOf:
             - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format of its hall, shown on the chip next to the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: the price is by seat zone.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
         prices:
           description: The price of a seat in each zone ("Prices vary by seat zone").
           allOf:
@@ -35312,6 +35681,7 @@ components:
         - endsAt
         - cinemaDate
         - hall
+        - format
         - prices
         - fromPrice
         - hasStarted
@@ -35327,9 +35697,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PublicShowtime'
+        formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          example:
+            - standard
+            - vip
+          description: 'The formats of its showtimes that day, each once, in the order Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX, MAX: the "Standard, VIP" chips beside the theater, without scanning `showtimes`.'
+          items:
+            $ref: '#/components/schemas/HallFormat'
       required:
         - theater
         - showtimes
+        - formats
     MovieShowtimeDay:
       type: object
       properties:

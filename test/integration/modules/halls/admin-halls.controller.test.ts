@@ -136,6 +136,9 @@ describe('Admin halls (integration)', () => {
         theaterId,
         name: 'Hall 1',
         status: 'draft',
+        format: 'standard',
+        screenWidthMeters: null,
+        screenHeightMeters: null,
         rowCount: 12,
         seatsPerRow: 16,
         seatCount: 192,
@@ -314,6 +317,152 @@ describe('Admin halls (integration)', () => {
         .get(`${HALLS}/${ids[0]}`)
         .set('Authorization', admin.authorization);
       expect(one.body).toEqual(expect.objectContaining({ id: ids[0], name: 'Hall 24' }));
+    });
+  });
+
+  describe('format and screen size (#29 P4)', () => {
+    const stored = (id: number) =>
+      testApp
+        .knex('halls')
+        .select('format', 'screen_width_cm', 'screen_height_cm')
+        .where({ id })
+        .first();
+
+    it('creates a hall with a format and a screen in metres, stored in centimetres', async () => {
+      const theaterId = await createTheater(testApp, admin.authorization);
+      const created = await post(theaterId, {
+        name: 'Hall 6',
+        format: 'dolby_atmos',
+        screenWidthMeters: 22.1,
+        screenHeightMeters: 12.35,
+      });
+      expect(created.status).toBe(201);
+      expect(created.body).toEqual(
+        expect.objectContaining({
+          format: 'dolby_atmos',
+          screenWidthMeters: 22.1,
+          screenHeightMeters: 12.35,
+        }),
+      );
+      const id = (created.body as { id: number }).id;
+      expect(await stored(id)).toEqual({
+        format: 'dolby_atmos',
+        screen_width_cm: 2210,
+        screen_height_cm: 1235,
+      });
+      const read = await testApp
+        .http()
+        .get(`${HALLS}/${id}`)
+        .set('Authorization', admin.authorization);
+      expect(read.body).toEqual(
+        expect.objectContaining({
+          format: 'dolby_atmos',
+          screenWidthMeters: 22.1,
+          screenHeightMeters: 12.35,
+        }),
+      );
+      const list = await testApp
+        .http()
+        .get(theaterHallsPath(theaterId))
+        .set('Authorization', admin.authorization);
+      expect(list.body.items).toEqual([
+        expect.objectContaining({ id, format: 'dolby_atmos', screenWidthMeters: 22.1 }),
+      ]);
+    });
+
+    it('changes the format and screen, names them in hall.updated, and clears the screen with null', async () => {
+      const theaterId = await createTheater(testApp, admin.authorization);
+      const id = await createHall(testApp, admin.authorization, theaterId, 'Hall 1');
+
+      const changed = await patch(id, {
+        format: 'imax',
+        screenWidthMeters: 26.5,
+        screenHeightMeters: 14,
+      });
+      expect(changed.status).toBe(200);
+      expect(changed.body).toEqual(
+        expect.objectContaining({
+          format: 'imax',
+          screenWidthMeters: 26.5,
+          screenHeightMeters: 14,
+        }),
+      );
+      expect(await stored(id)).toEqual({
+        format: 'imax',
+        screen_width_cm: 2650,
+        screen_height_cm: 1400,
+      });
+
+      // The same values again change nothing and record nothing.
+      expect(
+        (await patch(id, { format: 'imax', screenWidthMeters: 26.5, screenHeightMeters: 14 }))
+          .status,
+      ).toBe(200);
+
+      const cleared = await patch(id, { screenWidthMeters: null, screenHeightMeters: null });
+      expect(cleared.body).toEqual(
+        expect.objectContaining({
+          format: 'imax',
+          screenWidthMeters: null,
+          screenHeightMeters: null,
+        }),
+      );
+      expect(await stored(id)).toEqual({
+        format: 'imax',
+        screen_width_cm: null,
+        screen_height_cm: null,
+      });
+
+      await setHallStatus(testApp, admin.authorization, id, 'retired');
+      expect((await patch(id, { format: 'standard' })).body.format).toBe('standard');
+
+      expect(
+        (await auditRows(id)).map(({ action, changed_fields }) => ({ action, changed_fields })),
+      ).toEqual([
+        { action: 'hall.created', changed_fields: [] },
+        // The audit log keeps changed field names sorted.
+        {
+          action: 'hall.updated',
+          changed_fields: ['format', 'screenHeightMeters', 'screenWidthMeters'],
+        },
+        { action: 'hall.updated', changed_fields: ['screenHeightMeters', 'screenWidthMeters'] },
+        { action: 'hall.retired', changed_fields: [] },
+        { action: 'hall.updated', changed_fields: ['format'] },
+      ]);
+    });
+
+    it('refuses one screen side alone, a number beside a null, a bad size or format, and changes nothing', async () => {
+      const theaterId = await createTheater(testApp, admin.authorization);
+      const id = await createHall(testApp, admin.authorization, theaterId, 'Hall 1');
+      expect((await patch(id, { screenWidthMeters: 18, screenHeightMeters: 9 })).status).toBe(200);
+
+      const refusals: [object, string][] = [
+        [{ screenWidthMeters: 20 }, 'screenHeightMeters'],
+        [{ screenWidthMeters: null }, 'screenHeightMeters'],
+        [{ screenWidthMeters: 20, screenHeightMeters: null }, 'screenHeightMeters'],
+        [{ screenWidthMeters: 0.5, screenHeightMeters: 9 }, 'screenWidthMeters'],
+        [{ screenWidthMeters: 18, screenHeightMeters: 50.5 }, 'screenHeightMeters'],
+        [{ screenWidthMeters: 18.123, screenHeightMeters: 9 }, 'screenWidthMeters'],
+        [{ format: 'IMAX' }, 'format'],
+        [{ format: null }, 'format'],
+      ];
+      for (const [body, field] of refusals) {
+        const response = await patch(id, body);
+        expectError(response, 400, 'VALIDATION_FAILED');
+        const { fields } = response.body.error.details as { fields: { field: string }[] };
+        expect({ body, fields: fields.map((entry) => entry.field) }).toEqual({
+          body,
+          fields: [field],
+        });
+      }
+      const refusedCreate = await post(theaterId, { name: 'Hall 2', screenHeightMeters: 9 });
+      expectError(refusedCreate, 400, 'VALIDATION_FAILED');
+      expect(await stored(id)).toEqual({
+        format: 'standard',
+        screen_width_cm: 1800,
+        screen_height_cm: 900,
+      });
+      expect(await testApp.knex('halls').count({ count: '*' }).first()).toEqual({ count: 1 });
     });
   });
 

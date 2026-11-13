@@ -9,7 +9,7 @@ import {
 import { MovieIdParams } from '../catalog/dto/movie-id.params';
 import { DiscoveryCacheInterceptor } from './discovery-cache.interceptor';
 import { DiscoveryResponseMapper } from './discovery-response.mapper';
-import { PUBLIC_READ_NOTE } from './discovery.constants';
+import { PEOPLE_FACET_LIMIT, PUBLIC_READ_NOTE } from './discovery.constants';
 import { GenreListQuery, MovieListQuery, PublicPersonListQuery } from './dto/discovery.queries';
 import { GenreWithCountPage } from './dto/genre-with-count.response';
 import { MovieDetailsResponse } from './dto/movie-details.response';
@@ -47,11 +47,11 @@ export class CatalogBrowseController {
   @Get('movies')
   @ApiOperation({
     summary: 'The Movies page: one tab, filtered',
-    description: `${PUBLIC_READ_NOTE}\n\nOne page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): \`genres\` (slugs) and \`people\` (person ids) match any of their values, \`q\` a title or a credited person's name. \`total\` counts the tab with the filters ("Showing n of total"); \`tabCounts\` counts both tabs with the same filters, for the tab labels. Load more with \`cursor\` = \`nextCursor\`; pages never repeat or skip a movie. \`showDate\` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, \`tabCounts.nowShowing\` is the filtered total and \`tabCounts.comingSoon\` ignores it, and with \`status=coming_soon\` it is \`400 VALIDATION_FAILED\`.`,
+    description: `${PUBLIC_READ_NOTE}\n\nOne page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): \`genres\` (slugs) and \`people\` (person ids) match any of their values, \`q\` a title or a credited person's name. \`total\` counts the tab with the filters ("Showing n of total"); \`tabCounts\` counts both tabs with the same filters, for the tab labels. Load more with \`cursor\` = \`nextCursor\`; pages never repeat or skip a movie. \`showDate\` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, \`tabCounts.nowShowing\` is the filtered total and \`tabCounts.comingSoon\` ignores it, and with \`status=coming_soon\` it is \`400 VALIDATION_FAILED\`.\n\n\`facets\` (#29) is the sidebar, counted on the server over every movie of the tab matching the filters, never only this page: \`genres\` (every genre with its count, the \`genres\` filter ignored), \`people\` (the cast, actors and voices, with how many matching movies each is in, most first, at most ${PEOPLE_FACET_LIMIT}, with \`peopleTotal\`; the \`people\` filter ignored) and \`showDates\` (Today, Tomorrow, This weekend with their cinema dates and how many movies \`showDate\` would list; the \`showDate\` filter ignored; 0 on Coming soon). Each facet keeps every other filter, so picking a genre narrows the cast and the show dates but leaves the other genres' counts.`,
   })
   @ApiOkResponse({
     type: MovieCardPageResponse,
-    description: 'One page of movie cards and the tab counts',
+    description: 'One page of movie cards, the tab counts and the sidebar facets',
     headers: REQUEST_ID_RESPONSE_HEADER,
   })
   @ApiErrorResponses('VALIDATION_FAILED', 'SERVICE_UNAVAILABLE')

@@ -43,6 +43,8 @@ const HALL: HallSummary = {
   status: 'active',
   rowCount: 12,
   seatsPerRow: 16,
+  format: 'standard',
+  screen: null,
   seatCount: 192,
   wheelchairCount: 0,
   zoneSeatCounts: { front: 48, middle: 80, back: 64 },

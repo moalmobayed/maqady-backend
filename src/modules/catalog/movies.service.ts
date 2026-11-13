@@ -23,6 +23,7 @@ import {
   isBackdropShaped,
   isPublicStatus,
   missingPublishRequirements,
+  ratingSourceWithoutRating,
 } from './movie-rules';
 import { MoviesRepository } from './movies.repository';
 import type {
@@ -31,6 +32,7 @@ import type {
   AdminMoviePage,
   BulkArchiveResult,
   MovieChanges,
+  MovieRatingState,
   MovieRow,
   MovieStatus,
   NewMovieInput,
@@ -92,9 +94,14 @@ export class MoviesService {
     return movie;
   }
 
-  /** `POST /admin/movies`: always a draft; `ageRating` defaults to 12+. */
+  /**
+   * `POST /admin/movies`: always a draft; `ageRating` defaults to 12+. A score's source needs a
+   * score (`VALIDATION_FAILED` on `ratingSource`).
+   */
   async create(actor: StaffPrincipal, input: NewMovieInput): Promise<AdminMovie> {
     return this.transactions.run(async () => {
+      const rating = { rating: input.rating ?? null, ratingSource: input.ratingSource ?? null };
+      assertRatingHasSource(rating);
       const genreIds = input.genreIds ?? [];
       await this.assertGenresExist(genreIds);
       const now = this.clock.now();
@@ -110,6 +117,8 @@ export class MoviesService {
         production_company: input.productionCompany ?? null,
         budget_label: input.budgetLabel ?? null,
         filming_locations: input.filmingLocations ?? null,
+        rating: rating.rating,
+        rating_source: rating.ratingSource,
         poster_image_id: null,
         backdrop_photo_id: null,
         hero_video_id: null,
@@ -133,7 +142,8 @@ export class MoviesService {
    * position, judged on the movie as it would be after the change:
    *
    * 1. genres exist; the hero video and backdrop are this movie's (`VALIDATION_FAILED`), and a
-   *    new backdrop is 16:9 and at least 1280 × 720 (`IMAGE_WRONG_SHAPE`);
+   *    new backdrop is 16:9 and at least 1280 × 720 (`IMAGE_WRONG_SHAPE`); a score's source
+   *    has a score (`VALIDATION_FAILED` on `ratingSource`);
    * 2. the status change is allowed (`CONFLICT { from, to }`); leaving the public statuses
    *    frees the movie's carousel position;
    * 3. a public movie has a synopsis, runtime, release date and a genre (`MOVIE_NOT_PUBLISHABLE`);
@@ -151,6 +161,10 @@ export class MoviesService {
       const genresChanged = !sameOrder(genreIds, currentGenreIds);
       if (genresChanged) await this.assertGenresExist(genreIds);
 
+      assertRatingHasSource({
+        rating: changes.rating === undefined ? row.rating : changes.rating,
+        ratingSource: changes.ratingSource === undefined ? row.rating_source : changes.ratingSource,
+      });
       const diff = diffMovie(row, changes);
       await this.assertMediaBelongs(row, changes);
 
@@ -359,5 +373,15 @@ export class MoviesService {
     if (holder && holder.id !== movieId) {
       throw new AppError('FEATURED_POSITION_TAKEN', undefined, { position, movieId: holder.id });
     }
+  }
+}
+
+/** A score's source without a score is refused on `ratingSource`, before anything is written. */
+function assertRatingHasSource(state: MovieRatingState): void {
+  if (ratingSourceWithoutRating(state)) {
+    throw fieldError(
+      'ratingSource',
+      'ratingSource needs a rating: set rating too, or send ratingSource: null',
+    );
   }
 }

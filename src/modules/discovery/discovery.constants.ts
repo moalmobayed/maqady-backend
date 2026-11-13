@@ -19,6 +19,9 @@ export const MAX_PEOPLE_FILTER = 20;
 /** The "Parking" filter of the Theaters page: free or valet parking (PRD C4). */
 export const PARKING_FACILITIES: readonly Facility[] = ['free_parking', 'valet_parking'];
 
+/** WhatsApp's click-to-chat link: this, then the E.164 number without its `+` (#29). */
+export const WHATSAPP_URL_BASE = 'https://wa.me/';
+
 /** A genre slug as the catalog seeds them: lower-case words joined by hyphens. */
 export const GENRE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -32,3 +35,6 @@ export const SHOWTIME_DAYS = 7;
 /** "This weekend" is Friday and Saturday (PRD "Time" 3), as ISO weekdays of cinema dates. */
 export const WEEKEND_FIRST_WEEKDAY = 5;
 export const WEEKEND_LAST_WEEKDAY = 6;
+
+/** The Movies page people facet lists at most this many cast members (#29); `peopleTotal` counts all. */
+export const PEOPLE_FACET_LIMIT = 30;

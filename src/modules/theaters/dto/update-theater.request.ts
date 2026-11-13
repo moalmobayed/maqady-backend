@@ -13,7 +13,15 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { THEATER_STATUSES } from '../enums';
-import { COORDINATE_DECIMALS, STORED_EMAIL_PATTERN, TEXT_LIMITS } from '../theaters.constants';
+import {
+  COORDINATE_DECIMALS,
+  PHONE_NUMBER_PATTERN,
+  POSTAL_CODE_MESSAGE,
+  POSTAL_CODE_PATTERN,
+  STORED_EMAIL_PATTERN,
+  TEXT_LIMITS,
+  WHATSAPP_MESSAGE,
+} from '../theaters.constants';
 import type { TheaterStatus } from '../types';
 import { HasAtMostDecimals, HasLength, Trim } from './validators';
 
@@ -30,6 +38,8 @@ const FIELDS = [
   'parkingInfo',
   'email',
   'showContactsPublic',
+  'postalCode',
+  'whatsapp',
   'status',
 ] as const;
 
@@ -184,6 +194,33 @@ export class UpdateTheaterRequest {
   @ValidateIf(sent)
   @IsBoolean()
   showContactsPublic?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description:
+      'Postal code: 5 digits, shown with the city ("Cairo 11211"). Null removes it. Trimmed.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(POSTAL_CODE_PATTERN, { message: POSTAL_CODE_MESSAGE })
+  postalCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    pattern: PHONE_NUMBER_PATTERN.source,
+    example: '+201001234567',
+    description:
+      'Dedicated WhatsApp number, E.164; public only while `showContactsPublic` is true. Null removes it.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(PHONE_NUMBER_PATTERN, { message: WHATSAPP_MESSAGE })
+  whatsapp?: string | null;
 
   @ApiPropertyOptional({
     enum: THEATER_STATUSES,

@@ -12,8 +12,10 @@ import { layoutRows } from './hall-layout';
 import { HallLayoutRepository } from './hall-layout.repository';
 import { HallLifecycleRegistry } from './hall-lifecycle.registry';
 import { HallReadService } from './hall-read.service';
+import { screenColumns } from './hall-screen';
 import {
   ACTIVE_HALL_REQUIREMENT,
+  DEFAULT_HALL_FORMAT,
   DEFAULT_LAYOUT,
   HALL_STATUS_ACTIONS,
   HALL_STATUS_TRANSITIONS,
@@ -23,9 +25,11 @@ import type {
   HallAdminView,
   HallAuditDetails,
   HallChanges,
+  HallFieldChanges,
   HallListFilter,
   HallRow,
   HallSummary,
+  NewHallInput,
 } from './types';
 
 /**
@@ -96,19 +100,25 @@ export class HallsService implements OnModuleInit {
 
   /**
    * `POST /admin/theaters/{id}/halls`: a new `draft` hall with the standard 12 × 16 layout
-   * (PRD A4). A name the theater already uses, in any letter case, is `CONFLICT`
-   * (`uq_halls_theater_id_name`).
+   * (PRD A4), its format (`standard` when left out) and its screen size, if any. A name the
+   * theater already uses, in any letter case, is `CONFLICT` (`uq_halls_theater_id_name`).
    */
-  async create(actor: StaffPrincipal, theaterId: number, name: string): Promise<HallAdminView> {
+  async create(
+    actor: StaffPrincipal,
+    theaterId: number,
+    input: NewHallInput,
+  ): Promise<HallAdminView> {
     const id = await this.transactions.run(async () => {
       if (!(await this.theaters.lockForShare(theaterId))) throw new AppError('NOT_FOUND');
       const now = this.clock.now();
       const hall = await this.halls.insert({
         theater_id: theaterId,
-        name,
+        name: input.name,
         status: 'draft',
         row_count: DEFAULT_LAYOUT.rowCount,
         seats_per_row: DEFAULT_LAYOUT.seatsPerRow,
+        format: input.format ?? DEFAULT_HALL_FORMAT,
+        ...screenColumns(input.screen ?? null),
         created_at: now,
         updated_at: now,
       });
@@ -129,21 +139,23 @@ export class HallsService implements OnModuleInit {
   }
 
   /**
-   * `PATCH /admin/halls/{id}`: the name first, then the status.
+   * `PATCH /admin/halls/{id}`: the name, format and screen size first, then the status.
    *
    * - `draft → active`, `draft → retired` and `active → retired` are allowed; `retired` is final
    *   and an active hall never returns to draft: anything else is `CONFLICT` with
    *   `details.from` and `details.to`.
    * - Retiring needs every retirement blocker to pass (`HALL_NOT_RETIRABLE`, `details.reasons`).
+   * - The name, format and screen size change in any status, a retired hall's too; one
+   *   `hall.updated` event names the fields that changed (#29 P4).
    * - A request that changes nothing writes nothing.
    */
   async update(actor: StaffPrincipal, id: number, changes: HallChanges): Promise<HallAdminView> {
     await this.transactions.run(async () => {
       const hall = await this.lockForWrite(id);
-      const rename = changes.name !== undefined && changes.name !== hall.name;
+      const { columns, changedFields } = fieldChanges(hall, changes);
       const to = changes.status ?? hall.status;
       const statusChanges = to !== hall.status;
-      if (!rename && !statusChanges) return;
+      if (changedFields.length === 0 && !statusChanges) return;
 
       if (statusChanges) {
         if (!HALL_STATUS_TRANSITIONS[hall.status].includes(to)) {
@@ -159,11 +171,13 @@ export class HallsService implements OnModuleInit {
         }
       }
       await this.halls.update(id, {
-        ...(rename ? { name: changes.name } : {}),
+        ...columns,
         ...(statusChanges ? { status: to } : {}),
         updated_at: this.clock.now(),
       });
-      if (rename) await this.record(actor, 'hall.updated', id, { changedFields: ['name'] });
+      if (changedFields.length > 0) {
+        await this.record(actor, 'hall.updated', id, { changedFields });
+      }
       if (statusChanges) {
         await this.record(actor, HALL_STATUS_ACTIONS[`${hall.status}>${to}`]!, id, {
           metadata: { from: hall.status, to },
@@ -225,4 +239,30 @@ export class HallsService implements OnModuleInit {
       ...extra,
     });
   }
+}
+
+/**
+ * The columns a `PATCH` changes besides the status, and the API names of those fields, leaving
+ * out every field sent with the value the hall already has. Each screen side is compared in the
+ * centimetres stored; a changed screen always writes both columns (`chk_halls_screen_size`).
+ */
+function fieldChanges(hall: HallRow, changes: HallChanges): HallFieldChanges {
+  const rename = changes.name !== undefined && changes.name !== hall.name;
+  const reformat = changes.format !== undefined && changes.format !== hall.format;
+  const screen = changes.screen === undefined ? undefined : screenColumns(changes.screen);
+  const width = screen !== undefined && screen.screen_width_cm !== hall.screen_width_cm;
+  const height = screen !== undefined && screen.screen_height_cm !== hall.screen_height_cm;
+  return {
+    columns: {
+      ...(rename ? { name: changes.name } : {}),
+      ...(reformat ? { format: changes.format } : {}),
+      ...(width || height ? screen : {}),
+    },
+    changedFields: [
+      ...(rename ? ['name'] : []),
+      ...(reformat ? ['format'] : []),
+      ...(width ? ['screenWidthMeters'] : []),
+      ...(height ? ['screenHeightMeters'] : []),
+    ],
+  };
 }

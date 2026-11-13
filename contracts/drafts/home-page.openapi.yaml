@@ -1,6 +1,12 @@
 # Hand-written contract for the home page, agreed with the frontend before the code exists.
 # The generated contract (contracts/openapi.yaml, produced from the NestJS code) must match
 # these paths and schemas exactly. Delete this draft once the generated contract covers them.
+#
+# Changelog (additive only; nothing agreed is removed or renamed):
+# - #29 (API Data Gaps Report, movie rating score): `MovieCard.rating`, an optional nullable
+#   number 0 to 10.
+# - #29 (API Data Gaps Report, theater fields): `prayer_room` appended to `Facility`, and
+#   `TheaterCard.postalCode`, an optional nullable 5-digit string.
 openapi: 3.0.3
 info:
   title: Maqady API — home page
@@ -321,6 +327,15 @@ components:
         ageRating: { $ref: '#/components/schemas/AgeRating' }
         releaseDate: { type: string, format: date }
         status: { $ref: '#/components/schemas/MovieStatus' }
+        rating:
+          description: |
+            Added by #29 (optional, so additive): the rating score out of 10 with one decimal,
+            the same as the movie page shows; null when the movie has none. Always sent by the
+            API.
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
     MovieCardList:
       type: object
       required: [items, total]
@@ -426,6 +441,14 @@ components:
         district: { type: string }
         city: { type: string }
         address: { type: string }
+        postalCode:
+          description: |
+            Added by #29 (optional, so additive): the postal code, 5 digits, shown with the city
+            ("Cairo 11211"); null when the theater has none. Always sent by the API.
+          type: string
+          nullable: true
+          pattern: '^[0-9]{5}$'
+          example: '11211'
         cover:
           description: Cover photo, or null when none is set
           type: object
@@ -488,7 +511,7 @@ components:
       enum: [trailer, teaser, clip, featurette]
     Facility:
       type: string
-      enum: [wheelchair_access, free_parking, valet_parking, street_parking, cafe_bar, food_court, kids_room]
+      enum: [wheelchair_access, free_parking, valet_parking, street_parking, cafe_bar, food_court, kids_room, prayer_room]
     ErrorResponse:
       type: object
       required: [error]

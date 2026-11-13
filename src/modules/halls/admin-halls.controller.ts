@@ -19,6 +19,7 @@ import { ReplaceHallLayoutRequest } from './dto/replace-hall-layout.request';
 import { UpdateHallRequest } from './dto/update-hall.request';
 import { HallLayoutService } from './hall-layout.service';
 import { toHallLayoutResponse, toHallResponse } from './hall-response.mapper';
+import { screenInput } from './dto/hall-fields';
 import { HallsService } from './halls.service';
 
 const LAYOUT_OK = {
@@ -55,9 +56,9 @@ export class AdminHallsController {
   @Patch(':id')
   @Admin()
   @ApiOperation({
-    summary: 'Rename, activate or retire a hall',
+    summary: 'Edit, activate or retire a hall',
     description:
-      "Admin only: renames the hall and changes its status, in one transaction (name first).\n\n- `status: active` on a draft makes it schedulable; a theater is published only with an active hall.\n- `status: retired` (from draft or active) keeps the hall for history and hides it from scheduling. It needs no scheduled showtime that has not ended (`HALL_NOT_RETIRABLE`, with `details.reasons`). Retiring is final. Retiring the last active hall of a published theater is allowed: the theater stays published.\n- Any other status change (back to draft, out of retired) is `CONFLICT` with `details.from` and `details.to`.\n- The name is unique among the theater's halls, ignoring letter case (`CONFLICT`).\n- A request that changes nothing answers `200` and records nothing.\n- Recorded in the activity log.",
+      "Admin only: renames the hall, changes its projection format and screen size, and changes its status, in one transaction (the status last).\n\n- `format` is the label customers see on the hall and on its showtime chips; prices stay by seat zone. `screenWidthMeters` and `screenHeightMeters` (metres, 1 to 50, at most 2 decimals) are sent together; both null clears the size. One side alone, or a number beside a null, is `VALIDATION_FAILED`. These change in any status, a retired hall's too.\n- `status: active` on a draft makes it schedulable; a theater is published only with an active hall.\n- `status: retired` (from draft or active) keeps the hall for history and hides it from scheduling. It needs no scheduled showtime that has not ended (`HALL_NOT_RETIRABLE`, with `details.reasons`). Retiring is final. Retiring the last active hall of a published theater is allowed: the theater stays published.\n- Any other status change (back to draft, out of retired) is `CONFLICT` with `details.from` and `details.to`.\n- The name is unique among the theater's halls, ignoring letter case (`CONFLICT`).\n- A request that changes nothing answers `200` and records nothing.\n- Recorded in the activity log: one `hall.updated` naming the changed fields, and the status change.",
   })
   @ApiBody({ type: UpdateHallRequest })
   @ApiOkResponse({
@@ -75,6 +76,8 @@ export class AdminHallsController {
       await this.halls.update(principal, params.id, {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(body.format !== undefined ? { format: body.format } : {}),
+        ...screenInput(body),
       }),
     );
   }

@@ -36,4 +36,56 @@ describe('downloadedImage', () => {
       'answered 404',
     );
   });
+
+  describe('when the host answers too many requests or a server error', () => {
+    function responses(...answers: Response[]): void {
+      const spy = jest.spyOn(globalThis, 'fetch');
+      for (const response of answers) spy.mockResolvedValueOnce(response);
+    }
+    const busy = (status: number, retryAfter?: string): Response =>
+      new Response('busy', {
+        status,
+        headers: {
+          'content-type': 'text/html',
+          ...(retryAfter ? { 'retry-after': retryAfter } : {}),
+        },
+      });
+
+    it('asks again after the Retry-After the host gave, when longer, then crops the picture', async () => {
+      const picture = await placeholderImage(400, 300, '#1f4e79', 'a mall');
+      responses(
+        busy(429, '12'),
+        new Response(picture, { headers: { 'content-type': 'image/jpeg' } }),
+      );
+      const wait = jest.fn().mockResolvedValue(undefined);
+
+      const image = await downloadedImage('https://example.com/mall.jpg', 1600, 1067, wait);
+
+      expect(await sharp(image).metadata()).toMatchObject({ width: 1600, height: 1067 });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(wait.mock.calls).toEqual([[12000]]);
+    });
+
+    it('waits longer each time, at least the Retry-After, capped at 30 seconds, then gives up', async () => {
+      responses(busy(503), busy(429, '1'), busy(429, '120'), busy(503), busy(503), busy(503));
+      const wait = jest.fn().mockResolvedValue(undefined);
+
+      await expect(downloadedImage('https://example.com/mall.jpg', 800, 800, wait)).rejects.toThrow(
+        'Seed: the picture https://example.com/mall.jpg answered 503 text/html',
+      );
+      expect(fetch).toHaveBeenCalledTimes(6);
+      expect(wait.mock.calls).toEqual([[5000], [10000], [30000], [20000], [25000]]);
+    });
+
+    it('does not ask again after a 404', async () => {
+      responses(busy(404));
+      const wait = jest.fn().mockResolvedValue(undefined);
+
+      await expect(downloadedImage('https://example.com/a.jpg', 800, 800, wait)).rejects.toThrow(
+        'answered 404',
+      );
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(wait).not.toHaveBeenCalled();
+    });
+  });
 });

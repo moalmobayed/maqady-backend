@@ -80,6 +80,8 @@ describe('HallReadService (integration)', () => {
       status: 'retired',
       rowCount: 4,
       seatsPerRow: 8,
+      format: 'standard',
+      screen: null,
       seatCount: 31,
       wheelchairCount: 1,
       zoneSeatCounts: { front: 8, middle: 15, back: 8 },

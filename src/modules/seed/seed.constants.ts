@@ -42,11 +42,27 @@ export const SEED_HALL_NAME = 'Hall 1';
 /** How long one picture download of a real dataset may take. */
 export const SEED_IMAGE_TIMEOUT_MS = 60_000;
 
+/**
+ * How often a picture download is tried when the host answers `429` or `5xx` (Wikimedia
+ * rate-limits bursts of thumbnail requests from one address), and how long to wait between
+ * tries: the longer of the response's `Retry-After` and `SEED_IMAGE_RETRY_MS` times the attempt,
+ * capped at `SEED_IMAGE_MAX_RETRY_WAIT_MS`.
+ */
+export const SEED_IMAGE_ATTEMPTS = 6;
+export const SEED_IMAGE_RETRY_MS = 5_000;
+export const SEED_IMAGE_MAX_RETRY_WAIT_MS = 30_000;
+
 /** Sent with picture downloads; some image hosts refuse requests without a browser-like agent. */
 export const SEED_IMAGE_USER_AGENT = 'Mozilla/5.0 (compatible; MaqadySeed/1.0)';
 
 /** Picks the dataset `npm run seed` and `npm run seed:remote` load (`SEED_DATASETS`). */
 export const SEED_DATASET_VARIABLE = 'SEED_DATASET';
+
+/**
+ * Facilities #29 added (`prayer_room`, migration `0290_21`). A theater seeded before them, whose
+ * facilities are exactly the dataset's without these, gets the dataset's list on the next run.
+ */
+export const SEED_BACKFILL_FACILITIES: readonly string[] = ['prayer_room'];
 
 /** The seed schedules showtimes on today's cinema date and the 6 after. */
 export const SEED_SHOWTIME_DAYS = 7;
