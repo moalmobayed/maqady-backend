@@ -177,3 +177,36 @@ show-date counts. A first run, before the theater read was narrowed to ids, cost
 theater details, six queries, for ids only); commit `perf(discovery)` fixed it.
 
 No error or warning in the server log during the run.
+
+## Re-check after merging P2 (movie rating)
+
+Run at 19:14 Cairo time the same day, after merging `main-jf8hqi` (P2 adds
+`0290_11_add_movies_rating` and `rating` on the card), on the same database migrated with
+`npm run migrate`, from a fresh build on port 3130.
+
+```bash
+curl -s "$API/movies?limit=2" | jq -c '{total, tabCounts, rating: [.items[].rating],
+  genres: [.facets.genres[] | "\(.slug):\(.count)"], peopleTotal: .facets.peopleTotal,
+  showDates: .facets.showDates}'
+curl -s "$API/movies?genres=comedy&limit=2" | jq -c '{total, genres: [.facets.genres[] | "\(.slug):\(.count)"],
+  peopleTotal: .facets.peopleTotal, showDates: [.facets.showDates[] | "\(.value):\(.count)"]}'
+curl -s "$API/movies?showDate=tomorrow&limit=100" | jq -c '{total}'
+```
+
+```text
+{"total":7,"tabCounts":{"nowShowing":7,"comingSoon":4},"rating":[null,null],
+ "genres":["action:1","adventure:1","animation:1","comedy:3","drama:2","family:2","mystery:1",
+           "romance:2","sci-fi:1","thriller:2"],
+ "peopleTotal":10,
+ "showDates":[{"value":"today","count":6,"cinemaDates":["2026-11-13"]},
+              {"value":"tomorrow","count":7,"cinemaDates":["2026-11-14"]},
+              {"value":"weekend","count":7,"cinemaDates":["2026-11-13","2026-11-14"]}]}
+{"total":3,"genres":["action:1","adventure:1","animation:1","comedy:3","drama:2","family:2","mystery:1",
+           "romance:2","sci-fi:1","thriller:2"],"peopleTotal":6,"showDates":["today:2","tomorrow:3","weekend:3"]}
+{"total":7}
+```
+
+The facets sit beside P2's `rating` unchanged. Today is now 6, not 7: one movie's last showtime
+of the day has started since the first run, so it no longer counts (the Clock rule). The comedy
+filter leaves the genre counts as they were but narrows the cast and the show dates; the
+Tomorrow count equals what `showDate=tomorrow` lists.
