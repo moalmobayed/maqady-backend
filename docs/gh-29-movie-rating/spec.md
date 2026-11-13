@@ -157,7 +157,8 @@ Unit (`test/unit/`, collaborators mocked):
   movie that already has a rating is accepted.
 - `modules/seed/seed.steps.test.ts`: the `movies` step sends the score on create; back-fills it
   with one `PATCH` on an existing movie whose rating is null; leaves a rated movie alone; sends
-  nothing for a dataset movie without a score.
+  nothing for a dataset movie without a score; every dataset's scores fit the admin API (so P5's
+  values are checked as they land).
 
 Integration (`test/integration/`, real Postgres, real wiring):
 
@@ -170,6 +171,10 @@ Integration (`test/integration/`, real Postgres, real wiring):
 - `modules/discovery/catalog-browse.controller.test.ts` ("rating score" block): `GET /movies/{id}`
   returns `rating` and `ratingSource`; the cards of `GET /movies` and
   `GET /movies/{id}/similar` return `rating` (a number for the rated movie, null for the other).
+- `modules/seed/seed.steps.test.ts`: the real `movies` step through `SeedApiClient` over HTTP
+  against the real app creates movies with and without a score; after the scores are emptied in
+  the database (as on staging), a second run back-fills them, keeps a score an admin set, and the
+  audit row names `rating` and `ratingSource`.
 - `modules/discovery/dto/discovery-contract.test.ts` (unchanged): every `/home` schema, with the
   new optional `MovieCard.rating`, equals the draft.
 - `modules/seed/seed.command.test.ts` (unchanged): both datasets still seed and re-seed.
