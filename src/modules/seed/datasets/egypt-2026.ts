@@ -11,6 +11,15 @@ import type { SeedDataset, SeedMovie, SeedPerson, SeedShowtimeSlot, SeedTheater 
  * coming-soon ones are PLACEHOLDERS. Facilities are by venue type; birth dates are not
  * published. Pictures are downloaded from their sources when the seed runs. For staging and
  * demos: the posters, photos and trailers belong to their owners.
+ *
+ * Added for #29, each with its source in a comment beside it, and left empty where no public
+ * source confirms a value: the elCinema user rating of each Now showing film (the Coming soon ones
+ * have rating disabled); the Egypt Post postal code of five cinemas (as listed by egpostal.com);
+ * the prayer room of VOX Mall of Egypt (the mall's own facilities page); the hall formats of the
+ * two VOX cinemas, from the experience elCinema gives each showtime (MAX, Gold, VIP), so their
+ * showtimes are packed into halls by experience; and gallery photos of City Stars and Cosmos from
+ * Wikimedia Commons under CC BY-SA, credited in each caption. No screen size, no WhatsApp number
+ * and no other prayer room is published, so none is given.
  */
 
 export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
@@ -19,6 +28,11 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: 'Sheraton Al Matar, Qism El-Nozha',
     district: 'Heliopolis',
     city: 'Cairo',
+    // Postal code: Egypt Post, Rawdat Sheraton office behind the Sheraton Airport, Nozha
+    // (egpostal.com, the Egypt Post office list).
+    postalCode: '11799',
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.081776,
     longitude: 31.366548,
     transitInfo: null,
@@ -37,7 +51,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '12:00', closes: '02:00' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl:
@@ -47,13 +61,32 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       middle: { amount: 18000, currency: 'EGP' },
       back: { amount: 18000, currency: 'EGP' },
     },
-    halls: ['Hall 1', 'Hall 2', 'Hall 3', 'Hall 4', 'Hall 5', 'Hall 6', 'Hall 7', 'Hall 8'],
+    // Halls by experience: elCinema's schedule gives each showtime's experience (MAX, Gold, Kids,
+    // Standard): MAX is `max`, Gold `vip`. One MAX screen and three Gold shows at once (VOX opening
+    // release, 2019), so two MAX and two Gold shows the estimated runtime keeps out of them play in
+    // standard halls. No public source gives a screen size.
+    halls: [
+      { name: 'Hall 1', format: 'max' },
+      { name: 'Hall 2', format: 'vip' },
+      { name: 'Hall 3', format: 'vip' },
+      { name: 'Hall 4', format: 'vip' },
+      'Hall 5',
+      'Hall 6',
+      'Hall 7',
+      'Hall 8',
+      'Hall 9',
+      'Hall 10',
+    ],
   },
   {
     name: 'City Stars Cinema',
     address: 'Omar Ibn El-Khattab St., City Stars Mall, 5th Floor',
     district: 'Nasr City',
     city: 'Cairo',
+    // Postal code: Egypt Post, Nasr City office (egpostal.com, the Egypt Post office list).
+    postalCode: '11765',
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.073669,
     longitude: 31.346247,
     transitInfo: null,
@@ -75,7 +108,30 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '09:30', closes: '03:30' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    // Gallery: Wikimedia Commons files "City stars 020/021/022.jpg" and "Citystars Shopping Mall,
+    // Heliopolis.jpg", free licences, credited in each caption.
+    gallery: [
+      {
+        caption:
+          'Citystars mall: the atrium. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/City_stars_020.jpg/1920px-City_stars_020.jpg',
+      },
+      {
+        caption:
+          'Citystars mall: the glass roof. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/City_stars_021.jpg/1920px-City_stars_021.jpg',
+      },
+      {
+        caption:
+          'Citystars mall: the spiral stairs. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b9/City_stars_022.jpg/1920px-City_stars_022.jpg',
+      },
+      {
+        caption:
+          'Citystars mall, Heliopolis. Photo: LittleT889, CC BY-SA 4.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Citystars_Shopping_Mall%2C_Heliopolis.jpg/1920px-Citystars_Shopping_Mall%2C_Heliopolis.jpg',
+      },
+    ],
     publish: true,
     colour: '#3d4451',
     coverUrl: null,
@@ -102,6 +158,10 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: 'Ring Road south of the Police Academy, The 5th Settlement - New Cairo',
     district: 'New Cairo',
     city: 'Cairo',
+    // Postal code: Egypt Post, Fifth Settlement office (egpostal.com, the Egypt Post office list).
+    postalCode: '11835',
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.026119,
     longitude: 31.406989,
     transitInfo: null,
@@ -120,7 +180,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '10:00', closes: '03:30' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl:
@@ -137,6 +197,10 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: '12 Emad El Din St., Downtown',
     district: 'Downtown',
     city: 'Cairo',
+    // Postal code: Egypt Post, Azbakeya office (egpostal.com, the Egypt Post office list).
+    postalCode: '11669',
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.056617,
     longitude: 31.244278,
     transitInfo: null,
@@ -155,7 +219,20 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '09:30', closes: '03:00' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    // Gallery: Wikimedia Commons files "Cosmos Cinema in Cairo 01/02.jpg", free licences, credited
+    // in each caption.
+    gallery: [
+      {
+        caption:
+          'Cosmos Cinema on Emad El Din St. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Cosmos_Cinema_in_Cairo_01.jpg/1920px-Cosmos_Cinema_in_Cairo_01.jpg',
+      },
+      {
+        caption:
+          'The Cosmos Cinema building. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+        url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Cosmos_Cinema_in_Cairo_02.jpg/1920px-Cosmos_Cinema_in_Cairo_02.jpg',
+      },
+    ],
     publish: true,
     colour: '#3d4451',
     coverUrl: null,
@@ -182,6 +259,11 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: 'Abdel Aziz Al Seoud St., El Manyal',
     district: 'Manyal El Roda',
     city: 'Cairo',
+    // Postal code: Egypt Post, Roda West office, 115 Abdel Aziz Al Seoud St. (egpostal.com, the
+    // Egypt Post office list).
+    postalCode: '11555',
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.017623,
     longitude: 31.223386,
     transitInfo: null,
@@ -200,7 +282,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '10:30', closes: '02:30' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl: null,
@@ -217,6 +299,10 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       'Al-Wahat Road - 6th of October, Giza - in front of the Media Production City - the 2nd floor.',
     district: '6th of October',
     city: 'Giza',
+    // Postal code: no Egypt Post office could be matched to this address with confidence.
+    postalCode: null,
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 29.970543,
     longitude: 31.018697,
     transitInfo: null,
@@ -224,7 +310,9 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     email: null,
     showContactsPublic: true,
     phones: [],
-    facilities: ['food_court', 'cafe_bar', 'free_parking', 'wheelchair_access'],
+    // Prayer room: "Male and female prayer rooms are located at the G1 and C1 entrances",
+    // mallofegypt.com/en/facilities-and-services.
+    facilities: ['food_court', 'cafe_bar', 'free_parking', 'wheelchair_access', 'prayer_room'],
     hours: [
       { weekday: 1, closed: false, opens: '10:30', closes: '03:00' },
       { weekday: 2, closed: false, opens: '10:30', closes: '03:00' },
@@ -235,7 +323,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '10:30', closes: '03:00' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl:
@@ -245,16 +333,19 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       middle: { amount: 19000, currency: 'EGP' },
       back: { amount: 19000, currency: 'EGP' },
     },
+    // Halls by experience: elCinema's schedule gives each showtime's experience (Gold, VIP,
+    // Standard): Gold and VIP are `vip`. No public source gives a screen size.
     halls: [
-      'Hall 1',
-      'Hall 2',
-      'Hall 3',
-      'Hall 4',
+      { name: 'Hall 1', format: 'vip' },
+      { name: 'Hall 2', format: 'vip' },
+      { name: 'Hall 3', format: 'vip' },
+      { name: 'Hall 4', format: 'vip' },
       'Hall 5',
       'Hall 6',
       'Hall 7',
       'Hall 8',
       'Hall 9',
+      'Hall 10',
     ],
   },
   {
@@ -262,6 +353,10 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: 'Mall of Arabia, Juhayna Sq.,',
     district: '6th of October',
     city: 'Giza',
+    // Postal code: no Egypt Post office could be matched to this address with confidence.
+    postalCode: null,
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 30.005987,
     longitude: 30.970657,
     transitInfo: null,
@@ -283,7 +378,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '10:30', closes: '04:00' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl: null,
@@ -309,6 +404,10 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     address: '269 Al Haram Street, El Nahda square',
     district: 'El Haram',
     city: 'Giza',
+    // Postal code: no Egypt Post office could be matched to this address with confidence.
+    postalCode: null,
+    // WhatsApp: the cinema publishes none of its own.
+    whatsapp: null,
     latitude: 29.998409,
     longitude: 31.173699,
     transitInfo: null,
@@ -327,7 +426,7 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
       { weekday: 7, closed: false, opens: '10:00', closes: '00:30' },
     ],
     specialDate: null,
-    galleryCaptions: [],
+    gallery: [],
     publish: true,
     colour: '#3d4451',
     coverUrl:
@@ -1638,7 +1737,7 @@ export const EGYPT_2026_PEOPLE: readonly SeedPerson[] = [
 ];
 
 export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
-  // elCinema 2098547; runtime: ESTIMATED from real cinema schedules (typical repeat every 180 min); release: elCinema
+  // elCinema 2098547; runtime: ESTIMATED from real cinema schedules (typical repeat every 180 min); release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Mahmoud El Tany',
     status: 'now_showing',
@@ -1653,6 +1752,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: null,
     budgetLabel: null,
     filmingLocations: null,
+    rating: 6.9,
+    ratingSource: 'elCinema users',
     genres: ['comedy'],
     videos: [
       {
@@ -1705,7 +1806,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/90484485b73db201e63b126aa642c23f530d7c19d19c09f16167976e1167ca21.jpg',
   },
-  // elCinema 2099520; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema
+  // elCinema 2099520; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Matloub Aaeleyan',
     status: 'now_showing',
@@ -1720,6 +1821,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Synergy Plus',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 4.5,
+    ratingSource: 'elCinema users',
     genres: ['comedy'],
     videos: [
       {
@@ -1755,7 +1858,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/ee4bc4c0eb9fadf422be6a8aeb9f85808bac76797d1aba6b86eed76af4ae848f.jpg',
   },
-  // elCinema 2095662; runtime: The Numbers; release: elCinema
+  // elCinema 2095662; runtime: The Numbers; release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Red Flag',
     status: 'now_showing',
@@ -1770,6 +1873,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Rasheedy Films',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 4.8,
+    ratingSource: 'elCinema users',
     genres: ['comedy'],
     videos: [
       {
@@ -1806,7 +1911,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/f9a1b99df382ff9e8a7f9382bf60aa96dda55eb98680fd60c85bfe5f22b91642.jpg',
   },
-  // elCinema 2099939; runtime: PLACEHOLDER: not announced yet; release: elCinema
+  // elCinema 2099939; runtime: PLACEHOLDER: not announced yet; release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Shish Doo',
     status: 'now_showing',
@@ -1821,6 +1926,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: null,
     budgetLabel: null,
     filmingLocations: null,
+    rating: 4.2,
+    ratingSource: 'elCinema users',
     genres: ['comedy'],
     videos: [
       {
@@ -1856,7 +1963,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/7ee673dad6a9cc695929303bf427bb2b1fe0481082b1e95d3d98f9973957f60b.jpg',
   },
-  // elCinema 2099773; runtime: ESTIMATED from real cinema schedules (typical repeat every 120 min); release: elCinema
+  // elCinema 2099773; runtime: ESTIMATED from real cinema schedules (typical repeat every 120 min); release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Wala Kan Ala El-Bal',
     status: 'now_showing',
@@ -1871,6 +1978,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Film Square Productions',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 7.0,
+    ratingSource: 'elCinema users',
     genres: ['comedy', 'romance'],
     videos: [
       {
@@ -1903,7 +2012,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/c2259345b6e390e156fad302be44c8ed805265cd00474c3d17f0fbb603652c6c.jpg',
   },
-  // elCinema 2069657; runtime: PLACEHOLDER: not announced yet; release: elCinema
+  // elCinema 2069657; runtime: PLACEHOLDER: not announced yet; release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'El Gawahergy',
     status: 'now_showing',
@@ -1918,6 +2027,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: null,
     budgetLabel: null,
     filmingLocations: null,
+    rating: 5.9,
+    ratingSource: 'elCinema users',
     genres: ['comedy'],
     videos: [
       {
@@ -1961,7 +2072,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/a4a1fc4dd46c127618712442698a7dadbc4ed0594dcd2d6db0c781a7e1d6edf0.jpg',
   },
-  // elCinema 2098609; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema
+  // elCinema 2098609; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Khally Balak Min Nafsak',
     status: 'now_showing',
@@ -1976,6 +2087,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Synergy Plus',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 7.2,
+    ratingSource: 'elCinema users',
     genres: ['comedy', 'action'],
     videos: [
       {
@@ -2011,7 +2124,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/044752b9e0d459579c67545180ae42f534adea2a963af175cb3591492f125ce4.jpg',
   },
-  // elCinema 2096928; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema
+  // elCinema 2096928; runtime: ESTIMATED from real cinema schedules (typical repeat every 150 min); release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Naseeb',
     status: 'now_showing',
@@ -2026,6 +2139,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Albatros Production',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 4.3,
+    ratingSource: 'elCinema users',
     genres: ['romance', 'comedy'],
     videos: [
       {
@@ -2060,7 +2175,7 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     posterUrl:
       'https://media0106.elcinema.com/uploads/15674d5ca58202e4030b0a67380bc2b450983b7643dfac0a7a4b5adf56e1bf9a.jpg',
   },
-  // elCinema 2093181; runtime: Arabic Wikipedia; release: elCinema
+  // elCinema 2093181; runtime: Arabic Wikipedia; release: elCinema; rating: elCinema users, 2026-10-29
   {
     title: 'Saqr w Kanarya',
     status: 'now_showing',
@@ -2075,6 +2190,8 @@ export const EGYPT_2026_MOVIES: readonly SeedMovie[] = [
     productionCompany: 'Oscar for Distribution and Theaters',
     budgetLabel: null,
     filmingLocations: null,
+    rating: 7.3,
+    ratingSource: 'elCinema users',
     genres: ['action', 'comedy', 'romance'],
     videos: [
       {
@@ -2303,48 +2420,49 @@ export const EGYPT_2026_SHOWTIMES: readonly SeedShowtimeSlot[] = [
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '12:45',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 3',
+    hall: 'Hall 2',
     startTime: '13:00',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 4',
+    hall: 'Hall 3',
     startTime: '13:30',
     movie: 'Matloub Aaeleyan',
   },
-  { theater: 'VOX City Centre Almaza', hall: 'Hall 5', startTime: '14:30', movie: 'Naseeb' },
+  { theater: 'VOX City Centre Almaza', hall: 'Hall 4', startTime: '14:30', movie: 'Naseeb' },
+  { theater: 'VOX City Centre Almaza', hall: 'Hall 6', startTime: '14:30', movie: 'Naseeb' },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '15:00',
     movie: 'Matloub Aaeleyan',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 1',
+    hall: 'Hall 7',
     startTime: '15:15',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 3',
+    hall: 'Hall 2',
     startTime: '15:30',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 6',
+    hall: 'Hall 8',
     startTime: '16:00',
     movie: 'Matloub Aaeleyan',
   },
-  { theater: 'VOX City Centre Almaza', hall: 'Hall 4', startTime: '17:00', movie: 'Naseeb' },
+  { theater: 'VOX City Centre Almaza', hall: 'Hall 9', startTime: '17:00', movie: 'Naseeb' },
   {
     theater: 'VOX City Centre Almaza',
     hall: 'Hall 1',
@@ -2353,19 +2471,19 @@ export const EGYPT_2026_SHOWTIMES: readonly SeedShowtimeSlot[] = [
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '17:45',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 3',
+    hall: 'Hall 2',
     startTime: '18:00',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 5',
+    hall: 'Hall 3',
     startTime: '18:30',
     movie: 'Matloub Aaeleyan',
   },
@@ -2373,56 +2491,62 @@ export const EGYPT_2026_SHOWTIMES: readonly SeedShowtimeSlot[] = [
   { theater: 'VOX City Centre Almaza', hall: 'Hall 4', startTime: '19:45', movie: 'Naseeb' },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '20:00',
     movie: 'Matloub Aaeleyan',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 1',
+    hall: 'Hall 7',
     startTime: '20:15',
     movie: 'Mahmoud El Tany',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 3',
+    hall: 'Hall 8',
     startTime: '20:15',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 7',
+    hall: 'Hall 2',
     startTime: '20:30',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 8',
+    hall: 'Hall 9',
     startTime: '21:00',
     movie: 'Matloub Aaeleyan',
   },
-  { theater: 'VOX City Centre Almaza', hall: 'Hall 5', startTime: '22:00', movie: 'Naseeb' },
+  { theater: 'VOX City Centre Almaza', hall: 'Hall 10', startTime: '22:00', movie: 'Naseeb' },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 3',
+    hall: 'Hall 1',
     startTime: '22:30',
     movie: 'Matloub Aaeleyan',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '22:45',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 4',
+    hall: 'Hall 6',
+    startTime: '22:45',
+    movie: 'Wala Kan Ala El-Bal',
+  },
+  {
+    theater: 'VOX City Centre Almaza',
+    hall: 'Hall 2',
     startTime: '23:00',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX City Centre Almaza',
-    hall: 'Hall 1',
+    hall: 'Hall 3',
     startTime: '23:30',
     movie: 'Matloub Aaeleyan',
   },
@@ -2681,97 +2805,104 @@ export const EGYPT_2026_SHOWTIMES: readonly SeedShowtimeSlot[] = [
   { theater: 'Galaxy El Manyal', hall: 'Hall 4', startTime: '00:00', movie: 'Wala Kan Ala El-Bal' },
   { theater: 'Galaxy El Manyal', hall: 'Hall 5', startTime: '00:00', movie: 'Naseeb' },
   { theater: 'Galaxy El Manyal', hall: 'Hall 6', startTime: '00:00', movie: 'Saqr w Kanarya' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '11:25', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 2', startTime: '12:00', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 5', startTime: '11:25', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '12:00', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 3',
+    hall: 'Hall 4',
     startTime: '12:15',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 4', startTime: '12:20', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '12:20', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 5',
+    hall: 'Hall 7',
     startTime: '13:00',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '13:30', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 7', startTime: '13:45', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '13:55', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 2', startTime: '13:30', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '13:45', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 9', startTime: '13:55', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 1',
+    hall: 'Hall 3',
     startTime: '14:00',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 3', startTime: '14:30', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 9',
+    hall: 'Hall 4',
     startTime: '14:30',
     movie: 'Wala Kan Ala El-Bal',
   },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 5', startTime: '14:30', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 2',
+    hall: 'Hall 6',
     startTime: '15:15',
     movie: 'Wala Kan Ala El-Bal',
   },
   { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '16:15', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 4', startTime: '16:15', movie: 'Red Flag' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 7', startTime: '16:15', movie: 'Red Flag' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 5',
+    hall: 'Hall 2',
     startTime: '16:30',
     movie: 'Wala Kan Ala El-Bal',
   },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 6',
+    hall: 'Hall 4',
     startTime: '16:45',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 7', startTime: '17:00', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '17:00', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '17:30',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 3', startTime: '18:45', movie: 'Mahmoud El Tany' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '18:45', movie: 'Mahmoud El Tany' },
   { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '19:00', movie: 'Matloub Aaeleyan' },
+  {
+    theater: 'VOX Mall of Egypt',
+    hall: 'Hall 2',
+    startTime: '19:00',
+    movie: 'Wala Kan Ala El-Bal',
+  },
   {
     theater: 'VOX Mall of Egypt',
     hall: 'Hall 4',
     startTime: '19:00',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 5', startTime: '19:30', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 7', startTime: '19:30', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 2',
+    hall: 'Hall 5',
     startTime: '19:45',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 4', startTime: '21:15', movie: 'Red Flag' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 6',
+    hall: 'Hall 4',
     startTime: '21:15',
     movie: 'Wala Kan Ala El-Bal',
   },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '21:15', movie: 'Red Flag' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 7',
+    hall: 'Hall 2',
     startTime: '21:30',
     movie: 'Wala Kan Ala El-Bal',
   },
   { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '21:45', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 2', startTime: '22:00', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '21:45', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 5', startTime: '22:00', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 3',
+    hall: 'Hall 7',
     startTime: '22:15',
     movie: 'Wala Kan Ala El-Bal',
   },
@@ -2781,19 +2912,20 @@ export const EGYPT_2026_SHOWTIMES: readonly SeedShowtimeSlot[] = [
     startTime: '23:30',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 5', startTime: '23:45', movie: 'Mahmoud El Tany' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '23:45', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '23:45', movie: 'Mahmoud El Tany' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 9', startTime: '23:45', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 7',
+    hall: 'Hall 2',
     startTime: '00:00',
     movie: 'Wala Kan Ala El-Bal',
   },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 8', startTime: '00:15', movie: 'Matloub Aaeleyan' },
-  { theater: 'VOX Mall of Egypt', hall: 'Hall 1', startTime: '00:30', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 3', startTime: '00:15', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 10', startTime: '00:15', movie: 'Matloub Aaeleyan' },
+  { theater: 'VOX Mall of Egypt', hall: 'Hall 6', startTime: '00:30', movie: 'Matloub Aaeleyan' },
   {
     theater: 'VOX Mall of Egypt',
-    hall: 'Hall 3',
+    hall: 'Hall 7',
     startTime: '00:30',
     movie: 'Wala Kan Ala El-Bal',
   },

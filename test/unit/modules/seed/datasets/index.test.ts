@@ -6,12 +6,31 @@ import {
   MAX_RUNTIME_MINUTES,
   TEXT_LIMITS,
 } from '../../../../../src/modules/catalog/catalog.constants';
-import { PHONE_NUMBER_PATTERN } from '../../../../../src/modules/theaters/theaters.constants';
-import { SEED_DATASETS } from '../../../../../src/modules/seed/datasets';
+import { MAX_MOVIE_RATING } from '../../../../../src/modules/catalog/catalog.constants';
+import { HALL_FORMATS } from '../../../../../src/modules/halls/enums';
+import { SCREEN_METERS_LIMITS } from '../../../../../src/modules/halls/halls.constants';
+import { FACILITIES } from '../../../../../src/modules/theaters/enums';
+import {
+  PHONE_NUMBER_PATTERN,
+  POSTAL_CODE_PATTERN,
+} from '../../../../../src/modules/theaters/theaters.constants';
+import { DEMO_DATASET, SEED_DATASETS } from '../../../../../src/modules/seed/datasets';
 import { EGYPT_2026_DATASET } from '../../../../../src/modules/seed/datasets/egypt-2026';
 import { SEED_HALL_NAME } from '../../../../../src/modules/seed/seed.constants';
 import { seedHallOf } from '../../../../../src/modules/seed/seed.steps';
-import type { SeedDataset, SeedDayHours } from '../../../../../src/modules/seed/types';
+import type { SeedDataset, SeedDayHours, SeedHall } from '../../../../../src/modules/seed/types';
+
+/** `chk_theater_photos_caption` (migration `0055_04`): a gallery caption is at most 120 characters. */
+const PHOTO_CAPTION_MAX = 120;
+
+/** Whether a screen side is one the admin hall routes accept: 1 to 50 m, at most 2 decimals. */
+function screenSide(meters: number): boolean {
+  return (
+    meters >= SCREEN_METERS_LIMITS.min &&
+    meters <= SCREEN_METERS_LIMITS.max &&
+    Math.round(meters * 100) / 100 === meters
+  );
+}
 
 /** The genres migration U3 seeds; a dataset can name no other. */
 const GENRE_SLUGS = [
@@ -125,6 +144,7 @@ describe.each(Object.values(SEED_DATASETS))('the $name seed dataset', (dataset: 
     }
     const urls = [
       ...dataset.theaters.map((theater) => theater.coverUrl),
+      ...dataset.theaters.flatMap((theater) => theater.gallery.map((photo) => photo.url)),
       ...dataset.people.map((person) => person.photoUrl),
       ...dataset.movies.flatMap((movie) => [
         movie.posterUrl,
@@ -132,6 +152,74 @@ describe.each(Object.values(SEED_DATASETS))('the $name seed dataset', (dataset: 
       ]),
     ].filter((url): url is string => typeof url === 'string');
     expect(urls.filter((url) => !url.startsWith('https://'))).toEqual([]);
+  });
+
+  it('gives the #29 fields only values the admin API accepts', () => {
+    for (const movie of dataset.movies) {
+      expect({
+        title: movie.title,
+        rating:
+          movie.rating === undefined ||
+          (movie.rating >= 0 &&
+            movie.rating <= MAX_MOVIE_RATING &&
+            Math.round(movie.rating * 10) / 10 === movie.rating),
+        sourceOnlyWithRating: movie.ratingSource === undefined || movie.rating !== undefined,
+      }).toEqual({ title: movie.title, rating: true, sourceOnlyWithRating: true });
+    }
+    for (const theater of dataset.theaters) {
+      const halls: SeedHall[] = (theater.halls ?? []).map(seedHallOf);
+      expect({
+        name: theater.name,
+        postalCode:
+          theater.postalCode === null ||
+          theater.postalCode === undefined ||
+          POSTAL_CODE_PATTERN.test(theater.postalCode),
+        whatsapp:
+          theater.whatsapp === null ||
+          theater.whatsapp === undefined ||
+          PHONE_NUMBER_PATTERN.test(theater.whatsapp),
+        facilities: theater.facilities.every((facility) => FACILITIES.includes(facility)),
+        captions: theater.gallery.every(
+          (photo) =>
+            photo.caption.length >= 1 &&
+            photo.caption.length <= PHOTO_CAPTION_MAX &&
+            photo.caption.trim() === photo.caption,
+        ),
+        formats: halls.every(
+          (hall) => hall.format === undefined || HALL_FORMATS.includes(hall.format),
+        ),
+        screens: halls.every((hall) =>
+          hall.screenWidthMeters === undefined
+            ? hall.screenHeightMeters === undefined
+            : hall.screenHeightMeters !== undefined &&
+              screenSide(hall.screenWidthMeters) &&
+              screenSide(hall.screenHeightMeters),
+        ),
+      }).toEqual({
+        name: theater.name,
+        postalCode: true,
+        whatsapp: true,
+        facilities: true,
+        captions: true,
+        formats: true,
+        screens: true,
+      });
+    }
+  });
+
+  it('has an example of every #29 field: a score, a postal code and a non-standard hall', () => {
+    expect(dataset.movies.some((movie) => movie.rating !== undefined)).toBe(true);
+    expect(dataset.theaters.some((theater) => typeof theater.postalCode === 'string')).toBe(true);
+    expect(
+      dataset.theaters.some((theater) =>
+        (theater.halls ?? [])
+          .map(seedHallOf)
+          .some((hall) => (hall.format ?? 'standard') !== 'standard'),
+      ),
+    ).toBe(true);
+    expect(dataset.theaters.some((theater) => theater.facilities.includes('prayer_room'))).toBe(
+      true,
+    );
   });
 
   it('schedules only Now showing movies, in published halls that exist, inside opening hours', () => {
@@ -205,6 +293,55 @@ describe('the egypt-2026 seed dataset', () => {
     expect(companies).toEqual([]);
   });
 
+  it('scores the Now showing films with their elCinema user rating, and no Coming soon film', () => {
+    const scores = Object.fromEntries(
+      dataset.movies.map((movie) => [
+        movie.title,
+        [movie.rating ?? null, movie.ratingSource ?? null],
+      ]),
+    );
+    expect(scores).toMatchObject({
+      Naseeb: [4.3, 'elCinema users'],
+      'Red Flag': [4.8, 'elCinema users'],
+      'Saqr w Kanarya': [7.3, 'elCinema users'],
+      'El Gawahergy': [5.9, 'elCinema users'],
+    });
+    for (const movie of dataset.movies) {
+      expect({ title: movie.title, rated: movie.rating !== undefined }).toEqual({
+        title: movie.title,
+        rated: movie.status === 'now_showing',
+      });
+    }
+  });
+
+  it('claims only what a source confirms: one prayer room, no WhatsApp, no screen size', () => {
+    expect(
+      dataset.theaters
+        .filter((theater) => theater.facilities.includes('prayer_room'))
+        .map((theater) => theater.name),
+    ).toEqual(['VOX Mall of Egypt']);
+    expect(dataset.theaters.filter((theater) => theater.whatsapp)).toEqual([]);
+    const halls = dataset.theaters.flatMap((theater) => (theater.halls ?? []).map(seedHallOf));
+    expect(halls.filter((hall) => hall.screenWidthMeters !== undefined)).toEqual([]);
+    const almaza = dataset.theaters.find((theater) => theater.name === 'VOX City Centre Almaza');
+    const formats = (almaza?.halls ?? []).map((hall) => seedHallOf(hall).format ?? 'standard');
+    expect(formats.filter((format) => format === 'max')).toHaveLength(1);
+    expect(formats.filter((format) => format === 'vip')).toHaveLength(3);
+  });
+
+  it('uses only freely licensed Wikimedia Commons thumbnails for the gallery, credited', () => {
+    const photos = dataset.theaters.flatMap((theater) => theater.gallery);
+    expect(photos.length).toBeGreaterThan(0);
+    for (const photo of photos) {
+      expect({
+        url: /^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/thumb\/.+\/1920px-[^/]+$/.test(
+          photo.url ?? '',
+        ),
+        credit: / Photo: .+, CC BY(-SA)? \d\.\d, via Wikimedia Commons$/.test(photo.caption),
+      }).toEqual({ url: true, credit: true });
+    }
+  });
+
   it('places every theater inside Greater Cairo', () => {
     for (const theater of dataset.theaters) {
       expect({
@@ -213,5 +350,26 @@ describe('the egypt-2026 seed dataset', () => {
         longitude: theater.longitude > 30.8 && theater.longitude < 31.6,
       }).toEqual({ name: theater.name, latitude: true, longitude: true });
     }
+  });
+});
+
+describe('the demo seed dataset', () => {
+  const dataset = DEMO_DATASET;
+  const published = dataset.theaters.filter((theater) => theater.publish);
+
+  it('gives every new #29 field an example: WhatsApp, screen sizes, at least 3 gallery photos', () => {
+    expect(dataset.theaters.filter((theater) => theater.whatsapp).length).toBeGreaterThan(0);
+    for (const theater of published) {
+      expect({ name: theater.name, gallery: theater.gallery.length >= 3 }).toEqual({
+        name: theater.name,
+        gallery: true,
+      });
+    }
+    const halls = published.flatMap((theater) => (theater.halls ?? []).map(seedHallOf));
+    expect(new Set(halls.map((hall) => hall.format ?? 'standard')).size).toBeGreaterThanOrEqual(4);
+    expect(halls.some((hall) => hall.screenWidthMeters !== undefined)).toBe(true);
+    expect(
+      dataset.movies.filter((movie) => movie.status === 'now_showing').every((m) => m.rating),
+    ).toBe(true);
   });
 });
