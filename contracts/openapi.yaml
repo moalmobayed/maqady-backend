@@ -2603,7 +2603,7 @@ paths:
         - staff: []
   /admin/theaters/{id}:
     get:
-      description: 'Admin only: the theater page, in any status. Location, contacts, facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.'
+      description: 'Admin only: the theater page, in any status. Location (with the postal code), contacts (with the WhatsApp number), facilities, weekly hours, special dates from today on, default prices, cover and gallery, whether it is open now, and for a draft what it still needs before it can be published.'
       operationId: getTheater
       parameters:
         - name: id
@@ -2801,7 +2801,7 @@ paths:
         - staff: []
     patch:
       description: |-
-        Admin only: edits the Location and Contacts fields, and changes the status, in one transaction (fields first).
+        Admin only: edits the Location and Contacts fields (`postalCode` and `whatsapp` included; null clears them), and changes the status, in one transaction (fields first).
 
         - `status: active` on a draft publishes it. It needs the zone prices, the weekly hours (all seven days set, at least one open) and an active hall; otherwise `THEATER_NOT_PUBLISHABLE`, with `details.missing` naming what is missing.
         - `sales_paused` and `active` toggle selling on a published theater. A paused theater is hidden from customers; existing tickets stay valid.
@@ -3899,7 +3899,7 @@ paths:
         - staff: []
   /admin/theaters/{id}/facilities:
     put:
-      description: 'Admin only: the Facilities tab. The whole set. Recorded in the activity log.'
+      description: 'Admin only: the Facilities tab. The whole set, from the `Facility` list (`prayer_room` since #29). An unknown facility is `VALIDATION_FAILED`. Recorded in the activity log.'
       operationId: replaceFacilities
       parameters:
         - name: id
@@ -17472,7 +17472,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location, its facilities and `hallCount` (its active halls). `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100).
+        Every theater open for sales, alphabetical, with its open state (judged by the cinema day, so 01:30 on Thursday uses Wednesday's hours), today's and the weekly hours, its location and postal code, its facilities and `hallCount` (its active halls). `openNow=true` keeps the theaters open now; `parking=true` those with free or valet parking. `mainPhone` is null when the theater hides its contacts. Cursor-paginated (default 20, at most 100). `total` counts the matching theaters and `totalHalls` their active halls ("25 HALLS"), both over every page.
       operationId: listPublicTheaters
       parameters:
         - name: cursor
@@ -17623,7 +17623,7 @@ paths:
       description: |-
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
-        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones and email appear only when the theater shows its contacts (`phones` is empty and `email` null otherwise). A draft, a paused or an unknown theater is `404 NOT_FOUND`. `halls` lists its active halls by name (seats and wheelchair spaces), and `hallCount` is their number. Its showtimes are `GET /theaters/{id}/showtimes`.
+        The theater's details, gallery, open state, weekly hours and the special dates of the next 7 cinema days. Phones, email and the WhatsApp number (with its ready `whatsappUrl`) appear only when the theater shows its contacts (`phones` is empty and `email`, `whatsapp` and `whatsappUrl` are null otherwise). `postalCode` goes with the city ("Cairo 11211"). A draft, a paused or an unknown theater is `404 NOT_FOUND`. `halls` lists its active halls by name (seats and wheelchair spaces), and `hallCount` is their number. Its showtimes are `GET /theaters/{id}/showtimes`.
       operationId: getPublicTheater
       parameters:
         - name: id
@@ -31377,6 +31377,18 @@ components:
           default: false
           example: true
           description: '"Show phone numbers and email on the website". Default false: phones and email stay admin-only.'
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: 'Postal code: 5 digits. Customers see it with the city on the Theaters page cards and the theater page ("Cairo 11211"). Null or omitted: none. Trimmed.'
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: 'Dedicated WhatsApp number, E.164 (`+`, the country code and the number, digits only). The theater page''s WhatsApp button and Contact section use it, only while `showContactsPublic` is true. Null or omitted: none.'
       required:
         - name
         - address
@@ -31394,6 +31406,7 @@ components:
         - cafe_bar
         - food_court
         - kids_room
+        - prayer_room
       description: Facilities, in the order of the facility list.
     DayHoursResponse:
       type: object
@@ -31589,6 +31602,17 @@ components:
           type: boolean
           example: true
           description: True when phones and email are shown on the website.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: Postal code (5 digits), shown with the city ("Cairo 11211"); null when none.
+        whatsapp:
+          type: string
+          nullable: true
+          example: '+201001234567'
+          description: Dedicated WhatsApp number, E.164; null when none. Customers see it only while `showContactsPublic` is true.
         phones:
           description: Phones in display order; the first is the main phone.
           type: array
@@ -31664,6 +31688,8 @@ components:
         - parkingInfo
         - email
         - showContactsPublic
+        - postalCode
+        - whatsapp
         - phones
         - facilities
         - hours
@@ -31746,6 +31772,18 @@ components:
           nullable: false
           example: true
           description: '"Show phone numbers and email on the website".'
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: 'Postal code: 5 digits, shown with the city ("Cairo 11211"). Null removes it. Trimmed.'
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: Dedicated WhatsApp number, E.164; public only while `showContactsPublic` is true. Null removes it.
         status:
           nullable: false
           example: active
@@ -31829,7 +31867,7 @@ components:
       properties:
         facilities:
           type: array
-          maxItems: 7
+          maxItems: 8
           uniqueItems: true
           example:
             - wheelchair_access
@@ -34522,6 +34560,12 @@ components:
           type: string
           example: 26 July Street, Zamalek
           description: Street address.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: The postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none. Always sent by this API.
         cover:
           nullable: true
           description: Cover photo, or null when none is set
@@ -35034,6 +35078,12 @@ components:
           type: string
           example: 26 July Street, Zamalek
           description: Street address.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: The postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none. Always sent by this API.
         cover:
           nullable: true
           description: Cover photo, or null when none is set
@@ -35114,10 +35164,16 @@ components:
           minimum: 0
           example: 5
           description: How many theaters match.
+        totalHalls:
+          type: integer
+          minimum: 0
+          example: 25
+          description: 'How many active halls the matching theaters have in all ("25 HALLS" next to `total`): the sum of `hallCount` over every theater that matches `openNow` and `parking`, whatever the page.'
       required:
         - items
         - nextCursor
         - total
+        - totalHalls
     TheaterGalleryPhoto:
       type: object
       properties:
@@ -35187,6 +35243,12 @@ components:
           type: string
           example: Cairo
           description: City.
+        postalCode:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{5}$
+          example: '11211'
+          description: Postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none.
         latitude:
           type: number
           example: 30.0609
@@ -35210,6 +35272,18 @@ components:
           nullable: true
           example: zamalek@maqady.example
           description: Contact email; null when none is set or the theater hides its contacts.
+        whatsapp:
+          type: string
+          nullable: true
+          pattern: ^\+[1-9][0-9]{6,14}$
+          example: '+201001234567'
+          description: The dedicated WhatsApp number (E.164) for the Contact section; null when none is set or the theater hides its contacts.
+        whatsappUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://wa.me/201001234567
+          description: The link of the WhatsApp button in the header and the Contact section (WhatsApp click-to-chat); null exactly when `whatsapp` is.
         phones:
           description: Phones, the main one first; empty when the theater hides its contacts.
           type: array
@@ -35268,11 +35342,14 @@ components:
         - address
         - district
         - city
+        - postalCode
         - latitude
         - longitude
         - transitInfo
         - parkingInfo
         - email
+        - whatsapp
+        - whatsappUrl
         - phones
         - facilities
         - cover
