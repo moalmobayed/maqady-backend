@@ -323,6 +323,18 @@ export interface ScheduledShowtimeFilter {
   readonly startsAfter?: Date;
 }
 
+/** A movie with a scheduled showtime on a cinema date (U8 "show date" options). */
+export interface ScheduledMovieDate {
+  readonly movieId: number;
+  readonly cinemaDate: CalendarDate;
+}
+
+/** A distinct `(movie_id, cinema_date)` pair of scheduled showtimes. */
+export interface ScheduledMovieDateRow {
+  readonly movie_id: number;
+  readonly cinema_date: CalendarDate;
+}
+
 /** The first scheduled showtime per movie on `cinemaDate` starting after `after` (U8 ticker). */
 export interface NextShowtimeFilter {
   readonly cinemaDate: CalendarDate;

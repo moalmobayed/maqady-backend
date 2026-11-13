@@ -1,9 +1,10 @@
 import { AppError } from '../../../../src/common/errors/app-error';
 import type { CatalogReadService } from '../../../../src/modules/catalog/catalog-read.service';
 import type { MovieDetails, MovieSummary } from '../../../../src/modules/catalog/types';
+import { PEOPLE_FACET_LIMIT } from '../../../../src/modules/discovery/discovery.constants';
 import { MovieBrowseService } from '../../../../src/modules/discovery/movie-browse.service';
 import type { ShowtimeBrowseService } from '../../../../src/modules/discovery/showtime-browse.service';
-import type { MovieShowtimeSummary } from '../../../../src/modules/discovery/types';
+import type { MovieShowtimeSummary, ShowDateOption } from '../../../../src/modules/discovery/types';
 
 const GENRES = [
   { id: 5, name: 'Drama', slug: 'drama' },
@@ -21,9 +22,16 @@ async function rejection(promise: Promise<unknown>): Promise<AppError> {
   throw new Error('expected a rejection');
 }
 
+/** Friday 16 October 2026: the show-date options with the movies showing on each. */
+const OPTIONS: ShowDateOption[] = [
+  { value: 'today', cinemaDates: ['2026-10-16'], movieIds: [3, 8] },
+  { value: 'tomorrow', cinemaDates: ['2026-10-17'], movieIds: [8, 11] },
+  { value: 'weekend', cinemaDates: ['2026-10-16', '2026-10-17'], movieIds: [3, 8, 11] },
+];
+
 describe('MovieBrowseService', () => {
   let catalog: jest.Mocked<CatalogReadService>;
-  let showtimes: jest.Mocked<Pick<ShowtimeBrowseService, 'movieIdsShowing' | 'summaryOf'>>;
+  let showtimes: jest.Mocked<Pick<ShowtimeBrowseService, 'showDateOptions' | 'summaryOf'>>;
   let service: MovieBrowseService;
   const summary: MovieShowtimeSummary = { nextShowToday: null, cinemaCount: 2, fromPrice: null };
 
@@ -42,9 +50,11 @@ describe('MovieBrowseService', () => {
       findPublicMoviesByIds: jest.fn().mockResolvedValue(new Map()),
       listSimilar: jest.fn().mockResolvedValue([]),
       listPublicPeople: jest.fn(),
+      countPublicCast: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+      listPublicMovieIds: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<CatalogReadService>;
     showtimes = {
-      movieIdsShowing: jest.fn().mockResolvedValue([3, 8]),
+      showDateOptions: jest.fn().mockResolvedValue(OPTIONS),
       summaryOf: jest.fn().mockResolvedValue(summary),
     };
     service = new MovieBrowseService(catalog, showtimes as unknown as ShowtimeBrowseService);
@@ -89,12 +99,13 @@ describe('MovieBrowseService', () => {
         nextCursor: null,
         total: 0,
         tabCounts: { now_showing: 4, coming_soon: 2 },
+        facets: expect.any(Object),
       });
     });
 
-    it('passes no filter for an empty or missing list, and reads no genres then', async () => {
+    it('passes no filter for an empty or missing list, and reads the genres once', async () => {
       await service.listMovies({ status: 'coming_soon' }, { after: null, limit: 20 });
-      expect(catalog.listGenres).not.toHaveBeenCalled();
+      expect(catalog.listGenres).toHaveBeenCalledTimes(1);
       expect(catalog.listPublicMovies).toHaveBeenCalledWith(
         { genreIds: [], personIds: [], status: 'coming_soon' },
         { after: null, limit: 20 },
@@ -119,9 +130,9 @@ describe('MovieBrowseService', () => {
       const page = { after: null, limit: 20 };
       catalog.listPublicMovies.mockResolvedValue({ items: [], nextCursor: null, total: 1 });
       const view = await service.listMovies({ status: 'now_showing', showDate: 'weekend' }, page);
-      expect(showtimes.movieIdsShowing).toHaveBeenCalledWith('weekend');
+      expect(showtimes.showDateOptions).toHaveBeenCalledTimes(1);
       expect(catalog.listPublicMovies).toHaveBeenCalledWith(
-        { genreIds: [], personIds: [], status: 'now_showing', movieIds: [3, 8] },
+        { genreIds: [], personIds: [], status: 'now_showing', movieIds: [3, 8, 11] },
         page,
       );
       // The Coming soon count has no show date filter: the tab doesn't offer it.
@@ -129,9 +140,8 @@ describe('MovieBrowseService', () => {
       expect(view.tabCounts).toEqual({ now_showing: 1, coming_soon: 2 });
     });
 
-    it('asks no showtimes without a show date', async () => {
+    it('lists without a movie id filter when there is no show date', async () => {
       await service.listMovies({ status: 'now_showing' }, { after: null, limit: 20 });
-      expect(showtimes.movieIdsShowing).not.toHaveBeenCalled();
       expect(catalog.listPublicMovies.mock.calls[0]![0]).not.toHaveProperty('movieIds');
     });
 
@@ -146,7 +156,98 @@ describe('MovieBrowseService', () => {
       expect(error.details).toEqual({
         fields: [{ field: 'showDate', messages: ['showDate applies to the now_showing tab only'] }],
       });
-      expect(showtimes.movieIdsShowing).not.toHaveBeenCalled();
+      expect(showtimes.showDateOptions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listMovies facets', () => {
+    const page = { after: null, limit: 2 };
+
+    it('counts every genre without the genre filter, alphabetical, 0 for none', async () => {
+      const view = await service.listMovies(
+        { status: 'now_showing', genreSlugs: ['drama'], personIds: [4], q: 'nile' },
+        page,
+      );
+      // The genre facet keeps every filter but its own.
+      expect(catalog.countPublicMoviesByGenre).toHaveBeenCalledWith({
+        status: 'now_showing',
+        q: 'nile',
+        personIds: [4],
+      });
+      expect(view.facets.genres).toEqual([
+        { id: 1, name: 'Action', slug: 'action', count: 0 },
+        { id: 5, name: 'Drama', slug: 'drama', count: 3 },
+        { id: 9, name: 'Sci-fi', slug: 'sci-fi', count: 1 },
+      ]);
+    });
+
+    it('lists the cast without the people filter, capped, with the total', async () => {
+      const karim = { id: 4, fullName: 'Karim Fahmy', photo: null, count: 2 };
+      catalog.countPublicCast.mockResolvedValue({ items: [karim], total: 41 });
+      const view = await service.listMovies(
+        { status: 'coming_soon', genreSlugs: ['sci-fi'], personIds: [4, 6] },
+        page,
+      );
+      expect(catalog.countPublicCast).toHaveBeenCalledWith(
+        { status: 'coming_soon', genreIds: [9] },
+        PEOPLE_FACET_LIMIT,
+      );
+      expect(view.facets.people).toEqual([karim]);
+      expect(view.facets.peopleTotal).toBe(41);
+    });
+
+    it('counts each show date among the movies matching the other filters', async () => {
+      catalog.listPublicMovieIds.mockResolvedValue([8, 11]);
+      const view = await service.listMovies(
+        { status: 'now_showing', genreSlugs: ['action'], q: 'sand' },
+        page,
+      );
+      // One id query over every movie showing on any option, with the filters but no show date.
+      expect(catalog.listPublicMovieIds).toHaveBeenCalledTimes(1);
+      expect(catalog.listPublicMovieIds).toHaveBeenCalledWith({
+        status: 'now_showing',
+        q: 'sand',
+        genreIds: [1],
+        personIds: [],
+        movieIds: [3, 8, 11],
+      });
+      expect(view.facets.showDates).toEqual([
+        { value: 'today', count: 1, cinemaDates: ['2026-10-16'] },
+        { value: 'tomorrow', count: 2, cinemaDates: ['2026-10-17'] },
+        { value: 'weekend', count: 2, cinemaDates: ['2026-10-16', '2026-10-17'] },
+      ]);
+    });
+
+    it("narrows the genre and cast facets by the show date, but not the show dates' own counts", async () => {
+      catalog.listPublicMovieIds.mockResolvedValue([3, 8, 11]);
+      const view = await service.listMovies({ status: 'now_showing', showDate: 'today' }, page);
+      expect(catalog.countPublicMoviesByGenre).toHaveBeenCalledWith({
+        status: 'now_showing',
+        personIds: [],
+        movieIds: [3, 8],
+      });
+      expect(catalog.countPublicCast).toHaveBeenCalledWith(
+        { status: 'now_showing', genreIds: [], movieIds: [3, 8] },
+        PEOPLE_FACET_LIMIT,
+      );
+      expect(catalog.listPublicMovieIds.mock.calls[0]![0]).toMatchObject({
+        movieIds: [3, 8, 11],
+      });
+      expect(view.facets.showDates.map((option) => option.count)).toEqual([2, 2, 3]);
+    });
+
+    it('asks no ids when no movie is showing on any option, and counts 0', async () => {
+      showtimes.showDateOptions.mockResolvedValue(
+        OPTIONS.map((option) => ({ ...option, movieIds: [] })),
+      );
+      const view = await service.listMovies({ status: 'now_showing' }, page);
+      expect(catalog.listPublicMovieIds).not.toHaveBeenCalled();
+      expect(view.facets.showDates.map((option) => option.count)).toEqual([0, 0, 0]);
+      expect(view.facets.showDates.map((option) => option.value)).toEqual([
+        'today',
+        'tomorrow',
+        'weekend',
+      ]);
     });
   });
 

@@ -14,14 +14,14 @@ import { TheaterReadService } from '../theaters/theater-read.service';
 import type { TheaterDetails } from '../theaters/types';
 import { SHOWTIME_DAYS } from './discovery.constants';
 import { compareByNameThenId } from './in-memory-page';
-import { cinemaDatesFrom, showDateRange } from './show-dates';
+import { cinemaDatesFrom, cinemaDatesOf, showDateRanges } from './show-dates';
 import type {
   MovieShowtimeDay,
   MovieShowtimeSummary,
   MovieShowtimesView,
   PublicMovieRef,
   PublicShowtimeView,
-  ShowDate,
+  ShowDateOption,
   ShowtimeTheaterRef,
   TheaterShowtimeCount,
   TheaterShowtimeDay,
@@ -156,20 +156,31 @@ export class ShowtimeBrowseService {
   }
 
   /**
-   * The movies with a scheduled showtime of an active theater on the "show date"'s cinema dates
-   * that starts after now (the Movies page filter, PRD C2), in id order.
+   * The Movies page "show date" options (PRD C2, #29), in `SHOW_DATES` order, seen from the
+   * Clock's now: each with its cinema dates and the movies with a scheduled showtime of an active
+   * theater on them that starts after now, in id order. Feeds both the `showDate` filter and its
+   * counts. Two queries whatever the number of showtimes: the active theaters' ids, then the
+   * distinct (movie, cinema date) pairs of the range covering every option.
    */
-  async movieIdsShowing(showDate: ShowDate): Promise<readonly number[]> {
+  async showDateOptions(): Promise<readonly ShowDateOption[]> {
     const now = this.clock.now();
-    const range = showDateRange(showDate, cinemaDateOf(now));
-    const theaters = await this.activeTheaters();
-    if (theaters.size === 0) return [];
-    const ids = await this.showtimes.movieIdsScheduled({
-      ...range,
-      theaterIds: [...theaters.keys()],
-      startsAfter: now,
-    });
-    return [...ids].sort((first, second) => first - second);
+    const { options, covering } = showDateRanges(cinemaDateOf(now));
+    const theaterIds = await this.theaters.listActiveIds();
+    const pairs =
+      theaterIds.length === 0
+        ? []
+        : await this.showtimes.movieDatesScheduled({ ...covering, theaterIds, startsAfter: now });
+    return options.map(({ value, range }) => ({
+      value,
+      cinemaDates: cinemaDatesOf(range),
+      movieIds: [
+        ...new Set(
+          pairs
+            .filter((pair) => pair.cinemaDate >= range.from && pair.cinemaDate <= range.to)
+            .map((pair) => pair.movieId),
+        ),
+      ].sort((first, second) => first - second),
+    }));
   }
 
   /** The active theaters, by id. */

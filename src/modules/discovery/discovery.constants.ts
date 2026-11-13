@@ -32,3 +32,6 @@ export const SHOWTIME_DAYS = 7;
 /** "This weekend" is Friday and Saturday (PRD "Time" 3), as ISO weekdays of cinema dates. */
 export const WEEKEND_FIRST_WEEKDAY = 5;
 export const WEEKEND_LAST_WEEKDAY = 6;
+
+/** The Movies page people facet lists at most this many cast members (#29); `peopleTotal` counts all. */
+export const PEOPLE_FACET_LIMIT = 30;

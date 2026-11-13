@@ -3,10 +3,12 @@ import type { Knex } from 'knex';
 import { TransactionContext } from '../../common/database/transaction-context';
 import { AppError } from '../../common/errors/app-error';
 import type { PageRequest } from '../../common/pagination/types';
+import { ROLE_GROUP_ROLES } from './catalog.constants';
 import { PUBLIC_MOVIE_STATUSES } from './enums';
 import { containsPattern } from './movie-rules';
 import type {
   AdminMovieListFilter,
+  CastCountRow,
   GenreCountRow,
   MovieCountsRow,
   MovieRow,
@@ -249,6 +251,42 @@ export class MoviesRepository {
     return this.publicFiltered(query, filter)
       .select<GenreCountRow[]>('g.genre_id', this.db.executor().raw('count(*)::int AS count'))
       .groupBy('g.genre_id');
+  }
+
+  /** The ids of the public movies with these filters, ascending (the show-date facet). */
+  async publicIds(filter: PublicMovieCountFilter): Promise<number[]> {
+    const rows = await this.publicFiltered(this.db.executor()('movies as m'), filter)
+      .select<{ id: number }[]>('m.id')
+      .orderBy('m.id');
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The cast (credits as actor or voice) of the public movies with these filters, in one query:
+   * per person, how many of the movies credit them, most first, then by name and id, at most
+   * `limit`; every row also carries how many people match in all (`total`).
+   */
+  async publicCastCounts(filter: PublicMovieCountFilter, limit: number): Promise<CastCountRow[]> {
+    const knex = this.db.executor();
+    const query = knex('movies as m')
+      .join('movie_credits as c', 'c.movie_id', 'm.id')
+      .join('people as p', 'p.id', 'c.person_id')
+      .whereIn('c.role', [...ROLE_GROUP_ROLES.actors]);
+    return this.publicFiltered(query, filter)
+      .select<CastCountRow[]>(
+        'p.id',
+        'p.full_name',
+        'p.photo_image_id',
+        knex.raw('count(DISTINCT m.id)::int AS count'),
+        knex.raw('(count(*) OVER ())::int AS total'),
+      )
+      .groupBy('p.id')
+      .orderBy([
+        { column: 'count', order: 'desc' },
+        { column: 'p.full_name', order: 'asc' },
+        { column: 'p.id', order: 'asc' },
+      ])
+      .limit(limit);
   }
 
   /** These movies, when public. */

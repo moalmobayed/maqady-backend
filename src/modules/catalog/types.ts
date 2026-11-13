@@ -214,6 +214,19 @@ export interface SimilarMovieRow extends MovieRow {
   readonly shared: number;
 }
 
+/**
+ * A cast member of the matching public movies (the Movies page people facet): how many of them
+ * credit the person as actor or voice, and how many cast members match in all (`total`, the same
+ * on every row).
+ */
+export interface CastCountRow {
+  readonly id: number;
+  readonly full_name: string;
+  readonly photo_image_id: number | null;
+  readonly count: number;
+  readonly total: number;
+}
+
 // --- Domain ---------------------------------------------------------------------------------
 
 /** A genre (home-page contract `GenreRef`). */
@@ -334,6 +347,20 @@ export interface PublicPerson {
   readonly photo: StoredImage | null;
   /** The roles set on the person and the roles they are credited in, in `CREDIT_ROLES` order. */
   readonly roles: readonly CreditRole[];
+}
+
+/** A cast member of the matching public movies, with how many of them they are in. */
+export interface PublicCastCount {
+  readonly id: number;
+  readonly fullName: string;
+  readonly photo: StoredImage | null;
+  readonly count: number;
+}
+
+/** The top of the cast of the matching public movies, and how many cast members match. */
+export interface PublicCastCounts {
+  readonly items: readonly PublicCastCount[];
+  readonly total: number;
 }
 
 /** What U7 needs to schedule a movie. */

@@ -8,6 +8,7 @@ import type {
   BusySlotRow,
   NewShowtimeRow,
   NextShowtimeFilter,
+  ScheduledMovieDateRow,
   ScheduledShowtimeFilter,
   ShowtimeRow,
   ShowtimeRowUpdate,
@@ -201,6 +202,16 @@ export class ShowtimesRepository {
   async movieIdsScheduled(filter: ScheduledShowtimeFilter): Promise<number[]> {
     const rows = await this.scheduled(filter).distinct<{ movie_id: number }[]>('movie_id');
     return rows.map((row) => row.movie_id);
+  }
+
+  /** The distinct (movie, cinema date) pairs of the scheduled showtimes matching the filter (U8 "show date" options). */
+  async movieDatesScheduled(filter: ScheduledShowtimeFilter): Promise<ScheduledMovieDateRow[]> {
+    return this.scheduled(filter)
+      .distinct<ScheduledMovieDateRow[]>('movie_id', 'cinema_date')
+      .orderBy([
+        { column: 'movie_id', order: 'asc' },
+        { column: 'cinema_date', order: 'asc' },
+      ]);
   }
 
   /**

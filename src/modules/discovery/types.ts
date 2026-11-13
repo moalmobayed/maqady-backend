@@ -6,6 +6,7 @@ import type {
   GenreRef,
   MovieDetails,
   MovieSummary,
+  PublicCastCount,
   PublicMovieStatus,
 } from '../catalog/types';
 import type { HallSummary } from '../halls/types';
@@ -63,12 +64,44 @@ export interface MovieListFilterInput {
   readonly showDate?: ShowDate;
 }
 
-/** One page of `GET /movies`, with both tabs' totals under the same filters. */
+/** `GET /movies` filters resolved (genre ids), without `showDate`: what every facet starts from. */
+export interface MovieFacetFilters {
+  readonly status: PublicMovieStatus;
+  readonly q?: string;
+  readonly genreIds: readonly number[];
+  readonly personIds: readonly number[];
+}
+
+/** A genre with how many movies of the Movies page facets match it. */
+export interface GenreFacet extends GenreRef {
+  readonly count: number;
+}
+
+/** A "show date" option, the cinema dates it covers and how many matching movies show then. */
+export interface ShowDateFacet {
+  readonly value: ShowDate;
+  readonly count: number;
+  readonly cinemaDates: readonly CalendarDate[];
+}
+
+/**
+ * The Movies page sidebar (#29): counts over every movie of the tab matching the filters, each
+ * facet ignoring its own filter.
+ */
+export interface MovieFacets {
+  readonly genres: readonly GenreFacet[];
+  readonly people: readonly PublicCastCount[];
+  readonly peopleTotal: number;
+  readonly showDates: readonly ShowDateFacet[];
+}
+
+/** One page of `GET /movies`, with both tabs' totals and the facets under the same filters. */
 export interface MovieListView {
   readonly items: readonly MovieSummary[];
   readonly nextCursor: string | null;
   readonly total: number;
   readonly tabCounts: Readonly<Record<PublicMovieStatus, number>>;
+  readonly facets: MovieFacets;
 }
 
 // --- Theater reads --------------------------------------------------------------------------
@@ -139,6 +172,22 @@ export interface NamedItem {
 export interface CinemaDateRange {
   readonly from: CalendarDate;
   readonly to: CalendarDate;
+}
+
+/** Every "show date" option's range seen from one cinema date, and the range covering them all. */
+export interface ShowDateRanges {
+  readonly options: readonly { readonly value: ShowDate; readonly range: CinemaDateRange }[];
+  readonly covering: CinemaDateRange;
+}
+
+/**
+ * A "show date" option seen from the Clock's now: its cinema dates and the movies with a
+ * scheduled showtime of an active theater on them still to start, in id order.
+ */
+export interface ShowDateOption {
+  readonly value: ShowDate;
+  readonly cinemaDates: readonly CalendarDate[];
+  readonly movieIds: readonly number[];
 }
 
 /** A showtime as a customer's time chip shows it, judged at one instant of the Clock. */

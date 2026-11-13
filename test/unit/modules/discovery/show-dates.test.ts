@@ -1,4 +1,9 @@
-import { cinemaDatesFrom, showDateRange } from '../../../../src/modules/discovery/show-dates';
+import {
+  cinemaDatesFrom,
+  cinemaDatesOf,
+  showDateRange,
+  showDateRanges,
+} from '../../../../src/modules/discovery/show-dates';
 
 describe('show dates', () => {
   it('lists consecutive cinema dates, across a month end', () => {
@@ -27,5 +32,29 @@ describe('show dates', () => {
     ['Sunday', '2026-10-18', '2026-10-23', '2026-10-24'],
   ])('makes this weekend Friday and Saturday on a %s', (_, today, from, to) => {
     expect(showDateRange('weekend', today)).toEqual({ from, to });
+  });
+
+  it('lists the cinema dates of a range, both ends included, across a month end', () => {
+    expect(cinemaDatesOf({ from: '2026-10-30', to: '2026-11-01' })).toEqual([
+      '2026-10-30',
+      '2026-10-31',
+      '2026-11-01',
+    ]);
+    expect(cinemaDatesOf({ from: '2026-10-17', to: '2026-10-17' })).toEqual(['2026-10-17']);
+  });
+
+  it.each([
+    ['Friday', '2026-10-16', '2026-10-17'],
+    ['Saturday', '2026-10-17', '2026-10-18'],
+    ['Sunday', '2026-10-18', '2026-10-24'],
+  ])('gives every option in order and the range covering them on a %s', (_, today, to) => {
+    const { options, covering } = showDateRanges(today);
+    expect(options.map((option) => option.value)).toEqual(['today', 'tomorrow', 'weekend']);
+    expect(options.map((option) => option.range)).toEqual([
+      showDateRange('today', today),
+      showDateRange('tomorrow', today),
+      showDateRange('weekend', today),
+    ]);
+    expect(covering).toEqual({ from: today, to });
   });
 });

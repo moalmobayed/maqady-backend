@@ -1256,7 +1256,10 @@ of `contracts/drafts/home-page.openapi.yaml`. Every discovery read sends
 `Cache-Control: public, max-age=60` (an error `no-store`) and shows only Coming soon and Now showing movies and
 `active` theaters; anything else is `NOT_FOUND`. `/genres`, `/movies`, `/people` and `/theaters`
 are cursor-paginated (`/genres` and `/theaters` page in memory over the short sets the read
-services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts`;
+services return); `/movies` takes genre slugs, person ids and `q`, and adds `tabCounts` and (#29,
+`docs/gh-29-movie-facets/spec.md`) `facets`: every genre's count, the cast (actors and voices,
+top 30 with `peopleTotal`) and the show-date options with their cinema dates and counts, over
+every matching movie of the tab, each facet ignoring its own filter;
 `/theaters` takes `openNow` and `parking`; `/movies/{id}/similar` is a bounded `{ items }` of at
 most 4. The ticker and `hallCount` come from the `HomeTickerSource` and `TheaterHallCountSource`
 seams, bound by U8b (`docs/gh-9-discovery-showtimes/spec.md`) to the showtimes (per Now showing

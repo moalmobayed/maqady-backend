@@ -42,6 +42,12 @@ import {
   MovieShowtimeTheaterResponse,
   MovieShowtimesResponse,
 } from './dto/movie-showtimes.response';
+import {
+  GenreFacetResponse,
+  MovieFacetsResponse,
+  PersonFacetResponse,
+  ShowDateFacetResponse,
+} from './dto/movie-facets.response';
 import { PublicPersonPageResponse, PublicPersonResponse } from './dto/public-person.response';
 import { PublicShowtimeResponse, ShowtimeTheaterRefResponse } from './dto/public-showtime.response';
 import {
@@ -63,6 +69,7 @@ import type {
   HomeTickerEntry,
   HomeView,
   MovieCardListView,
+  MovieFacets,
   MovieListView,
   MovieShowtimeSummary,
   MovieShowtimesView,
@@ -175,6 +182,36 @@ export class DiscoveryResponseMapper {
         nowShowing: view.tabCounts.now_showing,
         comingSoon: view.tabCounts.coming_soon,
       }),
+      facets: this.movieFacets(view.facets),
+    });
+  }
+
+  movieFacets(facets: MovieFacets): MovieFacetsResponse {
+    return Object.assign(new MovieFacetsResponse(), {
+      genres: facets.genres.map((genre) =>
+        Object.assign(new GenreFacetResponse(), {
+          id: genre.id,
+          name: genre.name,
+          slug: genre.slug,
+          count: genre.count,
+        }),
+      ),
+      people: facets.people.map((person) =>
+        Object.assign(new PersonFacetResponse(), {
+          id: person.id,
+          fullName: person.fullName,
+          photo: this.image(person.photo, person.fullName),
+          count: person.count,
+        }),
+      ),
+      peopleTotal: facets.peopleTotal,
+      showDates: facets.showDates.map((option) =>
+        Object.assign(new ShowDateFacetResponse(), {
+          value: option.value,
+          count: option.count,
+          cinemaDates: [...option.cinemaDates],
+        }),
+      ),
     });
   }
 
