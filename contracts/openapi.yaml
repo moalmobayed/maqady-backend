@@ -16856,6 +16856,8 @@ paths:
         Public; no token needed. Shows only what customers may see: Coming soon and Now showing movies, and theaters open for sales (`active`). May be cached for 60 seconds (`Cache-Control: public, max-age=60`).
 
         One page of a tab: Now showing newest release first, or Coming soon soonest release first (ties by id). The filters combine (AND): `genres` (slugs) and `people` (person ids) match any of their values, `q` a title or a credited person's name. `total` counts the tab with the filters ("Showing n of total"); `tabCounts` counts both tabs with the same filters, for the tab labels. Load more with `cursor` = `nextCursor`; pages never repeat or skip a movie. `showDate` (Now showing only) keeps the movies with a showtime still to start today, tomorrow or this weekend; with it, `tabCounts.nowShowing` is the filtered total and `tabCounts.comingSoon` ignores it, and with `status=coming_soon` it is `400 VALIDATION_FAILED`.
+
+        `facets` (#29) is the sidebar, counted on the server over every movie of the tab matching the filters, never only this page: `genres` (every genre with its count, the `genres` filter ignored), `people` (the cast, actors and voices, with how many matching movies each is in, most first, at most 30, with `peopleTotal`; the `people` filter ignored) and `showDates` (Today, Tomorrow, This weekend with their cinema dates and how many movies `showDate` would list; the `showDate` filter ignored; 0 on Coming soon). Each facet keeps every other filter, so picking a genre narrows the cast and the show dates but leaves the other genres' counts.
       operationId: listPublicMovies
       parameters:
         - name: cursor
@@ -16915,7 +16917,7 @@ paths:
             $ref: '#/components/schemas/ShowDate'
       responses:
         '200':
-          description: One page of movie cards and the tab counts
+          description: One page of movie cards, the tab counts and the sidebar facets
           headers:
             X-Request-Id:
               description: Correlation id for this request. Quote it when reporting a problem.
@@ -34609,6 +34611,113 @@ components:
       required:
         - nowShowing
         - comingSoon
+    GenreFacet:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Genre id.
+          example: 9
+        name:
+          type: string
+          description: Display name.
+          example: Sci-fi
+        slug:
+          type: string
+          example: sci-fi
+          description: Stable URL-safe name, for links such as `/movies?genres=sci-fi`
+        count:
+          type: integer
+          minimum: 0
+          example: 3
+          description: How many movies of the tab match every current filter except `genres` and have this genre ("Action 3"). 0 when none; a movie with two genres counts in both.
+      required:
+        - id
+        - name
+        - slug
+        - count
+    PersonFacet:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 4
+          description: Person id; filter with `/movies?people=<id>`.
+        fullName:
+          type: string
+          example: Karim Fahmy
+          description: Full name, as the chip shows it.
+        photo:
+          nullable: true
+          description: Square photo for the avatar, or null when none is set.
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Image'
+        count:
+          type: integer
+          minimum: 1
+          example: 2
+          description: How many movies of the tab matching every current filter except `people` credit this person as an actor or a voice.
+      required:
+        - id
+        - fullName
+        - photo
+        - count
+    ShowDateFacet:
+      type: object
+      properties:
+        value:
+          example: today
+          description: 'The option, as `showDate` takes it: Today, Tomorrow or This weekend.'
+          allOf:
+            - $ref: '#/components/schemas/ShowDate'
+        count:
+          type: integer
+          minimum: 0
+          example: 5
+          description: 'How many movies of the tab matching every current filter except `showDate` have a showtime still to start on these cinema dates at a theater open for sales: what `showDate=<value>` would list. Always 0 on the Coming soon tab (only Now showing movies have showtimes).'
+        cinemaDates:
+          example:
+            - '2026-10-16'
+            - '2026-10-17'
+          description: 'The cinema dates the option covers, seen from now (a cinema day runs 06:00 to 06:00 Cairo time, so a 00:30 show belongs to the date before): today, tomorrow, or this weekend (Friday and Saturday; on a Friday from today, on a Saturday today only). For a label such as "This weekend · Fri 16 – Sat 17".'
+          type: array
+          items:
+            type: string
+            format: date
+      required:
+        - value
+        - count
+        - cinemaDates
+    MovieFacets:
+      type: object
+      properties:
+        genres:
+          description: Every genre, alphabetical (the order of `GET /genres`), with its count. Ignores the `genres` filter so the other genres stay selectable; follows `status`, `q`, `people` and `showDate`.
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreFacet'
+        people:
+          maxItems: 30
+          description: The cast (actors and voices) of the matching movies, most movies first, then by name; at most 30. Ignores the `people` filter; follows `status`, `q`, `genres` and `showDate`. Empty when nothing matches.
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonFacet'
+        peopleTotal:
+          type: integer
+          minimum: 0
+          example: 42
+          description: How many cast members match before the cap of 30 ("Show all 42"; find the others with `GET /people?q=`).
+        showDates:
+          description: The show date options in the order `today`, `tomorrow`, `weekend`, each with its count and cinema dates. Ignores the `showDate` filter; follows `status`, `q`, `genres` and `people`.
+          type: array
+          items:
+            $ref: '#/components/schemas/ShowDateFacet'
+      required:
+        - genres
+        - people
+        - peopleTotal
+        - showDates
     MovieCardPage:
       type: object
       properties:
@@ -34631,11 +34740,16 @@ components:
           description: Both tabs’ totals with the same filters, for the tab labels.
           allOf:
             - $ref: '#/components/schemas/MovieTabCounts'
+        facets:
+          description: 'The sidebar counts (#29): genres, cast and show dates, computed over every movie of the tab matching the filters, never only this page. Each facet ignores its own filter so the alternatives stay visible.'
+          allOf:
+            - $ref: '#/components/schemas/MovieFacets'
       required:
         - items
         - nextCursor
         - total
         - tabCounts
+        - facets
     MoviePhoto:
       type: object
       properties:
