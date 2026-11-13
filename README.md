@@ -372,8 +372,8 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
   Public responses reuse `ShowtimePricesResponse` (`ShowtimePrices`, with
   `toShowtimePricesResponse()`).
 - **Discovery** (`modules/discovery`, `docs/gh-9-home-and-browse/spec.md`,
-  `docs/gh-9-discovery-showtimes/spec.md`): the public reads (`GET /home`, `/genres`, `/movies`
-  with the `showDate` filter, `/movies/{id}` with its side panel, `/movies/{id}/showtimes`,
+  `docs/gh-9-discovery-showtimes/spec.md`, `docs/gh-29-movie-facets/spec.md`): the public reads
+  (`GET /home`, `/genres`, `/movies` with the `showDate` filter and the sidebar `facets`, `/movies/{id}` with its side panel, `/movies/{id}/showtimes`,
   `/movies/{id}/similar`, `/people`, `/theaters`, `/theaters/{id}` with its halls,
   `/theaters/{id}/showtimes`) through the catalog, theater, hall and showtime read services. The
   home ticker and the cards' `hallCount` come from `HomeTickerSource` (bound to

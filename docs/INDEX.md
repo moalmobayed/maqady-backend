@@ -5,7 +5,7 @@ gate (G5) checks it.
 
 | Doc | What it covers | Owner | Last verified |
 |---|---|---|---|
-| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-10-29 |
+| `docs/system-design.md` | Repo-level architecture: how the backend meets PRD v2.0 (modules, data model, booking core, API, delivery plan) | Mohamed Tarek | 2026-11-13 |
 | `docs/adr/0001-track-in-github-issues.md` | Decision: track work in GitHub Issues instead of Linear (recorded exception) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0002-nestjs-instead-of-express.md` | Decision: build the API on NestJS instead of plain Express (recorded exception to the pack) | Mohamed Tarek | 2026-10-18 |
 | `docs/adr/0003-idempotency-in-postgres.md` | Decision: keep idempotency keys in Postgres instead of Redis; Redis leaves the stack (recorded exception to the pack) | Mohamed Tarek | 2026-10-19 |
@@ -83,6 +83,7 @@ gate (G5) checks it.
 | `docs/gh-20-exports-activity/qa.md` | U19 manual QA: curl evidence for the four CSV exports (headers, BOM, rows against their lists, each filter, formula-escaped names and phones, negative refunds, the Overview figure for figure), refusals (cursor and limit, inverted dates, unknown theater, box office and no token), the `export.downloaded` rows, the Activity log with every filter and its pages, and no personal data in it or in the server log | Mohamed Tarek | 2026-10-29 |
 | `docs/gh-20-exports-activity/review.md` | U19 adversarial review: findings with severity, how each was verified, and the fix commit or why it stays open | Mohamed Tarek | 2026-10-29 |
 | `docs/gh-29-movie-facets/spec.md` | P1 (#29) spec: `GET /movies` facets over every matching movie (genre counts, the cast with counts and a cap, show-date options with counts and cinema dates), each ignoring its own filter, at a fixed query cost; no migration | Mohamed Tarek | 2026-11-13 |
-| `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-10-20 |
-| `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-10-20 |
+| `docs/gh-29-movie-facets/qa.md` | P1 (#29) manual QA: curl evidence on the seeded database for the facets against the whole tab, each facet ignoring its own filter, show-date counts equal to the filter, the Coming soon tab, the draft never counted, the unchanged refusal and cache header, and 12 queries whatever the page or filters | Mohamed Tarek | 2026-11-13 |
+| `README.md` | What the service is, setup, environment variables, scripts, API docs, tests, migrations and deploy notes | Mohamed Tarek | 2026-11-13 |
+| `contracts/openapi.yaml` | The OpenAPI contract generated from the code by `npm run contract`; CI fails when it is stale | Mohamed Tarek | 2026-11-13 |
 | `contracts/drafts/home-page.openapi.yaml` | Hand-written contract for `GET /api/v1/home` and health, agreed with the frontend before the code; the generated `contracts/openapi.yaml` must match it, then the draft is deleted | Mohamed Tarek | 2026-10-20 |

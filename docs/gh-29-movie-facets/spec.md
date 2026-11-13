@@ -56,8 +56,10 @@ Drafts and archived movies never count anywhere (the public filters only read `c
 - `showtimes` (additive): `ShowtimesRepository.movieDatesScheduled(filter)` and
   `ShowtimeReadService.movieDatesScheduled(filter)`: the distinct (movie, cinema date) pairs of
   the scheduled showtimes matching the filter; type `ScheduledMovieDate`.
+- `theaters` (additive): `TheaterReadService.listActiveIds()`, the active theaters' ids in one
+  query (the full details cost six).
 - `discovery`: `ShowtimeBrowseService.movieIdsShowing(showDate)` is replaced by
-  `showDateOptions()`, which reads the active theaters and the pairs of the widest range once
+  `showDateOptions()`, which reads the active theater ids and the pairs of the widest range once
   and answers every option with its cinema dates and movie ids; the `showDate` filter now takes
   its option's ids from it. `showDateRanges(today)` joins `show-dates.ts`.
   `MovieBrowseService.listMovies()` reads the genres once (for slug resolution and the facet),
@@ -68,9 +70,10 @@ Drafts and archived movies never count anywhere (the public filters only read `c
 
 A fixed number of queries, whatever the number of movies, genres, people or showtimes (GROUP BY
 and `= ANY(?)`, no query per row): on top of the list and the tab counts, one genre list, the
-active theaters (as before with `showDate`), one pairs query, one genre-count query, one cast
-query (with `count(*) OVER ()` for `peopleTotal`), one photo query (skipped when no photo) and one
-id query for the show-date counts (skipped when no movie is showing). The discovery cache
+active theaters' ids (`TheaterReadService.listActiveIds()`), one pairs query, one genre-count
+query, one cast query (with `count(*) OVER ()` for `peopleTotal`), one photo query (skipped when
+no photo) and one id query for the show-date counts (skipped when no movie is showing): 12 in
+all on the seeded database (see `qa.md`). The discovery cache
 (`Cache-Control: public, max-age=60`) is unchanged.
 
 ## Out of scope
@@ -137,21 +140,32 @@ Unit (`test/unit/modules/discovery/`, collaborators mocked):
   matching movies; the filter takes its option's ids; the cap is passed; nothing is asked of the
   id query when no movie is showing.
 - `show-dates.test.ts`: `showDateRanges()` on a Friday, a Saturday and a Sunday.
+- `show-dates.test.ts` also covers `cinemaDatesOf()`.
 - `showtime-browse.service.test.ts`: `showDateOptions()` reads one widest range, groups the
-  pairs per option with the after-midnight date rule, and asks nothing without active theaters.
+  pairs per option by cinema date (a Sunday after midnight reaches the coming weekend), and asks
+  nothing without active theaters.
+
+Earlier unit tests changed with the behaviour: `movie-browse.service.test.ts` now expects the
+genres read once on every list (they feed the facet) and the showtimes asked on every list;
+`showtime-browse.service.test.ts` replaces the `movieIdsShowing()` cases with
+`showDateOptions()`. The integration tests of the `showDate` filter are unchanged and green.
 
 Integration (`test/integration/modules/discovery/`, real Postgres):
 
 - `movie-facets.controller.test.ts`: more movies than one page; genre counts equal the number of
   matching movies per genre across pages; a genre filter keeps the other genres' counts but
-  narrows people and show dates; `q` and `people` narrow genres; people lists the cast (actor
+  narrows people; `q` and `people` narrow genres; people lists the cast (actor
   and voice, not crew) with correct counts, ordered, capped with `peopleTotal`; drafts and
-  archived movies never count; the query count is the same with 3 and with 40 matching movies.
+  archived movies never count; the query count is the same before and after 12 more movies
+  with cast are added.
 - `movie-facets-showtimes.test.ts`: on the showtime world (Friday 16 October 2026 at 18:00), the
   show-date counts follow the Clock: started and cancelled showtimes, draft and paused theaters
   and archived movies don't count, an after-midnight showtime counts for its cinema date, the
-  weekend on a Friday, a Saturday and a Sunday; the counts ignore `showDate` but follow
-  `genres`/`q`; the Coming soon tab has zeros.
+  weekend on a Friday, a Saturday and a Sunday; each count equals the `showDate` filter's
+  total; the counts ignore `showDate` but follow `genres` and `q`, and `showDate` narrows the
+  genre counts; the Coming soon tab has zeros; the query count does not grow with showtimes.
+- `theater-read.service.test.ts` (theaters): `listActiveIds()` matches `listActive()` in one
+  query.
 
 ## Acceptance
 
@@ -159,3 +173,11 @@ Integration (`test/integration/modules/discovery/`, real Postgres):
   leaves `contracts/openapi.yaml` unchanged after it is committed.
 - The tests above pass and fail when the behaviour breaks.
 - `docs/gh-29-movie-facets/qa.md` records curl evidence against a seeded database.
+
+## Follow-ups
+
+- `ShowtimeReadService.movieIdsScheduled()` has no production caller any more (the filter reads
+  `movieDatesScheduled()`); it keeps its integration test. Remove both in a cleanup change.
+- A rough index check on staging data once it is reseeded: the cast query groups credits of
+  every matching movie; at today's catalog size (tens of movies) it is a few milliseconds, and
+  `uq_movie_credits_movie_id_person_id_role` serves the join.
