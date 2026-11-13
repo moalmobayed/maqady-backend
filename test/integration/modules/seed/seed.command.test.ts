@@ -86,27 +86,29 @@ describe('npm run seed', () => {
       `Created the seed admin ${SEED_ADMIN_EMAIL}.`,
       'Dataset: demo',
       'theaters: 6 created, 0 already there',
-      'halls: 5 created, 0 already there',
+      'halls: 7 created, 0 already there',
       'publish-theaters: 5 created, 0 already there',
       'people: 18 created, 0 already there',
       'movies: 12 created, 0 already there',
       'featured: 5 created, 0 already there',
-      // 4 slots × 5 theaters × 7 days, and 2 after-midnight slots on Thursday and Friday.
-      'showtimes: 144 created, 0 already there',
+      // 4 slots × 5 theaters × 7 days, 2 after-midnight slots on Thursday and Friday, and 2
+      // slots in the Hall 2 of Zamalek and of New Cairo × 7 days (#29).
+      'showtimes: 172 created, 0 already there',
       `Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`,
     ]);
     const afterFirst = await counts();
     expect(afterFirst).toMatchObject({
       staff_users: 1,
       theaters: 6,
-      halls: 5,
+      halls: 7,
       people: 18,
       movies: 12,
       movie_videos: 24,
-      showtimes: 144,
+      showtimes: 172,
     });
-    // Covers, gallery photos, people photos, posters and stills, all through the pipeline.
-    expect(afterFirst.images).toBe(6 + 6 + 18 + 12 + 20);
+    // Covers, gallery photos (3 per published theater, #29), people photos, posters and stills,
+    // all through the pipeline.
+    expect(afterFirst.images).toBe(6 + 15 + 18 + 12 + 20);
     expect((await storedFiles(directory)).length).toBe(afterFirst.images! * 3);
 
     const second: string[] = [];
@@ -114,12 +116,12 @@ describe('npm run seed', () => {
     expect(second).toEqual([
       'Dataset: demo',
       'theaters: 0 created, 6 already there',
-      'halls: 0 created, 5 already there',
+      'halls: 0 created, 7 already there',
       'publish-theaters: 0 created, 5 already there',
       'people: 0 created, 18 already there',
       'movies: 0 created, 12 already there',
       'featured: 0 created, 5 already there',
-      'showtimes: 0 created, 144 already there',
+      'showtimes: 0 created, 172 already there',
       `Done. Sign in to the dashboard as ${SEED_ADMIN_EMAIL}.`,
     ]);
     expect(await counts()).toEqual(afterFirst);
@@ -140,12 +142,12 @@ describe('npm run seed', () => {
     expect(lines).toEqual([
       'Dataset: demo',
       'theaters: 0 created, 6 already there',
-      'halls: 0 created, 5 already there',
+      'halls: 0 created, 7 already there',
       'publish-theaters: 0 created, 5 already there',
       'people: 0 created, 18 already there',
       'movies: 0 created, 12 already there',
       'featured: 0 created, 5 already there',
-      'showtimes: 0 created, 144 already there',
+      'showtimes: 0 created, 172 already there',
       'Done.',
     ]);
     expect(await counts()).toEqual(before);
@@ -191,7 +193,14 @@ describe('npm run seed', () => {
     expect(zayed.mainPhone).toBeNull();
     expect(body.cinemas.every((card: { cover: unknown }) => card.cover !== null)).toBe(true);
     expect(body.genres.find((genre) => genre.slug === 'drama')!.movieCount).toBe(3);
-    expect(body.cinemas.every((card) => card.hallCount === 1)).toBe(true);
+    // Zamalek and New Cairo have a second hall (#29), with its own format.
+    expect(Object.fromEntries(body.cinemas.map((card) => [card.name, card.hallCount]))).toEqual({
+      'Maqady Downtown': 1,
+      'Maqady Heliopolis': 1,
+      'Maqady New Cairo': 2,
+      'Maqady Sheikh Zayed': 1,
+      'Maqady Zamalek': 2,
+    });
     // Every Now showing movie has a showtime still ahead today, the first ones at 13:30.
     expect(body.ticker).toHaveLength(7);
     expect(body.ticker[0]!.nextShowtime).toMatchObject({

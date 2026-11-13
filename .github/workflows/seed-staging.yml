@@ -1,7 +1,9 @@
 # Checks the staging deployment and fills it with the development seed (README "Seeding a
-# deployed environment"). Run it from Actions → Seed staging → Run workflow; a push that
-# changes this file runs it too. Needs the STAGING_ADMIN_PASSWORD repository secret: the
-# password of staging's first admin (BOOTSTRAP_ADMIN_PASSWORD on the host). Idempotent.
+# deployed environment"). Runs every morning with the egypt-2026 dataset, so staging always has
+# showtimes on today's cinema date and the 6 after (#29); run it by hand from Actions → Seed
+# staging → Run workflow, choosing the dataset; a push that changes this file runs it too, with
+# egypt-2026. Needs the STAGING_ADMIN_PASSWORD repository secret: the password of staging's
+# first admin (BOOTSTRAP_ADMIN_PASSWORD on the host). Idempotent.
 name: Seed staging
 
 on:
@@ -18,6 +20,10 @@ on:
   push:
     branches: [main-jf8hqi]
     paths: ['.github/workflows/seed-staging.yml']
+  # 05:17 UTC: 07:17 in Cairo in winter, 08:17 in summer, after the cinema day turns at 06:00,
+  # so the 7 cinema days the seed schedules start today. Off the hour, when GitHub is less busy.
+  schedule:
+    - cron: '17 5 * * *'
 
 permissions:
   contents: read
@@ -34,7 +40,8 @@ jobs:
       SEED_API_URL: ${{ inputs.api_url || 'https://maqady-backend.vercel.app/api/v1' }}
       SEED_ADMIN_EMAIL: eng.mohamedalmobayed@gmail.com
       SEED_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
-      SEED_DATASET: ${{ inputs.dataset || 'demo' }}
+      # A manual run seeds the dataset chosen; the schedule and a push seed egypt-2026.
+      SEED_DATASET: ${{ github.event_name == 'workflow_dispatch' && inputs.dataset || 'egypt-2026' }}
     steps:
       - uses: actions/checkout@v6
 
