@@ -84,12 +84,11 @@ function retryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-/** The response's `Retry-After` in seconds, capped; else a growing pause. */
+/** The longer of the response's `Retry-After` and a pause growing with each attempt, capped. */
 function retryDelay(response: Response, attempt: number): number {
   const seconds = Number(response.headers.get('retry-after'));
-  const ms =
-    Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : SEED_IMAGE_RETRY_MS * attempt;
-  return Math.min(ms, SEED_IMAGE_MAX_RETRY_WAIT_MS);
+  const asked = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+  return Math.min(Math.max(asked, SEED_IMAGE_RETRY_MS * attempt), SEED_IMAGE_MAX_RETRY_WAIT_MS);
 }
 
 function sleep(ms: number): Promise<void> {

@@ -11,10 +11,12 @@ import {
 import { downloadedImage, placeholderImage } from './seed-images';
 import type {
   SeedAdminMovie,
+  SeedAdminPhoto,
   SeedAdminTheater,
   SeedApi,
   SeedContext,
   SeedCreatedRow,
+  SeedGalleryPhoto,
   SeedGenreRow,
   SeedHall,
   SeedHallRow,
@@ -176,7 +178,8 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
 
 /**
  * Sets whatever of the theater is still missing: the postal code and WhatsApp number, hours,
- * phones, facilities (or the #29 facilities on a theater seeded before them), prices, photos.
+ * phones, facilities (or the #29 facilities on a theater seeded before them), prices, the cover
+ * and the gallery photos (or the rest of them after a run that stopped part way).
  */
 async function completeTheater(
   context: SeedContext,
@@ -221,16 +224,27 @@ async function completeTheater(
       filename: filename(`${theater.name} cover`),
     });
   }
-  if (current.photos.length === 0) {
-    for (const photo of theater.gallery) {
-      const seed = `${theater.name} ${photo.caption}`;
-      await api.upload('POST', `${path}/photos`, {
-        fields: { usage: 'gallery', caption: photo.caption },
-        file: await image(photo.url, SEED_IMAGE_SIZES.gallery, theater.colour, seed),
-        filename: filename(photo.caption),
-      });
-    }
+  for (const photo of missingGallery(current.photos, theater.gallery)) {
+    const seed = `${theater.name} ${photo.caption}`;
+    await api.upload('POST', `${path}/photos`, {
+      fields: { usage: 'gallery', caption: photo.caption },
+      file: await image(photo.url, SEED_IMAGE_SIZES.gallery, theater.colour, seed),
+      filename: filename(photo.caption),
+    });
   }
+}
+
+/**
+ * The dataset's gallery photos still to upload: all of them on an empty gallery, or the rest of
+ * them after a run that stopped part way (the stored captions are the dataset's first ones, in
+ * order). A gallery an admin changed is left alone.
+ */
+export function missingGallery(
+  current: readonly SeedAdminPhoto[],
+  gallery: readonly SeedGalleryPhoto[],
+): readonly SeedGalleryPhoto[] {
+  const seededFirst = current.every((photo, index) => photo.caption === gallery[index]?.caption);
+  return seededFirst ? gallery.slice(current.length) : [];
 }
 
 /**

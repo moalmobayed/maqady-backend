@@ -315,7 +315,13 @@ export interface SeedAdminTheater {
   readonly specialDates: readonly unknown[];
   readonly defaultPrices: unknown;
   readonly cover: unknown;
-  readonly photos: readonly unknown[];
+  /** The gallery, in order. */
+  readonly photos: readonly SeedAdminPhoto[];
+}
+
+/** A gallery photo of `GET /admin/theaters/{id}`, as the seed reads it. */
+export interface SeedAdminPhoto {
+  readonly caption: string | null;
 }
 
 export interface SeedAdminMovie {

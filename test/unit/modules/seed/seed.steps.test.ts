@@ -9,7 +9,12 @@ import { AppError } from '../../../../src/common/errors/app-error';
 import { createValidationPipe } from '../../../../src/common/errors/validation';
 import { CreateHallRequest } from '../../../../src/modules/halls/dto/create-hall.request';
 import { placeholderImage } from '../../../../src/modules/seed/seed-images';
-import { SEED_STEPS, needsFacilities, seedHallOf } from '../../../../src/modules/seed/seed.steps';
+import {
+  SEED_STEPS,
+  missingGallery,
+  needsFacilities,
+  seedHallOf,
+} from '../../../../src/modules/seed/seed.steps';
 import type {
   SeedAdminMovie,
   SeedAdminTheater,
@@ -242,7 +247,7 @@ function adminTheater(overrides: Partial<SeedAdminTheater> = {}): SeedAdminTheat
     specialDates: [],
     defaultPrices: {},
     cover: null,
-    photos: [{}],
+    photos: [{ caption: 'An admin photo' }],
     ...overrides,
   };
 }
@@ -454,8 +459,27 @@ describe('the seed theaters step: prayer room and gallery photos (#29 P5)', () =
     }
   });
 
-  it('adds no gallery photo to a theater that already has one', async () => {
-    const { api, uploads } = fakeTheaterApi(seeded, adminTheater({ photos: [{}] }));
+  it('uploads the rest of a gallery a run stopped part way through, and nothing once it is whole', async () => {
+    const gallery = [{ caption: 'The lobby' }, { caption: 'The bar' }, { caption: 'Hall 1' }];
+    const partial = fakeTheaterApi(seeded, adminTheater({ photos: [{ caption: 'The lobby' }] }));
+    await theatersStep.run(theaterContext(partial.api, [seedTheater({ gallery })]));
+    expect(partial.uploads.map(({ upload }) => upload.fields.caption)).toEqual([
+      'The bar',
+      'Hall 1',
+    ]);
+
+    expect(missingGallery(gallery, gallery)).toEqual([]);
+    expect(missingGallery([{ caption: 'The bar' }], gallery)).toEqual([]);
+    expect(missingGallery([{ caption: null }], gallery)).toEqual([]);
+    expect(missingGallery([...gallery, { caption: 'Mine' }], gallery)).toEqual([]);
+    expect(missingGallery([], gallery)).toEqual(gallery);
+  });
+
+  it('adds no gallery photo to a gallery an admin made or changed', async () => {
+    const { api, uploads } = fakeTheaterApi(
+      seeded,
+      adminTheater({ photos: [{ caption: 'An admin photo' }] }),
+    );
     await theatersStep.run(
       theaterContext(api, [seedTheater({ gallery: [{ caption: 'The lobby' }] })]),
     );

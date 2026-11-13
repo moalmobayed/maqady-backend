@@ -44,10 +44,11 @@ export const SEED_IMAGE_TIMEOUT_MS = 60_000;
 
 /**
  * How often a picture download is tried when the host answers `429` or `5xx` (Wikimedia
- * rate-limits bursts of thumbnail requests), and how long to wait between tries: the response's
- * `Retry-After`, capped, else `SEED_IMAGE_RETRY_MS` times the attempt.
+ * rate-limits bursts of thumbnail requests from one address), and how long to wait between
+ * tries: the longer of the response's `Retry-After` and `SEED_IMAGE_RETRY_MS` times the attempt,
+ * capped at `SEED_IMAGE_MAX_RETRY_WAIT_MS`.
  */
-export const SEED_IMAGE_ATTEMPTS = 4;
+export const SEED_IMAGE_ATTEMPTS = 6;
 export const SEED_IMAGE_RETRY_MS = 5_000;
 export const SEED_IMAGE_MAX_RETRY_WAIT_MS = 30_000;
 

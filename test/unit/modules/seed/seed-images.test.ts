@@ -51,10 +51,10 @@ describe('downloadedImage', () => {
         },
       });
 
-    it('asks again after the Retry-After the host gave, then crops the picture', async () => {
+    it('asks again after the Retry-After the host gave, when longer, then crops the picture', async () => {
       const picture = await placeholderImage(400, 300, '#1f4e79', 'a mall');
       responses(
-        busy(429, '2'),
+        busy(429, '12'),
         new Response(picture, { headers: { 'content-type': 'image/jpeg' } }),
       );
       const wait = jest.fn().mockResolvedValue(undefined);
@@ -63,18 +63,18 @@ describe('downloadedImage', () => {
 
       expect(await sharp(image).metadata()).toMatchObject({ width: 1600, height: 1067 });
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(wait.mock.calls).toEqual([[2000]]);
+      expect(wait.mock.calls).toEqual([[12000]]);
     });
 
-    it('waits longer each time without a Retry-After, capped at 30 seconds, then gives up', async () => {
-      responses(busy(503), busy(503), busy(429, '120'), busy(503));
+    it('waits longer each time, at least the Retry-After, capped at 30 seconds, then gives up', async () => {
+      responses(busy(503), busy(429, '1'), busy(429, '120'), busy(503), busy(503), busy(503));
       const wait = jest.fn().mockResolvedValue(undefined);
 
       await expect(downloadedImage('https://example.com/mall.jpg', 800, 800, wait)).rejects.toThrow(
         'Seed: the picture https://example.com/mall.jpg answered 503 text/html',
       );
-      expect(fetch).toHaveBeenCalledTimes(4);
-      expect(wait.mock.calls).toEqual([[5000], [10000], [30000]]);
+      expect(fetch).toHaveBeenCalledTimes(6);
+      expect(wait.mock.calls).toEqual([[5000], [10000], [30000], [20000], [25000]]);
     });
 
     it('does not ask again after a 404', async () => {
