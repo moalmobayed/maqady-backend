@@ -117,7 +117,8 @@ export class MovieBrowseService {
   /**
    * The Movies page facets (#29) over every movie of the tab matching the filters, each facet
    * without its own filter: genre counts (one query), the cast (two at most) and the show-date
-   * counts (one, none when no movie is showing). `movieIds` is the `showDate` filter's movies.
+   * counts (one, none when no movie is showing or on Coming soon). `movieIds` is the `showDate`
+   * filter's movies.
    */
   private async facetsOf(
     filters: MovieFacetFilters,
@@ -136,7 +137,12 @@ export class MovieBrowseService {
       { ...base, genreIds, ...showing },
       PEOPLE_FACET_LIMIT,
     );
-    const anyShowing = [...new Set(options.flatMap((option) => option.movieIds))];
+    // `showDate` belongs to Now showing: a Coming soon movie left with a showtime (archived,
+    // then brought back) is never what the filter lists, so it never counts either.
+    const anyShowing =
+      filters.status === 'now_showing'
+        ? [...new Set(options.flatMap((option) => option.movieIds))]
+        : [];
     const matching = new Set(
       anyShowing.length === 0
         ? []

@@ -41,8 +41,9 @@ selected; it keeps every other filter.
 cinema date, design §8): a movie counts for an option when it has a scheduled showtime at an
 `active` theater, on one of the option's cinema dates, that starts after now. An after-midnight
 showtime belongs to the previous cinema date; "this weekend" is Friday and Saturday (from today
-on a Friday, today only on a Saturday). Only Now showing movies can be scheduled (U7), so on the
-Coming soon tab every count is 0; the options and their dates are still listed.
+on a Friday, today only on a Saturday). Only Now showing movies can be scheduled (U7), and `showDate` belongs to that tab, so on the
+Coming soon tab every count is 0, even for a movie archived with showtimes left and brought back
+to Coming soon (review F1); the options and their dates are still listed.
 
 Drafts and archived movies never count anywhere (the public filters only read `coming_soon` and
 `now_showing`).

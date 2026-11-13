@@ -1,5 +1,5 @@
 import type { MovieCardPageResponse } from '../../../../src/modules/discovery/dto/movie-lists.response';
-import { expectStatus } from '../../../support/catalog';
+import { adminWrite, expectStatus } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
 import { countQueries } from '../../../support/discovery';
 import { WORLD_NOW, buildShowtimeWorld } from '../../../support/discovery-showtimes';
@@ -93,6 +93,29 @@ describe('The Movies page show-date facet', () => {
       ['tomorrow', 0, ['2026-10-17']],
       ['weekend', 0, ['2026-10-16', '2026-10-17']],
     ]);
+  });
+
+  it('stays 0 on Coming soon for a movie brought back from archived with a showtime left', async () => {
+    // Archiving keeps the movie's showtimes and an archived movie may return to Coming soon:
+    // Archived Reel still has its 23:00 show tonight at an active theater.
+    const setStatus = async (status: string) =>
+      expectStatus(
+        await adminWrite(
+          testApp,
+          admin,
+          'patch',
+          `${API}/admin/movies/${world.movies.archived}`,
+        ).send({ status }),
+        200,
+      );
+    await setStatus('coming_soon');
+    try {
+      const body = await list('?status=coming_soon');
+      expect(body.items.map((item) => item.id)).toContain(world.movies.archived);
+      expect(body.facets.showDates.map((option) => option.count)).toEqual([0, 0, 0]);
+    } finally {
+      await setStatus('archived');
+    }
   });
 
   it("keeps an after-midnight showtime in its cinema date's count until it starts", async () => {
