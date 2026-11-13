@@ -83,7 +83,7 @@ design are amended in the same change.
 | `format VARCHAR(16) NOT NULL DEFAULT 'standard'`; the service always writes it | The previous release inserts halls naming its columns and never `format`; a NOT NULL column without a default would break its "Add hall" during a deploy (design §6.1 "expand first"). The default also fills every existing hall with `standard`, which is what they are. It is a label, not a critical column the Clock or a rule decides. Dropping the default is a contract-phase follow-up |
 | Screen size stored as `screen_width_cm` / `screen_height_cm INT`, both or neither (`chk_halls_screen_size`), each 100 to 5000 (`chk_halls_screen_width_cm`, `chk_halls_screen_height_cm`) | Whole centimetres keep 22.1 m exact without NUMERIC; the largest screens are under 40 m wide; below 1 m is not a cinema screen. A size is meaningless with only one side |
 | API in metres: `screenWidthMeters` / `screenHeightMeters`, JSON numbers 1 to 50 with at most 2 decimals (`HasAtMostDecimals(2)`), stored as `Math.round(m × 100)` cm and read back as `cm / 100`. Text, 3 decimals, 0.5 or 50.01 is `VALIDATION_FAILED` on the field | The design writes metres ("22.1m x 12.3m"); 2 decimals are exactly the centimetres stored, so what an admin types is what customers see |
-| Both or neither **in the request**: sending one of the two without the other, or a number with a null, is `VALIDATION_FAILED` on the missing or null field ("screenHeightMeters is required with screenWidthMeters"). Both null clears the screen | One rule the DTO can judge alone, the same as the CHECK; never a half-changed screen. The editor sends the pair |
+| Both or neither **in the request**: sending one of the two without the other is `VALIDATION_FAILED` on the missing side only ("screenHeightMeters is required with screenWidthMeters"), a null beside a number on the null side ("… can be null only when … is null too"). Both null clears the screen | One rule the DTO can judge alone, the same as the CHECK; never a half-changed screen. The editor sends the pair |
 | `PATCH` that changes nothing writes nothing; a format or screen change on a retired hall is allowed (like a rename) | The existing PATCH rules |
 | Audit: one `hall.updated` event per PATCH that changes the name, format or screen, `changedFields` naming each changed field by its API name (`name`, `format`, `screenWidthMeters`, `screenHeightMeters`); a status change keeps its own event | Design §13.5: field names, never values. A rename alone still records `['name']`, as before |
 | Admin `HallResponse`: flat `format`, `screenWidthMeters`, `screenHeightMeters` (nullable) | The editor's fields, sent back as they are taken |
@@ -100,14 +100,17 @@ design are amended in the same change.
 - `src/modules/halls/`: `enums.ts` (`HALL_FORMATS`), `types.ts` (`HallFormat`, `HallScreen`,
   rows, `HallSummary`, `NewHallInput`, `HallChanges`), `halls.constants.ts` (screen limits,
   `DEFAULT_HALL_FORMAT`), `hall-screen.ts` (metres ↔ centimetres), `hall-rows.ts`,
-  `halls.repository.ts`, `halls.service.ts`, `hall-response.mapper.ts`,
+  `halls.repository.ts`, `halls.service.ts` (`fieldChanges()`), `hall-response.mapper.ts`,
   `admin-halls.controller.ts`, `admin-theater-halls.controller.ts`, `dto/hall-fields.ts` (new),
   `dto/create-hall.request.ts`, `dto/update-hall.request.ts`, `dto/hall.response.ts`.
 - `src/modules/showtimes/`: `types.ts` (`ShowtimeView.hallFormat`), `showtime-rows.ts`.
+- `src/modules/theaters/dto/validators.ts`: `decimalsOf()` exported, reused by the screen check.
+- `test/support/halls.ts`: `setHallSpec()`.
 - `src/modules/discovery/`: `types.ts`, `showtime-browse.service.ts`,
   `discovery-response.mapper.ts`, `dto/public-showtime.response.ts`,
   `dto/movie-showtimes.response.ts`, `dto/public-theater.response.ts`.
-- `src/modules/seed/`: `types.ts`, `seed.steps.ts`, `seed-data.ts` (`seedHallName`).
+- `src/modules/seed/`: `types.ts` (`SeedHall`, `SeedHallSpec`, `SeedHallRow`), `seed.steps.ts`
+  (`seedHallOf`).
 - `contracts/openapi.yaml`.
 
 ## Migrations
@@ -187,8 +190,10 @@ Unit (`test/unit/`, collaborators mocked):
 
 Integration (`test/integration/`, real Postgres, real wiring):
 
-- `migrations/0290_31.test.ts`: a hall created before the migration reads `standard` with no
-  screen after it; the CHECKs refuse an unknown format, one side alone and 99 or 5001 cm.
+- `migrations/0290_hall_screen_format.test.ts`: a hall written before the migration (the
+  migration run down and up again in a rolled-back transaction) reads `standard` with no screen
+  after it, and an insert naming only the previous release's columns still works; the CHECKs
+  refuse an unknown format (`3d`), one side alone and 99 or 5001 cm; each column has a comment.
 - `modules/halls/admin-halls.controller.test.ts` ("format and screen" block): create with a
   format and screen answers them in metres and stores centimetres; `GET` returns them; `PATCH`
   changes them and the audit row names the fields; both null clears; one side alone and an

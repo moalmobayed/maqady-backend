@@ -24,7 +24,7 @@ Version 2.0 keeps the goals of PRD v1.0 and all 20 designed screens, but changes
 | Box office sales | Sell, or reserve with "Pay later" | Sell and take payment on the spot (cash or card terminal). No reservations. |
 | Payment provider | Stripe | A simulated provider that behaves like a real one. No real money moves. |
 | Booking fee | EGP 12 per seat | None |
-| Hall formats | 2D, 3D, IMAX, 4DX, Dolby Atmos, VIP recliners | None. Every hall is a standard hall. |
+| Hall formats | 2D, 3D, IMAX, 4DX, Dolby Atmos, VIP recliners | None until #29. Since #29: each hall has a format label (Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX, MAX; standard by default) and an optional screen size, shown to customers; never a price or a filter |
 | Ticket prices | Several conflicting models (by format, by zone, a format × zone grid) | By row zone: Front, Middle, Back. Each theater sets defaults; a showtime can override them. |
 | Seat maps | One 12 × 16 grid for every hall | Each hall has its own grid, up to 15 rows × 20 seats |
 | Movie scores | "Maqady rating" with votes, sort by rating | Removed. Since #29: an admin-entered score out of 10 from an outside source (for example "elCinema users"), shown on the movie page; no votes, no sorting by score |
@@ -178,6 +178,7 @@ The server enforces every rule below; the UI only explains them. Anything that e
 3. Aisles fall after seat 4 and 4 seats before the end of each row.
 4. A hall's layout is locked while any upcoming showtime in it has an active booking. The editor names the showtimes that block it.
 5. A hall that has never had a showtime can be deleted. Otherwise it is retired: kept for history, hidden from scheduling.
+6. Since #29, a hall has a projection format (Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX; Standard by default) and an optional screen size in metres (width and height together). The format is a label on the hall and its showtimes: prices stay by zone, and nothing filters by format.
 
 ### Theaters and movies
 
@@ -239,7 +240,7 @@ Every data screen has loading, empty and error states, and every screen works on
 - Synopsis. Tag chips are the movie's genres only.
 - Credits: Director, Writers, Stars, and the full cast and crew grid. Each name opens Movies filtered by that person.
 - Side panel: Book tickets, Watch trailer, the real next show today, how many cinemas show it, and "From EGP x · pay online".
-- Showtimes: 7 cinema days, a theater picker with counts, and time chips with start–end time, hall, "from" price and a Sold out or Started state. No format.
+- Showtimes: 7 cinema days, a theater picker with counts, and time chips with start–end time, hall, "from" price and a Sold out or Started state. Since #29 each chip also shows its hall's format, and each theater's day lists its formats ("Standard, VIP").
 - An after-midnight chip names its real day, for example "00:30 Sat" under Friday.
 - Notes: "Prices vary by seat zone." and "Showtimes that have started can't be booked."
 - Details table: release date, runtime, age rating, language, country, production company. Budget and filming locations appear only when an admin filled them in.
@@ -253,7 +254,7 @@ Every data screen has loading, empty and error states, and every screen works on
 
 ### C5 Theater Details `/theaters/:theaterId`
 
-- As designed, without formats. Halls read "Hall 3 · 186 seats · 4 wheelchair spaces".
+- As designed. Halls read "Hall 3 · 186 seats · 4 wheelchair spaces"; since #29 each hall also shows its format and, when set, its screen size ("22.1m x 12.3m"), and the showtime chips their hall's format.
 - Opening hours show any special dates in the next 7 days.
 - Phones and email appear only when the theater's "show contacts" setting is on.
 - Photos come from the admin's uploads.
@@ -368,7 +369,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - Header: a Publish button for drafts and the Selling toggle (Active or Sales paused).
 - Facilities: Wheelchair access, Free parking, Valet parking, Street parking, Café & bar, Food court, Kids room. Format facilities (IMAX, 4DX, Dolby Atmos, 3D, VIP recliners) are removed.
 - New Photos tab: a cover photo and a gallery, uploaded.
-- Halls tab: name, seats, layout ("15 × 20"), status (Draft, Active, Retired), Edit layout, Add hall, Delete or Retire. No format column.
+- Halls tab: name, seats, layout ("15 × 20"), status (Draft, Active, Retired), Edit layout, Add hall, Delete or Retire. Since #29 also the format and the screen size (metres, width and height together), set when adding a hall or editing it.
 - Pricing tab: one row of default prices for Front, Middle and Back. The booking fee and pay-at-cinema settings are removed.
 - Hall layout editor: rows 4–15, seats per row 8–20, a zone per row, wheelchair spaces, "no seat" gaps, automatic aisles and a live seat summary. Saving a hall in use is refused and lists the showtimes that block it.
 - Delete theater is enabled only for a Draft with no showtimes.
