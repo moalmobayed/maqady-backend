@@ -18,6 +18,10 @@ export const FEATURED_POSITION_MIN = 1;
 export const FEATURED_POSITION_MAX = 5;
 
 export const MAX_RUNTIME_MINUTES = 600;
+
+/** A movie's score is out of 10, with at most one decimal place (`movies.rating NUMERIC(3,1)`, #29). */
+export const MAX_MOVIE_RATING = 10;
+export const MOVIE_RATING_DECIMALS = 1;
 /** Ten hours: anything longer is a typo. */
 export const MAX_VIDEO_DURATION_SECONDS = 36_000;
 
@@ -33,6 +37,7 @@ export const TEXT_LIMITS = {
   productionCompany: 120,
   budgetLabel: 40,
   filmingLocations: 200,
+  ratingSource: 80,
   characterName: 120,
   photoCaption: 200,
   videoTitle: 120,

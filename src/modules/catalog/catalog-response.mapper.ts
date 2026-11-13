@@ -42,6 +42,8 @@ export class CatalogResponseMapper {
       productionCompany: movie.productionCompany,
       budgetLabel: movie.budgetLabel,
       filmingLocations: movie.filmingLocations,
+      rating: movie.rating,
+      ratingSource: movie.ratingSource,
       genres: movie.genres.map(toGenreRefResponse),
       poster: this.image(movie.poster, `${movie.title} poster`),
       backdropPhotoId: movie.backdropPhotoId,

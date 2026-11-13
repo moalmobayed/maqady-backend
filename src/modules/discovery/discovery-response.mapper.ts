@@ -162,6 +162,7 @@ export class DiscoveryResponseMapper {
       ageRating: movie.ageRating,
       releaseDate: movie.releaseDate,
       status: movie.status,
+      rating: movie.rating,
     });
   }
 
@@ -230,6 +231,8 @@ export class DiscoveryResponseMapper {
       runtimeMinutes: movie.runtimeMinutes,
       releaseDate: movie.releaseDate,
       ageRating: movie.ageRating,
+      rating: movie.rating,
+      ratingSource: movie.ratingSource,
       language: movie.language,
       country: movie.country,
       productionCompany: movie.productionCompany,

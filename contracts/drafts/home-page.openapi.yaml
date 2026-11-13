@@ -1,6 +1,10 @@
 # Hand-written contract for the home page, agreed with the frontend before the code exists.
 # The generated contract (contracts/openapi.yaml, produced from the NestJS code) must match
 # these paths and schemas exactly. Delete this draft once the generated contract covers them.
+#
+# Changelog (additive only; nothing agreed is removed or renamed):
+# - #29 (API Data Gaps Report, movie rating score): `MovieCard.rating`, an optional nullable
+#   number 0 to 10.
 openapi: 3.0.3
 info:
   title: Maqady API — home page
@@ -321,6 +325,15 @@ components:
         ageRating: { $ref: '#/components/schemas/AgeRating' }
         releaseDate: { type: string, format: date }
         status: { $ref: '#/components/schemas/MovieStatus' }
+        rating:
+          description: |
+            Added by #29 (optional, so additive): the rating score out of 10 with one decimal,
+            the same as the movie page shows; null when the movie has none. Always sent by the
+            API.
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 10
     MovieCardList:
       type: object
       required: [items, total]

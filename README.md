@@ -151,6 +151,9 @@ pages and the admin dashboard.
   videos are Blender Foundation open movies on YouTube, so the embeds play.
 - It is idempotent: each step finds what exists by name or title and adds only what is missing,
   and prints `<step>: <n> created, <m> already there`. Run it again after a failure to finish.
+  A dataset movie's optional `rating` and `ratingSource` (#29) are sent when the movie is created,
+  and set on an existing movie whose score is still empty, so a re-run gives the movies seeded
+  before they had scores their scores; a score already set (by an admin) is left alone.
 - Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
   active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,

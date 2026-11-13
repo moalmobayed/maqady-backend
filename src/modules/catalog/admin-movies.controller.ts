@@ -78,7 +78,7 @@ export class AdminMoviesController {
   @Strict()
   @ApiOperation({
     summary: 'Create a movie',
-    description: `${ADMIN_ONLY} "Add movie": creates a **draft** that only admins see. Only \`title\` is required; \`ageRating\` defaults to \`12+\`. Publish it later with \`PATCH /admin/movies/{id}\`. Requires an \`Idempotency-Key\`. Recorded in the activity log.`,
+    description: `${ADMIN_ONLY} "Add movie": creates a **draft** that only admins see. Only \`title\` is required; \`ageRating\` defaults to \`12+\`. An optional \`rating\` (0 to 10, one decimal) with its \`ratingSource\` is the score customers see on the movie page; a source without a rating is \`VALIDATION_FAILED\` on \`ratingSource\`. Publish it later with \`PATCH /admin/movies/{id}\`. Requires an \`Idempotency-Key\`. Recorded in the activity log.`,
   })
   @ApiBody({ type: CreateMovieRequest })
   @ApiCreatedResponse({
@@ -142,7 +142,7 @@ export class AdminMoviesController {
   @Admin()
   @ApiOperation({
     summary: 'Edit or publish a movie',
-    description: `${ADMIN_ONLY} Changes any details, the genres, the backdrop and hero video, the status and the home carousel position. Absent fields stay; null clears a nullable one. The rules are judged on the movie as it would be after the change:\n\n- **Status.** draft → coming soon, now showing or archived; coming soon → draft, now showing or archived; now showing → archived; archived → coming soon or now showing. Anything else is \`CONFLICT\` with \`details.from\` and \`details.to\`.\n- **Publishing.** A Coming soon or Now showing movie needs a synopsis, runtime, release date and at least one genre (a poster is optional): \`MOVIE_NOT_PUBLISHABLE\` with \`details.missing\`. Clearing one of them on a public movie is refused the same way.\n- **Carousel.** \`featuredPosition\` 1 to 5 needs a public movie with a hero video (\`MOVIE_NOT_FEATURABLE\` with \`details.reasons\`), and a position no other movie holds (\`FEATURED_POSITION_TAKEN\` with the holder's \`movieId\`). Moving to draft or archived frees the position.\n- **Media.** \`heroVideoId\` and \`backdropPhotoId\` must be this movie's own (\`VALIDATION_FAILED\`); a backdrop must be 16:9 and at least 1280 × 720 (\`IMAGE_WRONG_SHAPE\`).\n- An unknown genre id is \`VALIDATION_FAILED\` on \`genreIds\`. A change to the values the movie already has answers \`200\` and changes nothing.\n- Recorded in the activity log with the names of the changed fields.`,
+    description: `${ADMIN_ONLY} Changes any details, the genres, the backdrop and hero video, the status and the home carousel position. Absent fields stay; null clears a nullable one. The rules are judged on the movie as it would be after the change:\n\n- **Status.** draft → coming soon, now showing or archived; coming soon → draft, now showing or archived; now showing → archived; archived → coming soon or now showing. Anything else is \`CONFLICT\` with \`details.from\` and \`details.to\`.\n- **Publishing.** A Coming soon or Now showing movie needs a synopsis, runtime, release date and at least one genre (a poster is optional): \`MOVIE_NOT_PUBLISHABLE\` with \`details.missing\`. Clearing one of them on a public movie is refused the same way.\n- **Carousel.** \`featuredPosition\` 1 to 5 needs a public movie with a hero video (\`MOVIE_NOT_FEATURABLE\` with \`details.reasons\`), and a position no other movie holds (\`FEATURED_POSITION_TAKEN\` with the holder's \`movieId\`). Moving to draft or archived frees the position.\n- **Media.** \`heroVideoId\` and \`backdropPhotoId\` must be this movie's own (\`VALIDATION_FAILED\`); a backdrop must be 16:9 and at least 1280 × 720 (\`IMAGE_WRONG_SHAPE\`).\n- **Rating score.** \`rating\` is 0 to 10 with at most one decimal, or null to clear; \`ratingSource\` names where it comes from. A movie may have a rating without a source, never a source without a rating: \`VALIDATION_FAILED\` on \`ratingSource\`, so clear both together (\`rating: null, ratingSource: null\`).\n- An unknown genre id is \`VALIDATION_FAILED\` on \`genreIds\`. A change to the values the movie already has answers \`200\` and changes nothing.\n- Recorded in the activity log with the names of the changed fields.`,
   })
   @ApiBody({ type: UpdateMovieRequest })
   @ApiOkResponse({
@@ -234,6 +234,8 @@ function detailsOf(body: CreateMovieRequest | UpdateMovieRequest) {
     ...(body.productionCompany !== undefined ? { productionCompany: body.productionCompany } : {}),
     ...(body.budgetLabel !== undefined ? { budgetLabel: body.budgetLabel } : {}),
     ...(body.filmingLocations !== undefined ? { filmingLocations: body.filmingLocations } : {}),
+    ...(body.rating !== undefined ? { rating: body.rating } : {}),
+    ...(body.ratingSource !== undefined ? { ratingSource: body.ratingSource } : {}),
     ...(body.genreIds !== undefined ? { genreIds: body.genreIds } : {}),
   };
 }

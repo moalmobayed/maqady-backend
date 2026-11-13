@@ -51,6 +51,10 @@ export interface MovieRow {
   readonly production_company: string | null;
   readonly budget_label: string | null;
   readonly filming_locations: string | null;
+  /** The score out of 10, one decimal (`NUMERIC(3,1)`, read as a number); #29. */
+  readonly rating: number | null;
+  /** Where the score comes from; set only with a rating (`chk_movies_rating_source_needs_rating`). */
+  readonly rating_source: string | null;
   readonly poster_image_id: number | null;
   readonly backdrop_photo_id: number | null;
   readonly hero_video_id: number | null;
@@ -279,10 +283,14 @@ export interface MovieSummary {
   /** In display order; the first is the "first genre" of Now showing cards. */
   readonly genres: readonly GenreRef[];
   readonly poster: StoredImage | null;
+  /** The score out of 10, or null when the movie has none (#29). */
+  readonly rating: number | null;
 }
 
 /** A public movie's page (PRD C3). */
 export interface MovieDetails extends MovieSummary {
+  /** Where the score comes from, or null (#29). */
+  readonly ratingSource: string | null;
   readonly language: string | null;
   readonly country: string | null;
   readonly productionCompany: string | null;
@@ -393,6 +401,8 @@ export interface AdminMovie {
   readonly productionCompany: string | null;
   readonly budgetLabel: string | null;
   readonly filmingLocations: string | null;
+  readonly rating: number | null;
+  readonly ratingSource: string | null;
   readonly genres: readonly GenreRef[];
   readonly poster: StoredImage | null;
   readonly backdropPhotoId: number | null;
@@ -453,6 +463,8 @@ export interface MovieFieldChanges {
   readonly productionCompany?: string | null;
   readonly budgetLabel?: string | null;
   readonly filmingLocations?: string | null;
+  readonly rating?: number | null;
+  readonly ratingSource?: string | null;
   readonly genreIds?: readonly number[];
 }
 
@@ -473,6 +485,12 @@ export interface MoviePublishState {
   readonly runtimeMinutes: number | null;
   readonly releaseDate: CalendarDate | null;
   readonly genreCount: number;
+}
+
+/** A movie's score and its source, as the "a source needs a rating" rule judges them (#29). */
+export interface MovieRatingState {
+  readonly rating: number | null;
+  readonly ratingSource: string | null;
 }
 
 export interface MovieFeatureState {

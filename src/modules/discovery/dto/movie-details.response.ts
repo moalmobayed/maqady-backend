@@ -1,5 +1,5 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
-import { TEXT_LIMITS } from '../../catalog/catalog.constants';
+import { MAX_MOVIE_RATING, TEXT_LIMITS } from '../../catalog/catalog.constants';
 import { GenreRefResponse } from '../../catalog/dto/genre-ref.response';
 import { MovieCreditResponse } from '../../catalog/dto/movie-credit.response';
 import { VideoResponse } from '../../catalog/dto/video.response';
@@ -133,6 +133,27 @@ export class MovieDetailsResponse {
 
   @ApiProperty({ ...AGE_RATING_ENUM, example: '12+', description: 'Age certificate.' })
   ageRating!: AgeRating;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    minimum: 0,
+    maximum: MAX_MOVIE_RATING,
+    example: 8.4,
+    description:
+      'The rating score out of 10, one decimal, shown on the hero with a star (for example "8.4"). Null when the movie has none: hide the score.',
+  })
+  rating!: number | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    maxLength: TEXT_LIMITS.ratingSource,
+    example: 'elCinema users',
+    description:
+      'Where the score comes from, shown small under it. Null shows the score alone (always null when `rating` is null).',
+  })
+  ratingSource!: string | null;
 
   @ApiProperty({ type: String, nullable: true, example: 'Arabic', description: 'Language.' })
   language!: string | null;

@@ -689,6 +689,152 @@ describe('Admin movie routes (integration)', () => {
     });
   });
 
+  describe('the rating score (#29)', () => {
+    const ratingOf = (id: number) =>
+      testApp
+        .knex('movies')
+        .select<{ rating: number | null; rating_source: string | null }[]>(
+          'rating',
+          'rating_source',
+        )
+        .where({ id })
+        .first();
+
+    it('creates a movie with a score and its source, and GET returns them', async () => {
+      const created = await createDraftMovie(testApp, admin, {
+        rating: 8.4,
+        ratingSource: '  elCinema users ',
+      });
+      expect(created).toMatchObject({ rating: 8.4, ratingSource: 'elCinema users' });
+
+      const read = expectStatus(await get(`${MOVIES}/${created.id}`), 200);
+      expect(read.body).toMatchObject({ rating: 8.4, ratingSource: 'elCinema users' });
+      expect(await ratingOf(created.id)).toEqual({ rating: 8.4, rating_source: 'elCinema users' });
+    });
+
+    it('answers null for a movie without a score, and takes a score without a source', async () => {
+      const unrated = await createDraftMovie(testApp, admin);
+      expect(unrated).toMatchObject({ rating: null, ratingSource: null });
+
+      const rated = expectStatus(await patch(unrated.id, { rating: 0 }), 200);
+      expect(rated.body).toMatchObject({ rating: 0, ratingSource: null });
+      const ten = expectStatus(await patch(unrated.id, { rating: 10 }), 200);
+      expect(ten.body).toMatchObject({ rating: 10, ratingSource: null });
+    });
+
+    it('records the changed field names, never the values, and nothing for the same score', async () => {
+      const movie = await createDraftMovie(testApp, admin, { rating: 7 });
+      expectStatus(await patch(movie.id, { rating: 8.4, ratingSource: 'elCinema users' }), 200);
+      expectStatus(await patch(movie.id, { rating: 8.4 }), 200);
+      expectStatus(await patch(movie.id, { ratingSource: 'IMDb users' }), 200);
+
+      const updates = (await auditOf(movie.id))
+        .filter((row) => row.action === 'movie.updated')
+        .map((row) => row.changed_fields);
+      expect(updates).toEqual([['rating', 'ratingSource'], ['ratingSource']]);
+      const text = JSON.stringify(await auditOf(movie.id));
+      expect(text).not.toContain('elCinema');
+      expect(text).not.toContain('IMDb');
+      expect(text).not.toContain('8.4');
+    });
+
+    it('refuses a source without a score, on create and when a PATCH would leave one, and changes nothing', async () => {
+      const create = await adminWrite(testApp, admin, 'post', MOVIES).send({
+        title: 'Source only',
+        ratingSource: 'elCinema users',
+      });
+      expectError(create, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(create)).toEqual(['ratingSource']);
+      expect(await testApp.knex('movies').where({ title: 'Source only' }).first()).toBeUndefined();
+
+      const unrated = await createDraftMovie(testApp, admin);
+      const sourceOnly = await patch(unrated.id, { ratingSource: 'elCinema users' });
+      expectError(sourceOnly, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(sourceOnly)).toEqual(['ratingSource']);
+
+      const rated = await createDraftMovie(testApp, admin, {
+        rating: 8.4,
+        ratingSource: 'elCinema users',
+      });
+      const before = await auditOf(rated.id);
+      const clearScoreOnly = await patch(rated.id, { rating: null });
+      expectError(clearScoreOnly, 400, 'VALIDATION_FAILED');
+      expect(clearScoreOnly.body.error.details.fields).toEqual([
+        {
+          field: 'ratingSource',
+          messages: ['ratingSource needs a rating: set rating too, or send ratingSource: null'],
+        },
+      ]);
+      expect(await ratingOf(rated.id)).toEqual({ rating: 8.4, rating_source: 'elCinema users' });
+      expect(await auditOf(rated.id)).toEqual(before);
+    });
+
+    it('clears the score and its source together with nulls', async () => {
+      const movie = await createDraftMovie(testApp, admin, {
+        rating: 6.5,
+        ratingSource: 'elCinema users',
+      });
+      const cleared = expectStatus(
+        await patch(movie.id, { rating: null, ratingSource: null }),
+        200,
+      );
+      expect(cleared.body).toMatchObject({ rating: null, ratingSource: null });
+      expect(await ratingOf(movie.id)).toEqual({ rating: null, rating_source: null });
+
+      const withSource = await createDraftMovie(testApp, admin, {
+        rating: 6.5,
+        ratingSource: 'elCinema users',
+      });
+      const blank = expectStatus(await patch(withSource.id, { ratingSource: '   ' }), 200);
+      expect(blank.body).toMatchObject({ rating: 6.5, ratingSource: null });
+    });
+
+    it.each([
+      ['above 10', { rating: 10.1 }, 'rating'],
+      ['below 0', { rating: -0.5 }, 'rating'],
+      ['with two decimals', { rating: 8.45 }, 'rating'],
+      ['as text', { rating: '8.4' }, 'rating'],
+      // JSON writes a score below 1e-6 with an exponent; class-validator's maxDecimalPlaces threw.
+      ['written 1e-7', { rating: 1e-7 }, 'rating'],
+      [
+        'with a source of 81 characters',
+        { rating: 8, ratingSource: 'a'.repeat(81) },
+        'ratingSource',
+      ],
+      // 160 code points, which VARCHAR(80) refuses, but class-validator's MaxLength counted 80.
+      [
+        'with a source of 80 emoji-presentation pairs',
+        { rating: 8, ratingSource: 'a️'.repeat(80) },
+        'ratingSource',
+      ],
+    ])('refuses a score %s and changes nothing', async (_label, body, field) => {
+      const movie = await createDraftMovie(testApp, admin, { rating: 5 });
+      const response = await patch(movie.id, body);
+      expectError(response, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(response)).toEqual([field]);
+      expect(await ratingOf(movie.id)).toEqual({ rating: 5, rating_source: null });
+    });
+
+    it('backs the rules with the database: 0 to 10, and a source needs a score', async () => {
+      const movie = await createDraftMovie(testApp, admin);
+      await expect(
+        testApp.knex('movies').update({ rating: 10.5 }).where({ id: movie.id }),
+      ).rejects.toThrow(/chk_movies_rating/);
+      await expect(
+        testApp.knex('movies').update({ rating_source: 'elCinema users' }).where({ id: movie.id }),
+      ).rejects.toThrow(/chk_movies_rating_source_needs_rating/);
+      await expect(
+        testApp
+          .knex('movies')
+          .update({ rating: 7, rating_source: ' padded ' })
+          .where({ id: movie.id }),
+      ).rejects.toThrow(/chk_movies_rating_source/);
+      // NUMERIC(3,1) keeps one decimal exactly.
+      await testApp.knex('movies').update({ rating: 8.4 }).where({ id: movie.id });
+      expect(await ratingOf(movie.id)).toEqual({ rating: 8.4, rating_source: null });
+    });
+  });
+
   describe('the activity log', () => {
     it('holds field names and ids only: no title, name, synopsis or link', async () => {
       const rows = await testApp.knex('audit_events').select('changed_fields', 'metadata');
@@ -701,6 +847,7 @@ describe('Admin movie routes (integration)', () => {
         'signal from',
         'youtube.com',
         'EGP 48M',
+        'elCinema',
       ]) {
         expect(text).not.toContain(value);
       }

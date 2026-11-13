@@ -28,6 +28,8 @@ const UPDATE_MOVIE_FIELDS = [
   'productionCompany',
   'budgetLabel',
   'filmingLocations',
+  'rating',
+  'ratingSource',
   'genreIds',
   'status',
   'featuredPosition',

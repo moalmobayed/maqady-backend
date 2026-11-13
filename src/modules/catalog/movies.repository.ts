@@ -35,6 +35,8 @@ const MOVIE_COLUMNS = [
   'production_company',
   'budget_label',
   'filming_locations',
+  'rating',
+  'rating_source',
   'poster_image_id',
   'backdrop_photo_id',
   'hero_video_id',

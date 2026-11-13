@@ -77,6 +77,68 @@ describe('catalog request DTOs', () => {
     });
   });
 
+  describe('the rating score (#29)', () => {
+    it.each([0, 10, 8.4, 7, null])(
+      'accepts a rating of %p on create and on update',
+      async (rating) => {
+        expect(await invalidFields(CreateMovieRequest, { title: 'x', rating })).toEqual([]);
+        expect(await invalidFields(UpdateMovieRequest, { rating })).toEqual([]);
+      },
+    );
+
+    it.each([
+      ['above 10', 10.1],
+      ['below 0', -0.5],
+      ['with two decimals', 8.45],
+      ['written in exponent form (JSON 1e-7)', 1e-7],
+      ['written in exponent form (JSON 5e-10)', 5e-10],
+      ['as text', '8.4'],
+      ['not a number', Number.NaN],
+      ['infinite', Number.POSITIVE_INFINITY],
+      ['a boolean', true],
+    ])('refuses a rating %s', async (_label, rating) => {
+      expect(await invalidFields(CreateMovieRequest, { title: 'x', rating })).toEqual(['rating']);
+      expect(await invalidFields(UpdateMovieRequest, { rating })).toEqual(['rating']);
+    });
+
+    it('says why a score with two decimals is refused', async () => {
+      try {
+        await transformed(UpdateMovieRequest, { rating: 8.45 });
+        throw new Error('expected a refusal');
+      } catch (error) {
+        expect((error as AppError).details).toEqual({
+          fields: [
+            {
+              field: 'rating',
+              messages: ['rating must be a number with at most one decimal place'],
+            },
+          ],
+        });
+      }
+    });
+
+    it('trims the source, turns an empty one into null and refuses one over 80 characters', async () => {
+      expect(
+        await transformed(UpdateMovieRequest, { rating: 8.4, ratingSource: '  elCinema users ' }),
+      ).toEqual(expect.objectContaining({ rating: 8.4, ratingSource: 'elCinema users' }));
+      expect(await transformed(UpdateMovieRequest, { ratingSource: '   ' })).toEqual(
+        expect.objectContaining({ ratingSource: null }),
+      );
+      expect(await invalidFields(UpdateMovieRequest, { ratingSource: 'a'.repeat(80) })).toEqual([]);
+      expect(await invalidFields(UpdateMovieRequest, { ratingSource: 'a'.repeat(81) })).toEqual([
+        'ratingSource',
+      ]);
+      expect(await invalidFields(CreateMovieRequest, { title: 'x', ratingSource: 5 })).toEqual([
+        'ratingSource',
+      ]);
+    });
+
+    it('counts a rating or a source alone as a change for PATCH', async () => {
+      expect(await invalidFields(UpdateMovieRequest, { rating: null })).toEqual([]);
+      expect(await invalidFields(UpdateMovieRequest, { ratingSource: null })).toEqual([]);
+    });
+  });
+
   describe('ReplaceMovieCreditsRequest', () => {
     it('accepts a character name for an actor or voice only', async () => {
       expect(
