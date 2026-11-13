@@ -16,20 +16,25 @@ description of what the UI shows.
 ## Why staging looked empty
 
 The showtime routes you listed were there, but staging's seed had scheduled only the 7 days from
-2026-10-29. Staging is now re-seeded every morning (05:17 UTC) with the real `egypt-2026`
-dataset, so showtimes always cover today and the next 6 cinema days. A cinema day runs from
-06:00 to 05:59 Cairo time; a show at 00:30 belongs to the evening before.
+2026-10-29. Once this change reaches the repository's default branch (`main`, where GitHub runs
+scheduled workflows from), staging is re-seeded every morning (05:17 UTC) with the real
+`egypt-2026` dataset, so the real cinemas' showtimes always cover today and the next 6 cinema
+days. A cinema day runs from 06:00 to 05:59 Cairo time; a show at 00:30 belongs to the evening
+before.
 
 Staging also holds the invented `demo` dataset (the "Maqady …" theaters and their movies) beside
 the real one. Its values are made up on purpose, so every new field has an example; the real
-cinemas only carry what a public source confirms.
+cinemas only carry what a public source confirms. The morning run does not refresh the demo's
+showtimes: they cover the 7 days after someone last runs the demo seed by hand. The showtime
+formats only the demo has (`imax`, `dolby_atmos`, `4dx`) are therefore on staging only in that
+week; the real cinemas show `standard`, `vip` and `max` every day.
 
 ## Movies page
 
 | # | You asked for | Where it is | Status |
 |---|---|---|---|
-| 1 | Movies per genre | `GET /movies` → `facets.genres[].count`, over every matching movie (pagination does not change it; the count ignores the `genre` filter itself). Also `GET /genres` → `movieCount` | New (`facets`); `movieCount` was already there |
-| 2 | Actors for the sidebar | `GET /movies` → `facets.people[]` (`id`, `fullName`, `photo`, `count`); filter with `people=<id>,<id>` | New (`facets`); the filter was already there |
+| 1 | Movies per genre | `GET /movies` → `facets.genres[].count`, over every matching movie (pagination does not change it; the count ignores the `genres` filter itself). Also `GET /genres` → `movieCount` | New (`facets`); `movieCount` was already there |
+| 2 | Actors for the sidebar | `GET /movies` → `facets.people[]` (`id`, `fullName`, `photo`, `count`), the 30 with the most movies, and `facets.peopleTotal` for a "Show all" link (the rest through `GET /people?q=`); filter with `people=<id>,<id>` | New (`facets`); the filter was already there |
 | 3 | SHOW DATE options | `GET /movies` → `facets.showDates[]` (`value`, `count`, `cinemaDates`); filter with `showDate=today\|tomorrow\|weekend` | New (`facets`); the filter was already there |
 
 ```json
@@ -67,7 +72,7 @@ GET /theaters?limit=20
 | # | You asked for | Where it is | Status |
 |---|---|---|---|
 | 7 | SHOWTIMES HERE | `GET /theaters/{id}/showtimes?date=YYYY-MM-DD` → `days[].movies[]`: the `movie` card (title, poster, genres, runtime, age rating, `rating`) and its `showtimes[]` with `startsAt`, `hall.name`, `format` and `fromPrice` / `prices` | Route was already there; `format` and `rating` new; now filled every day on staging |
-| 8 | Photo gallery (3+) | `GET /theaters/{id}` → `photos[]` (`caption`, `image.variants` small/medium/large) | Route was already there. Real data: City Stars (4) and Cosmos (2), freely licensed Wikimedia Commons photos whose caption credits the photographer and licence: please show the caption. Demo theaters have 3 each |
+| 8 | Photo gallery (3+) | `GET /theaters/{id}` → `photos[]` (`caption`, `image.variants` small/medium/large) | Route was already there. Real data: City Stars (4) and Cosmos (2), freely licensed Wikimedia Commons photos whose caption credits the photographer and licence and says the picture is cropped: please show the caption, the licence requires it. Demo theaters have 3 each |
 | 9 | WhatsApp | `GET /theaters/{id}` → `whatsapp` (E.164) and `whatsappUrl` (`https://wa.me/…`, ready for the button); both `null` when the theater hides its contacts | New. No real cinema publishes a WhatsApp number, so they are `null`; the demo theaters have one |
 | 10 | Hall screen size | `GET /theaters/{id}` → `halls[].screen` `{widthMeters, heightMeters}` or `null`, and `halls[].format` | New. No real cinema publishes its screen sizes, so they are `null`; the demo theaters have them |
 | 11 | prayer_room facility | as item 5 | New |

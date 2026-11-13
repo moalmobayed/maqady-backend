@@ -329,7 +329,8 @@ describe('the egypt-2026 seed dataset', () => {
     expect(formats.filter((format) => format === 'vip')).toHaveLength(3);
   });
 
-  it('uses only freely licensed Wikimedia Commons thumbnails for the gallery, credited', () => {
+  // CC BY-SA asks to indicate a change; the seed crops every downloaded picture to the gallery size.
+  it('uses only freely licensed Wikimedia Commons thumbnails for the gallery, credited and marked cropped', () => {
     const photos = dataset.theaters.flatMap((theater) => theater.gallery);
     expect(photos.length).toBeGreaterThan(0);
     for (const photo of photos) {
@@ -337,7 +338,9 @@ describe('the egypt-2026 seed dataset', () => {
         url: /^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/thumb\/.+\/1920px-[^/]+$/.test(
           photo.url ?? '',
         ),
-        credit: / Photo: .+, CC BY(-SA)? \d\.\d, via Wikimedia Commons$/.test(photo.caption),
+        credit: / Photo: .+, CC BY(-SA)? \d\.\d, via Wikimedia Commons, cropped$/.test(
+          photo.caption,
+        ),
       }).toEqual({ url: true, credit: true });
     }
   });

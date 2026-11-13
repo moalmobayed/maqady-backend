@@ -113,22 +113,22 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     gallery: [
       {
         caption:
-          'Citystars mall: the atrium. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+          'Citystars mall: the atrium. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/City_stars_020.jpg/1920px-City_stars_020.jpg',
       },
       {
         caption:
-          'Citystars mall: the glass roof. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+          'Citystars mall: the glass roof. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/df/City_stars_021.jpg/1920px-City_stars_021.jpg',
       },
       {
         caption:
-          'Citystars mall: the spiral stairs. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons',
+          'Citystars mall: the spiral stairs. Photo: Salehmetwaly, CC BY-SA 3.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b9/City_stars_022.jpg/1920px-City_stars_022.jpg',
       },
       {
         caption:
-          'Citystars mall, Heliopolis. Photo: LittleT889, CC BY-SA 4.0, via Wikimedia Commons',
+          'Citystars mall, Heliopolis. Photo: LittleT889, CC BY-SA 4.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Citystars_Shopping_Mall%2C_Heliopolis.jpg/1920px-Citystars_Shopping_Mall%2C_Heliopolis.jpg',
       },
     ],
@@ -224,12 +224,12 @@ export const EGYPT_2026_THEATERS: readonly SeedTheater[] = [
     gallery: [
       {
         caption:
-          'Cosmos Cinema on Emad El Din St. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+          'Cosmos Cinema on Emad El Din St. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Cosmos_Cinema_in_Cairo_01.jpg/1920px-Cosmos_Cinema_in_Cairo_01.jpg',
       },
       {
         caption:
-          'The Cosmos Cinema building. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons',
+          'The Cosmos Cinema building. Photo: Marsupium, CC BY-SA 4.0, via Wikimedia Commons, cropped',
         url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Cosmos_Cinema_in_Cairo_02.jpg/1920px-Cosmos_Cinema_in_Cairo_02.jpg',
       },
     ],

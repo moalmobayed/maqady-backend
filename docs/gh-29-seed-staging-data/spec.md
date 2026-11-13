@@ -55,7 +55,8 @@ header comment and per entry.
   Standard, so their halls stay `standard`. **Screen sizes**: no public source gives one for any
   of these halls, so all stay `null`.
 - **Gallery photos**: Wikimedia Commons photos under a free licence, each caption naming the
-  author and the licence: four of the Citystars mall (CC BY-SA 3.0 and 4.0) for City Stars
+  author and the licence, and saying the picture is cropped (the seed crops every download to the
+  gallery size, and CC BY-SA asks for a change to be indicated): four of the Citystars mall (CC BY-SA 3.0 and 4.0) for City Stars
   Cinema and two of the Cosmos Cinema building (CC BY-SA 4.0). Commons has no usable free photo
   of the other six (the Mall of Egypt and Mall of Arabia files are promotional renderings
   uploaded as own work, so they are not used). Downloaded through Wikimedia's standard 1920 px
@@ -132,8 +133,8 @@ added:
 |---|---|
 | `GET /movies`, `GET /movies/{id}`, `GET /movies/{id}/similar`, `GET /home` (cards) | `rating`, `ratingSource` (details) |
 | `GET /theaters` | `items[].postalCode`, `items[].facilities` with `prayer_room`, `totalHalls` |
-| `GET /theaters/{id}` | `postalCode`, `whatsapp`, `whatsappUrl`, `facilities`, `photos` (gallery), `halls[].format`, `halls[].screenWidthMeters`, `halls[].screenHeightMeters` |
-| `GET /theaters/{id}/showtimes` | `days[].movies[].showtimes[].format`, `.hall`, `.price`; `movies[].rating` |
+| `GET /theaters/{id}` | `postalCode`, `whatsapp`, `whatsappUrl`, `facilities`, `photos` (gallery), `halls[].format`, `halls[].screen` (`widthMeters`, `heightMeters`) |
+| `GET /theaters/{id}/showtimes` | `days[].movies[].showtimes[].format`, `.hall`, `.fromPrice`, `.prices`; `days[].movies[].movie.rating` |
 | `GET /movies/{id}/showtimes` | `days[].theaters[].formats`, `.showtimes[].format` |
 
 ## Tests

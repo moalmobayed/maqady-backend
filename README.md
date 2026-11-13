@@ -790,8 +790,10 @@ The **Seed staging** workflow (`.github/workflows/seed-staging.yml`) runs it:
   turns at 06:00) with `SEED_DATASET=egypt-2026`. The seed schedules the server's cinema date and
   the 6 after, so staging's showtime lists, movie matrix and show-date counts always cover the
   next 7 cinema days; each run adds only the days that are missing and back-fills any new dataset
-  value. GitHub runs schedules only from the default branch's copy of the workflow, and pauses
-  them after 60 days without a commit to the repository;
+  value. GitHub runs schedules only from the default branch's (`main`) copy of the workflow, and
+  checks out that branch's seed code and dataset; it pauses them after 60 days without a commit
+  to the repository. The demo's showtimes are not refreshed by it: they cover the 7 days after a
+  manual demo run;
 - **by hand** from Actions → Seed staging → Run workflow, with the dataset as an input (`demo` by
   default);
 - on a push to `main-jf8hqi` that changes the workflow, with `egypt-2026`.
@@ -803,8 +805,10 @@ Maqady theaters and invented movies show beside the real ones. To reset it to on
    outside the schema).
 2. In Supabase Storage, empty the `media` bucket (`STORAGE_BUCKET`): its pictures belong to the
    rows just dropped.
-3. Open the API once (`GET /api/v1/health/ready`): the first request migrates from zero and
-   creates the first admin from `BOOTSTRAP_ADMIN_*`.
+3. Redeploy staging (Vercel → Deployments → Redeploy) and open the API once
+   (`GET /api/v1/health/ready`): the app migrates and creates the first admin from
+   `BOOTSTRAP_ADMIN_*` only when an instance boots, so an instance still warm from before the
+   drop would answer from the missing schema.
 4. Run Seed staging by hand with `egypt-2026` (or wait for the next morning's run).
 
 ## Layout
