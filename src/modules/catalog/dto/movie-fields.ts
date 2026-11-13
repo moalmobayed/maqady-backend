@@ -5,7 +5,6 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -21,6 +20,7 @@ import {
 } from '../catalog.constants';
 import { AGE_RATINGS } from '../enums';
 import type { AgeRating } from '../types';
+import { HasAtMostDecimals, HasLength } from '../../theaters/dto/validators';
 import { IsCalendarDate, OptionalNotNull, TrimToNull } from './catalog.validators';
 
 /**
@@ -154,10 +154,10 @@ export class MovieDetailsFields {
       'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.',
   })
   @IsOptional()
-  @IsNumber(
-    { allowNaN: false, allowInfinity: false, maxDecimalPlaces: MOVIE_RATING_DECIMALS },
-    { message: 'rating must be a number with at most one decimal place' },
-  )
+  // Not IsNumber's maxDecimalPlaces: it throws on a score JSON writes with an exponent (1e-7).
+  @HasAtMostDecimals(MOVIE_RATING_DECIMALS, {
+    message: 'rating must be a number with at most one decimal place',
+  })
   @Min(0)
   @Max(MAX_MOVIE_RATING)
   rating?: number | null;
@@ -173,7 +173,8 @@ export class MovieDetailsFields {
   @TrimToNull()
   @IsOptional()
   @IsString()
-  @MaxLength(TEXT_LIMITS.ratingSource)
+  // Counted as VARCHAR(80) counts: MaxLength leaves out U+FE0E/U+FE0F and let a 500 through.
+  @HasLength(1, TEXT_LIMITS.ratingSource)
   ratingSource?: string | null;
 
   @ApiPropertyOptional({

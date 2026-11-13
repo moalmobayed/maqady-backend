@@ -90,6 +90,8 @@ describe('catalog request DTOs', () => {
       ['above 10', 10.1],
       ['below 0', -0.5],
       ['with two decimals', 8.45],
+      ['written in exponent form (JSON 1e-7)', 1e-7],
+      ['written in exponent form (JSON 5e-10)', 5e-10],
       ['as text', '8.4'],
       ['not a number', Number.NaN],
       ['infinite', Number.POSITIVE_INFINITY],

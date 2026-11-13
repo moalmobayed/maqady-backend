@@ -794,9 +794,17 @@ describe('Admin movie routes (integration)', () => {
       ['below 0', { rating: -0.5 }, 'rating'],
       ['with two decimals', { rating: 8.45 }, 'rating'],
       ['as text', { rating: '8.4' }, 'rating'],
+      // JSON writes a score below 1e-6 with an exponent; class-validator's maxDecimalPlaces threw.
+      ['written 1e-7', { rating: 1e-7 }, 'rating'],
       [
         'with a source of 81 characters',
         { rating: 8, ratingSource: 'a'.repeat(81) },
+        'ratingSource',
+      ],
+      // 160 code points, which VARCHAR(80) refuses, but class-validator's MaxLength counted 80.
+      [
+        'with a source of 80 emoji-presentation pairs',
+        { rating: 8, ratingSource: 'a️'.repeat(80) },
         'ratingSource',
       ],
     ])('refuses a score %s and changes nothing', async (_label, body, field) => {
