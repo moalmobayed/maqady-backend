@@ -228,7 +228,7 @@ Rules:
 | `theater_photos` | Gallery | `image_id` (UNIQUE, kind `gallery`), optional `caption` (the photo's alt text), `sort_order` kept contiguous from 0; at most 20 per theater |
 | `theater_hours` | Weekly hours, by cinema-day weekday | PK (`theater_id`, `weekday`); `is_closed`, or `opens_minute` and `closes_minute` counted from midnight at the start of the cinema date, with CHECK `360 <= opens_minute < closes_minute <= 1800` (06:00 to 06:00 next day) |
 | `theater_special_dates` | Holiday hours | UNIQUE (`theater_id`, `cinema_date`); `label`; hours as above, or closed |
-| `halls` | Halls | `name CITEXT`, UNIQUE (`theater_id`, `name`), so unique per theater ignoring case, in any status; `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes`. Hard-deleted, children cascading: only a hall that never had a showtime goes (U5, `docs/gh-6-halls/spec.md`) |
+| `halls` | Halls | `name CITEXT`, UNIQUE (`theater_id`, `name`), so unique per theater ignoring case, in any status; `status` (`draft`, `active`, `retired`); `row_count` 4–15; `seats_per_row` 8–20; `format` (`standard`, `vip`, `imax`, `dolby_atmos`, `4dx`, `screenx`, `max`; `DEFAULT 'standard'` kept while the release before #29 may still insert halls, then dropped in a contract-phase migration; the service always writes it); optional `screen_width_cm`, `screen_height_cm` 100–5000, both or neither (CHECK; #29, `docs/gh-29-hall-screen-format/spec.md`); UNIQUE (`id`, `theater_id`) to back the composite FK from `showtimes`. Hard-deleted, children cascading: only a hall that never had a showtime goes (U5, `docs/gh-6-halls/spec.md`) |
 | `hall_rows` | One zone per row | PK (`hall_id`, `row_index`); `row_label` (A–P without I), CHECKed to be the letter at `row_index`, UNIQUE (`hall_id`, `row_label`); `zone` (`front`, `middle`, `back`) |
 | `hall_seat_marks` | Exceptions to the full grid | PK (`hall_id`, `row_label`, `seat_number`); FK (`hall_id`, `row_label`) → `hall_rows`, so a mark sits in an existing row and goes with it; `kind` (`wheelchair`, `no_seat`) |
 
@@ -835,6 +835,13 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
       hall's scheduled showtimes that haven't ended, and U10 answers which have a live claim by
       rebinding `ShowtimeSeatClaimService` (`docs/gh-8-showtimes/spec.md`).
   - Aisles aren't stored: the API reports `aisleAfter = [4, seatsPerRow − 4]`, deduplicated.
+  - Format and screen (#29): a hall's projection format is a label (Standard, VIP, IMAX, Dolby
+    Atmos, 4DX, ScreenX, MAX), `standard` unless set, shown on the theater page halls and on every
+    showtime chip from the hall's current value; it never changes a price (prices stay by zone)
+    and nothing filters by it. The screen size is typed in metres (1 to 50, two decimals, width
+    and height together, null clears) and stored in whole centimetres. Both change through the
+    hall create and `PATCH` in any status; `hall.updated` names the changed fields
+    (`docs/gh-29-hall-screen-format/spec.md`).
   - A hall that ever had a showtime can only be retired (`PATCH` with `status: retired`), which
     requires no future scheduled showtimes (`HALL_NOT_RETIRABLE`); deleting it is
     `HALL_NOT_DELETABLE`. Retiring the last active hall of a published theater is allowed: the
@@ -1274,7 +1281,8 @@ now, soonest first) and to the active halls. `/movies/{id}/showtimes` answers th
 from today with a theater picker, `/theaters/{id}/showtimes` the 7 days or one `date` (a date
 outside them answers an empty day); both show only scheduled showtimes of active theaters and Now
 showing movies, grouped by the stored `cinemaDate`, leave out ended ones and mark started ones
-(`hasStarted`), with the zone prices and the "from" price (§7.10). `/movies?showDate=`
+(`hasStarted`), with the zone prices and the "from" price (§7.10), and since #29 the hall's
+`format` on every chip and, on `/movies/{id}/showtimes`, each theater-day's distinct `formats`. `/movies?showDate=`
 (`today`, `tomorrow`, `weekend`: Friday and Saturday) keeps the Now showing movies with a showtime
 still to start then; `/movies/{id}` adds the side panel (`showtimeSummary`: next show today,
 cinemas, lowest "from" price) and `/theaters/{id}` its active `halls`. `npm run seed` fills a
@@ -1834,7 +1842,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | G13 "Sold out" | No seat claimable right now, one rule for both sites |
 | G14 Date filter | Computed from showtimes per cinema day; the weekend is Friday and Saturday |
 | G15 KPI definitions | PRD "Dashboard numbers"; revenue on the show's cinema day (§13.3) |
-| G16 Role and format lists | One 7-role credit list; formats removed; facilities list includes street parking |
+| G16 Role and format lists | One 7-role credit list; formats removed as prices, facilities and filters, then brought back by #29 as a hall's format label (with an optional screen size); facilities list includes street parking |
 | G17 Status vocabulary | Held, Confirmed, Completed, Refunded, Failed, Abandoned (§7.4) |
 | G18 Missing screens | All in scope except person pages (dropped) and end-of-day cash report entry (unneeded: every counter payment is recorded) |
 | G19 Concurrency and integrity | Seat-claim upsert, the lock order, idempotency in the write transaction, the exclusion constraint, no timers, the server-side 8-seat limit, the layout lock, notifications in the same transaction |
@@ -1879,6 +1887,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
 | D-32 | Discovery showtimes: customers see only scheduled showtimes of `active` theaters and Now showing movies; lists group by the stored cinema date, leave out ended showtimes and mark started ones; the ticker and the side panel count only showtimes still to start; "this weekend" is the Friday and Saturday cinema dates (today only on a Saturday); `hallCount` counts active halls; the seed schedules a week through the dry run, so a re-run never conflicts | Builder (U8b, `docs/gh-9-discovery-showtimes/spec.md`) |
 | D-33 | Movie rating score (#29 P2): an admin-entered `rating NUMERIC(3,1)` 0–10 with an optional `rating_source`, a source only with a rating (judged after the write, backed by a CHECK); on `AdminMovie`, `MovieDetails` and the shared `MovieCard` (optional there, additive in the home-page draft); no votes, sorting or filtering; the seed sets it and back-fills an unrated movie | Builder (#29, `docs/gh-29-movie-rating/spec.md`) |
+| D-34 | Hall format and screen (#29 P4): `halls.format` (seven values, `standard` by default and for every hall before it) and an optional screen size stored in centimetres, typed in metres, both or neither; on the admin hall routes, `PublicHall` (`format`, `screen`), `PublicShowtime.format` from the hall's current value, and each movie-matrix theater-day's `formats`; read with the hall rows already read (no query added); a label only, never a price or filter; the seed sets it and fills a hall still at the defaults | Builder (#29, `docs/gh-29-hall-screen-format/spec.md`) |
 | D-35 | Theater fields (#29 P3): `prayer_room` appended to the facilities (the CHECK dropped and re-added); optional `postal_code` (5 digits) and `whatsapp` (E.164) on theaters, set by admins; `postalCode` on the shared `TheaterCard` (optional there, additive in the home-page draft) and the theater page; `whatsapp` and a built `whatsappUrl` (`https://wa.me/<digits>`) on the theater page only, behind `showContactsPublic`; `totalHalls` on `GET /theaters` summed from the matching cards' `hallCount`; the seed sets both fields and back-fills a theater that lacks them | Builder (#29, `docs/gh-29-theater-fields/spec.md`) |
 
 ## 19. Kit and process reconciliations

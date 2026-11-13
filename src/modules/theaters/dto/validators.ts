@@ -113,7 +113,7 @@ export function IsClosesTime(options: { optional?: boolean } = {}): PropertyDeco
 }
 
 /** The decimals of a finite number: `3.00609e+1` has 5 digits after the point, less 1. */
-function decimalsOf(value: number): number {
+export function decimalsOf(value: number): number {
   const [mantissa = '', exponent = '0'] = value.toExponential().split('e');
   const fractionDigits = mantissa.split('.')[1]?.length ?? 0;
   return Math.max(0, fractionDigits - Number(exponent));

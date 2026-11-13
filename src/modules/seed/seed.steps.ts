@@ -1,4 +1,5 @@
 import { addDays } from '../../common/time/time';
+import { DEFAULT_HALL_FORMAT } from '../halls/halls.constants';
 import {
   SEED_HALL_NAME,
   SEED_IMAGE_SIZES,
@@ -14,7 +15,9 @@ import type {
   SeedContext,
   SeedCreatedRow,
   SeedGenreRow,
+  SeedHall,
   SeedHallRow,
+  SeedHallSpec,
   SeedImageSize,
   SeedMovie,
   SeedNamedRow,
@@ -95,6 +98,36 @@ async function picture(
   seed: string,
 ): Promise<Buffer | null> {
   return url === null ? null : image(url, size, colour, seed);
+}
+
+/** A dataset hall entry as a `SeedHall`: a name alone is a standard hall without a screen. */
+export function seedHallOf(entry: string | SeedHall): SeedHall {
+  return typeof entry === 'string' ? { name: entry } : entry;
+}
+
+/** The format and screen of a dataset hall, only the fields it sets. */
+function hallSpecOf(hall: SeedHall): SeedHallSpec {
+  return {
+    ...(hall.format !== undefined ? { format: hall.format } : {}),
+    ...(hall.screenWidthMeters !== undefined && hall.screenHeightMeters !== undefined
+      ? { screenWidthMeters: hall.screenWidthMeters, screenHeightMeters: hall.screenHeightMeters }
+      : {}),
+  };
+}
+
+/** The dataset values a hall still at the defaults lacks: the spec without a `standard` format. */
+function backFillOf(spec: SeedHallSpec): SeedHallSpec {
+  const { format, ...screen } = spec;
+  return format === undefined || format === DEFAULT_HALL_FORMAT ? screen : spec;
+}
+
+/** A hall nobody gave a format or screen yet: what the halls seeded before #29 are. */
+function atHallDefaults(hall: SeedHallRow): boolean {
+  return (
+    hall.format === DEFAULT_HALL_FORMAT &&
+    hall.screenWidthMeters === null &&
+    hall.screenHeightMeters === null
+  );
 }
 
 /** Where `context.hallIds` keeps a theater's hall. */
@@ -212,7 +245,9 @@ function missingTheaterFields(
 
 /**
  * Each theater to publish gets its halls (left out, only `SEED_HALL_NAME`), each with the
- * standard layout and made active.
+ * standard layout, its format and screen size (#29 P4), and made active. An existing hall still
+ * at the defaults (`standard`, no screen) gets the dataset's non-default values in the same
+ * `PATCH` that activates it, or one of its own; a hall an admin already changed is left alone.
  */
 async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
   const { api } = context;
@@ -222,16 +257,25 @@ async function seedHalls(context: SeedContext): Promise<SeedStepResult> {
     const id = context.theaterIds.get(theater.name);
     if (id === undefined || !theater.publish) continue;
     const existing = await listAll<SeedHallRow>(api, `/admin/theaters/${id}/halls`);
-    for (const name of theater.halls ?? [SEED_HALL_NAME]) {
+    for (const entry of theater.halls ?? [SEED_HALL_NAME]) {
+      const seedHall = seedHallOf(entry);
+      const { name } = seedHall;
+      const spec = hallSpecOf(seedHall);
       let hall = existing.find((row) => row.name === name);
+      let backFill: SeedHallSpec = {};
       if (hall === undefined) {
-        hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, { name });
+        hall = await api.write<SeedHallRow>('POST', `/admin/theaters/${id}/halls`, {
+          name,
+          ...spec,
+        });
         created += 1;
       } else {
         kept += 1;
+        if (atHallDefaults(hall)) backFill = backFillOf(spec);
       }
-      if (hall.status !== 'active') {
-        await api.write('PATCH', `/admin/halls/${hall.id}`, { status: 'active' });
+      const changes = { ...backFill, ...(hall.status !== 'active' ? { status: 'active' } : {}) };
+      if (Object.keys(changes).length > 0) {
+        await api.write('PATCH', `/admin/halls/${hall.id}`, changes);
       }
       context.hallIds.set(hallKey(theater.name, name), hall.id);
     }

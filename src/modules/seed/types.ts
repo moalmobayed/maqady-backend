@@ -1,4 +1,5 @@
 import type { AgeRating, CreditRole, MoviePhotoKind, VideoKind } from '../catalog/types';
+import type { HallFormat } from '../halls/types';
 import type { Facility } from '../theaters/types';
 import type { CalendarDate } from '../../common/time/types';
 
@@ -42,12 +43,36 @@ export interface SeedTheater {
   readonly coverUrl?: string | null;
   /** Zone prices; left out, `SEED_PRICES`. */
   readonly prices?: SeedPrices;
-  /** The halls to create and make active; left out, only `SEED_HALL_NAME`. */
-  readonly halls?: readonly string[];
+  /**
+   * The halls to create and make active, each a name (a standard hall without a screen size) or
+   * a `SeedHall`; left out, only `SEED_HALL_NAME`.
+   */
+  readonly halls?: readonly (string | SeedHall)[];
   /** 5 digits (#29); left out or null, none. Back-filled on a theater that has none. */
   readonly postalCode?: string | null;
   /** The WhatsApp number, E.164 (#29); left out or null, none. Back-filled likewise. */
   readonly whatsapp?: string | null;
+}
+
+/**
+ * A hall of a seed theater with its projection format and screen size (#29 P4). Set on create,
+ * and on an existing hall still at the defaults (`standard`, no screen).
+ */
+export interface SeedHall {
+  readonly name: string;
+  /** Left out, `standard`. */
+  readonly format?: HallFormat;
+  /** Metres, at most 2 decimals, 1 to 50; only with `screenHeightMeters`. */
+  readonly screenWidthMeters?: number;
+  /** Metres, at most 2 decimals, 1 to 50; only with `screenWidthMeters`. */
+  readonly screenHeightMeters?: number;
+}
+
+/** The format and screen fields of a hall write, only those the dataset sets. */
+export interface SeedHallSpec {
+  readonly format?: HallFormat;
+  readonly screenWidthMeters?: number;
+  readonly screenHeightMeters?: number;
 }
 
 /** A theater's default price per zone, in piastres. */
@@ -262,6 +287,9 @@ export interface SeedHallRow {
   readonly id: number;
   readonly name: string;
   readonly status: string;
+  readonly format: string;
+  readonly screenWidthMeters: number | null;
+  readonly screenHeightMeters: number | null;
 }
 
 export interface SeedAdminTheater {

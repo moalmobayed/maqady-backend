@@ -1,7 +1,9 @@
 import type { AuditMetadataValue } from '../../common/audit/types';
-import type { HALL_STATUSES, SEAT_MARK_KINDS, ZONES } from './enums';
+import type { HALL_FORMATS, HALL_STATUSES, SEAT_MARK_KINDS, ZONES } from './enums';
 
 export type HallStatus = (typeof HALL_STATUSES)[number];
+
+export type HallFormat = (typeof HALL_FORMATS)[number];
 
 export type Zone = (typeof ZONES)[number];
 
@@ -17,6 +19,9 @@ export interface HallRow {
   readonly status: HallStatus;
   readonly row_count: number;
   readonly seats_per_row: number;
+  readonly format: HallFormat;
+  readonly screen_width_cm: number | null;
+  readonly screen_height_cm: number | null;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
@@ -28,6 +33,9 @@ export interface NewHallRow {
   readonly status: 'draft';
   readonly row_count: number;
   readonly seats_per_row: number;
+  readonly format: HallFormat;
+  readonly screen_width_cm: number | null;
+  readonly screen_height_cm: number | null;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
@@ -38,7 +46,22 @@ export interface HallRowUpdate {
   readonly status?: HallStatus;
   readonly row_count?: number;
   readonly seats_per_row?: number;
+  readonly format?: HallFormat;
+  readonly screen_width_cm?: number | null;
+  readonly screen_height_cm?: number | null;
   readonly updated_at: Date;
+}
+
+/** The two screen columns of a hall: both set or both null (`chk_halls_screen_size`). */
+export interface HallScreenColumns {
+  readonly screen_width_cm: number | null;
+  readonly screen_height_cm: number | null;
+}
+
+/** What a hall `PATCH` changes besides the status: the columns, and the fields' API names. */
+export interface HallFieldChanges {
+  readonly columns: Omit<HallRowUpdate, 'updated_at'>;
+  readonly changedFields: readonly string[];
 }
 
 /** A `hall_rows` row: one row of a hall's grid. */
@@ -132,6 +155,12 @@ export interface SeatPosition {
 
 // --- Halls ----------------------------------------------------------------------------------
 
+/** A hall's screen in metres, two decimals at most (stored in whole centimetres). */
+export interface HallScreen {
+  readonly widthMeters: number;
+  readonly heightMeters: number;
+}
+
 /** A hall as other units read it, in any status, with its seat counts. */
 export interface HallSummary extends SeatCounts {
   readonly id: number;
@@ -140,6 +169,9 @@ export interface HallSummary extends SeatCounts {
   readonly status: HallStatus;
   readonly rowCount: number;
   readonly seatsPerRow: number;
+  readonly format: HallFormat;
+  /** Null when the hall's screen size is not known. */
+  readonly screen: HallScreen | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -154,10 +186,22 @@ export interface HallListFilter {
   readonly status?: HallStatus;
 }
 
+/** `POST /admin/theaters/{id}/halls`, as validated. */
+export interface NewHallInput {
+  readonly name: string;
+  /** Left out, `standard`. */
+  readonly format?: HallFormat;
+  /** Left out or null, no screen size. */
+  readonly screen?: HallScreen | null;
+}
+
 /** `PATCH /admin/halls/{id}`, as validated: only the fields sent. */
 export interface HallChanges {
   readonly name?: string;
   readonly status?: HallStatus;
+  readonly format?: HallFormat;
+  /** Null clears the screen size. */
+  readonly screen?: HallScreen | null;
 }
 
 /** Extra details of one audit event of a hall write. */

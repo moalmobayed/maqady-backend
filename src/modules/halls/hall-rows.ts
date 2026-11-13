@@ -1,4 +1,5 @@
 import { aisleAfter, seatCounts } from './hall-layout';
+import { screenOf } from './hall-screen';
 import type {
   HallLayout,
   HallRow,
@@ -59,6 +60,8 @@ export function toHallSummary(hall: HallRow, grid: LayoutGrid): HallSummary {
     status: hall.status,
     rowCount: hall.row_count,
     seatsPerRow: hall.seats_per_row,
+    format: hall.format,
+    screen: screenOf(hall.screen_width_cm, hall.screen_height_cm),
     ...seatCounts(grid),
     createdAt: hall.created_at,
     updatedAt: hall.updated_at,

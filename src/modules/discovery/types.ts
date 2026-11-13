@@ -10,7 +10,7 @@ import type {
   PublicCastCount,
   PublicMovieStatus,
 } from '../catalog/types';
-import type { HallSummary } from '../halls/types';
+import type { HallFormat, HallSummary } from '../halls/types';
 import type { ShowtimeView } from '../showtimes/types';
 import type {
   CinemaDateHours,
@@ -221,6 +221,8 @@ export interface ShowtimeTheaterRef {
 export interface MovieShowtimeTheaterGroup {
   readonly theater: ShowtimeTheaterRef;
   readonly showtimes: readonly PublicShowtimeView[];
+  /** The distinct hall formats of `showtimes`, in `HALL_FORMATS` order (#29 P4). */
+  readonly formats: readonly HallFormat[];
 }
 
 /** One cinema date of a movie's showtimes, theaters by name. */

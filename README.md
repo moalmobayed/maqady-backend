@@ -156,6 +156,10 @@ pages and the admin dashboard.
   before they had scores their scores; a score already set (by an admin) is left alone.
   A dataset theater's optional `postalCode` and `whatsapp` (#29) work the same way: sent on
   create, and set on an existing theater only where the stored value is still empty.
+  A theater's `halls` entries are hall names (standard halls without a screen size) or
+  `{ name, format?, screenWidthMeters?, screenHeightMeters? }` (#29): the format and screen are
+  sent when the hall is created, and set on an existing hall still at the defaults (`standard`, no
+  screen) in the same `PATCH` that activates it; a hall an admin already changed is left alone.
 - Steps live in `src/modules/seed/seed.steps.ts` (`SEED_STEPS`). Each published theater gets an
   active `Hall 1` (the standard layout) before `publish-theaters`, since a theater is published
   only with an active hall. `showtimes` runs last: it reads each theater's admin timeline,
@@ -257,7 +261,7 @@ npx jest --selectProjects unit -t "loadConfig"   # one test by name
 - `test/support/theaters.ts` creates, prepares (hours and prices) and publishes theaters through
   the admin routes.
 - `test/support/halls.ts` adds halls through the admin routes: `createHall()`,
-  `setHallStatus()`, and `addActiveHall()`, which a theater needs before it can be published;
+  `setHallStatus()`, `setHallSpec()` (format and screen size, #29), and `addActiveHall()`, which a theater needs before it can be published;
   `test/support/halls-probe.module.ts` adds a scripted layout participant beside the real ones
   (`HallLifecycleRegistry`).
 - `test/support/showtimes.ts` schedules through the admin routes: `createSchedulingFixture()`

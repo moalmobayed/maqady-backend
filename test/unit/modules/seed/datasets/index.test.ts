@@ -10,6 +10,7 @@ import { PHONE_NUMBER_PATTERN } from '../../../../../src/modules/theaters/theate
 import { SEED_DATASETS } from '../../../../../src/modules/seed/datasets';
 import { EGYPT_2026_DATASET } from '../../../../../src/modules/seed/datasets/egypt-2026';
 import { SEED_HALL_NAME } from '../../../../../src/modules/seed/seed.constants';
+import { seedHallOf } from '../../../../../src/modules/seed/seed.steps';
 import type { SeedDataset, SeedDayHours } from '../../../../../src/modules/seed/types';
 
 /** The genres migration U3 seeds; a dataset can name no other. */
@@ -142,7 +143,9 @@ describe.each(Object.values(SEED_DATASETS))('the $name seed dataset', (dataset: 
       expect({
         slot,
         theater: theater?.publish,
-        hall: (theater?.halls ?? [SEED_HALL_NAME]).includes(hall),
+        hall: (theater?.halls ?? [SEED_HALL_NAME])
+          .map((entry) => seedHallOf(entry).name)
+          .includes(hall),
         movie: movie?.status,
         fits:
           theater !== undefined &&

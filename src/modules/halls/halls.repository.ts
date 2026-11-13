@@ -12,6 +12,9 @@ const HALL_COLUMNS = [
   'status',
   'row_count',
   'seats_per_row',
+  'format',
+  'screen_width_cm',
+  'screen_height_cm',
   'created_at',
   'updated_at',
 ] as const;

@@ -50,6 +50,26 @@ export async function setHallStatus(
 }
 
 /**
+ * Sets a hall's format and screen size (#29 P4) through `PATCH`, expecting it to succeed:
+ * `{ format?, screenWidthMeters?, screenHeightMeters? }` as the admin API takes them.
+ */
+export async function setHallSpec(
+  testApp: TestApp,
+  authorization: string,
+  hallId: number,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  const response = await testApp
+    .http()
+    .patch(`${HALLS}/${hallId}`)
+    .set('Authorization', authorization)
+    .send(fields);
+  if (response.status !== 200) {
+    throw new Error(`setHallSpec: ${response.status} ${JSON.stringify(response.body)}`);
+  }
+}
+
+/**
  * Adds an `active` hall to the theater and returns its id: what the theater's `active_hall`
  * publish requirement needs.
  */

@@ -15041,7 +15041,7 @@ paths:
       security:
         - staff: []
     post:
-      description: 'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. A theater is published only with an active hall. The name is unique among the theater''s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.'
+      description: 'Admin only: "Add hall" on the Halls tab. The hall is created as a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M back, 192 seats); edit it with `PUT /admin/halls/{id}/layout`, then activate it with `PATCH` `status: active`. Optionally give it its projection `format` (`standard` when left out) and its screen size in metres (`screenWidthMeters` with `screenHeightMeters`, 1 to 50 with at most 2 decimals, both or neither); customers see both on the theater page and the format on every showtime chip. A theater is published only with an active hall. The name is unique among the theater''s halls, ignoring letter case (`CONFLICT`). Recorded in the activity log.'
       operationId: createHall
       parameters:
         - name: id
@@ -15533,14 +15533,15 @@ paths:
         - staff: []
     patch:
       description: |-
-        Admin only: renames the hall and changes its status, in one transaction (name first).
+        Admin only: renames the hall, changes its projection format and screen size, and changes its status, in one transaction (the status last).
 
+        - `format` is the label customers see on the hall and on its showtime chips; prices stay by seat zone. `screenWidthMeters` and `screenHeightMeters` (metres, 1 to 50, at most 2 decimals) are sent together; both null clears the size. One side alone, or a number beside a null, is `VALIDATION_FAILED`. These change in any status, a retired hall's too.
         - `status: active` on a draft makes it schedulable; a theater is published only with an active hall.
         - `status: retired` (from draft or active) keeps the hall for history and hides it from scheduling. It needs no scheduled showtime that has not ended (`HALL_NOT_RETIRABLE`, with `details.reasons`). Retiring is final. Retiring the last active hall of a published theater is allowed: the theater stays published.
         - Any other status change (back to draft, out of retired) is `CONFLICT` with `details.from` and `details.to`.
         - The name is unique among the theater's halls, ignoring letter case (`CONFLICT`).
         - A request that changes nothing answers `200` and records nothing.
-        - Recorded in the activity log.
+        - Recorded in the activity log: one `hall.updated` naming the changed fields, and the status change.
       operationId: updateHall
       parameters:
         - name: id
@@ -15829,7 +15830,7 @@ paths:
                       message: Something went wrong on our side.
                       details: null
                       correlationId: 0b6f2c5e-7d41-4a8e-9a0a-2c1f6e9d3b11
-      summary: Rename, activate or retire a hall
+      summary: Edit, activate or retire a hall
       tags:
         - 'Admin: halls'
       security:
@@ -33948,6 +33949,17 @@ components:
         - draft
         - active
         - retired
+    HallFormat:
+      type: string
+      enum:
+        - standard
+        - vip
+        - imax
+        - dolby_atmos
+        - 4dx
+        - screenx
+        - max
+      description: 'The projection format customers see on the hall and its showtime chips (a label, never a price): Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX.'
     ZoneSeatCountsResponse:
       type: object
       properties:
@@ -33992,6 +34004,26 @@ components:
           description: '`draft`: being set up, not schedulable. `active`: schedulable; a theater needs one to be published. `retired`: kept for history, hidden from scheduling; final.'
           allOf:
             - $ref: '#/components/schemas/HallStatus'
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and its showtime chips (a label, never a price): Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX or MAX.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres (at most 2 decimals), the "22.1m" of "22.1m x 12.3m"; null with `screenHeightMeters` when the size is not set.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres (at most 2 decimals); null with `screenWidthMeters` when the size is not set.
         rowCount:
           type: integer
           minimum: 4
@@ -34037,6 +34069,9 @@ components:
         - theaterId
         - name
         - status
+        - format
+        - screenWidthMeters
+        - screenHeightMeters
         - rowCount
         - seatsPerRow
         - seatCount
@@ -34072,6 +34107,26 @@ components:
     CreateHallRequest:
       type: object
       properties:
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and on each of its showtime chips: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: prices stay by seat zone. A new hall without one is `standard`; null is refused.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres, 1 to 50 with at most 2 decimals; customers see "22.1m x 12.3m". Sent with `screenHeightMeters`, or both null to clear the size (the hall then shows none). One side alone, or a number beside a null, is `VALIDATION_FAILED`.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres, 1 to 50 with at most 2 decimals. Sent with `screenWidthMeters`, or both null to clear the size.
         name:
           type: string
           nullable: false
@@ -34084,6 +34139,26 @@ components:
     UpdateHallRequest:
       type: object
       properties:
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format customers see on the hall and on each of its showtime chips: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: prices stay by seat zone. A new hall without one is `standard`; null is refused.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screenWidthMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: Screen width in metres, 1 to 50 with at most 2 decimals; customers see "22.1m x 12.3m". Sent with `screenHeightMeters`, or both null to clear the size (the hall then shows none). One side alone, or a number beside a null, is `VALIDATION_FAILED`.
+        screenHeightMeters:
+          type: number
+          nullable: true
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: Screen height in metres, 1 to 50 with at most 2 decimals. Sent with `screenWidthMeters`, or both null to clear the size.
         name:
           type: string
           nullable: false
@@ -35309,6 +35384,24 @@ components:
         - id
         - caption
         - image
+    HallScreen:
+      type: object
+      properties:
+        widthMeters:
+          type: number
+          minimum: 1
+          maximum: 50
+          example: 22.1
+          description: 'Width in metres, at most 2 decimals: the "22.1m" of "22.1m x 12.3m".'
+        heightMeters:
+          type: number
+          minimum: 1
+          maximum: 50
+          example: 12.3
+          description: 'Height in metres, at most 2 decimals: the "12.3m".'
+      required:
+        - widthMeters
+        - heightMeters
     PublicHall:
       type: object
       properties:
@@ -35330,11 +35423,25 @@ components:
           minimum: 0
           example: 4
           description: Wheelchair spaces among them.
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'Its projection format, shown beside the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX).'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
+        screen:
+          nullable: true
+          description: 'Its screen size, shown as "22.1m x 12.3m"; null when not known: show none.'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/HallScreen'
       required:
         - id
         - name
         - seatCount
         - wheelchairCount
+        - format
+        - screen
     PublicTheater:
       type: object
       properties:
@@ -35550,6 +35657,12 @@ components:
           description: The hall.
           allOf:
             - $ref: '#/components/schemas/ShowtimeHallRefResponse'
+        format:
+          nullable: false
+          example: dolby_atmos
+          description: 'The projection format of its hall, shown on the chip next to the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: the price is by seat zone.'
+          allOf:
+            - $ref: '#/components/schemas/HallFormat'
         prices:
           description: The price of a seat in each zone ("Prices vary by seat zone").
           allOf:
@@ -35568,6 +35681,7 @@ components:
         - endsAt
         - cinemaDate
         - hall
+        - format
         - prices
         - fromPrice
         - hasStarted
@@ -35583,9 +35697,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PublicShowtime'
+        formats:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          example:
+            - standard
+            - vip
+          description: 'The formats of its showtimes that day, each once, in the order Standard, VIP, IMAX, Dolby Atmos, 4DX, ScreenX, MAX: the "Standard, VIP" chips beside the theater, without scanning `showtimes`.'
+          items:
+            $ref: '#/components/schemas/HallFormat'
       required:
         - theater
         - showtimes
+        - formats
     MovieShowtimeDay:
       type: object
       properties:

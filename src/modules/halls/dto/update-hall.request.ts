@@ -4,17 +4,25 @@ import { HasLength, Trim } from '../../theaters/dto/validators';
 import { HALL_STATUSES } from '../enums';
 import { HALL_NAME_LIMITS } from '../halls.constants';
 import type { HallStatus } from '../types';
+import { HallSpecFields } from './hall-fields';
 
 const NOTHING_TO_CHANGE = 'send at least one field to change';
 
 /** A field that may be left out but not set to null. */
 const sent = (_: object, value: unknown): boolean => value !== undefined;
 
+/** No field but `name` was sent (so an empty body names `name`). */
+const onlyNameOrNothing = (body: UpdateHallRequest): boolean =>
+  body.status === undefined &&
+  body.format === undefined &&
+  body.screenWidthMeters === undefined &&
+  body.screenHeightMeters === undefined;
+
 /**
- * `PATCH /admin/halls/{id}`: a new name, a new status, or both (the name applies first, in one
- * transaction). At least one field.
+ * `PATCH /admin/halls/{id}`: a new name, format, screen size or status, in one transaction (the
+ * status applies last). At least one field.
  */
-export class UpdateHallRequest {
+export class UpdateHallRequest extends HallSpecFields {
   @ApiPropertyOptional({
     type: String,
     nullable: false,
@@ -25,9 +33,7 @@ export class UpdateHallRequest {
       "Unique among the theater's halls, ignoring letter case (`CONFLICT` when taken). A retired hall can still be renamed. Trimmed.",
   })
   // Validated when sent, and when nothing at all is sent, so an empty body names a field.
-  @ValidateIf((body: UpdateHallRequest) =>
-    body.status === undefined ? true : body.name !== undefined,
-  )
+  @ValidateIf((body: UpdateHallRequest) => body.name !== undefined || onlyNameOrNothing(body))
   @IsDefined({ message: NOTHING_TO_CHANGE })
   @Trim()
   @IsString()

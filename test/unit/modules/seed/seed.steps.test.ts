@@ -4,12 +4,17 @@ import {
   POSTAL_CODE_PATTERN,
 } from '../../../../src/modules/theaters/theaters.constants';
 import { SEED_DATASETS } from '../../../../src/modules/seed/datasets';
-import { SEED_STEPS } from '../../../../src/modules/seed/seed.steps';
+import { AppError } from '../../../../src/common/errors/app-error';
+import { createValidationPipe } from '../../../../src/common/errors/validation';
+import { CreateHallRequest } from '../../../../src/modules/halls/dto/create-hall.request';
+import { SEED_STEPS, seedHallOf } from '../../../../src/modules/seed/seed.steps';
 import type {
   SeedAdminMovie,
   SeedAdminTheater,
   SeedApi,
   SeedContext,
+  SeedHall,
+  SeedHallRow,
   SeedMovie,
   SeedTheater,
   SeedWriteMethod,
@@ -353,3 +358,161 @@ describe('the seed theaters step: postal code and WhatsApp (#29)', () => {
     },
   );
 });
+
+describe('the seed halls step: format and screen size (#29 P4)', () => {
+  const hallsStep = SEED_STEPS.find((step) => step.name === 'halls')!;
+
+  function hallRow(overrides: Partial<SeedHallRow> = {}): SeedHallRow {
+    return {
+      id: 61,
+      name: 'Hall 1',
+      status: 'active',
+      format: 'standard',
+      screenWidthMeters: null,
+      screenHeightMeters: null,
+      ...overrides,
+    };
+  }
+
+  function theater(halls: SeedTheater['halls']): SeedTheater {
+    return { name: 'Maqady Zamalek', publish: true, halls } as SeedTheater;
+  }
+
+  /** The admin API as the `halls` step sees it: theater 3 lists `existing`; writes recorded. */
+  function hallsApi(existing: readonly SeedHallRow[]) {
+    const writes: Write[] = [];
+    const api: SeedApi = {
+      get: <T>(path: string): Promise<T> =>
+        path.split('?')[0] === '/admin/theaters/3/halls'
+          ? Promise.resolve({ items: existing, nextCursor: null } as T)
+          : Promise.reject(new Error(`unexpected GET ${path}`)),
+      write: <T>(method: SeedWriteMethod, path: string, body: unknown): Promise<T> => {
+        writes.push({ method, path, body: body as Record<string, unknown> });
+        return Promise.resolve(hallRow({ id: 62, status: 'draft' }) as T);
+      },
+      upload: () => Promise.reject(new Error('unexpected upload')),
+    };
+    return { api, writes };
+  }
+
+  async function run(api: SeedApi, halls: SeedTheater['halls']) {
+    const ctx: SeedContext = {
+      ...context(api, []),
+      dataset: { name: 'test', theaters: [theater(halls)], people: [], movies: [], showtimes: [] },
+      theaterIds: new Map([['Maqady Zamalek', 3]]),
+    };
+    const result = await hallsStep.run(ctx);
+    return { result, hallIds: ctx.hallIds };
+  }
+
+  const ATMOS: SeedHall = {
+    name: 'Hall 2',
+    format: 'dolby_atmos',
+    screenWidthMeters: 22.1,
+    screenHeightMeters: 12.3,
+  };
+
+  it('sends the format and screen when it creates a hall, then activates it', async () => {
+    const { api, writes } = hallsApi([]);
+    const { result, hallIds } = await run(api, [ATMOS]);
+    expect(result).toEqual({ created: 1, kept: 0 });
+    expect(writes).toEqual([
+      {
+        method: 'POST',
+        path: '/admin/theaters/3/halls',
+        body: {
+          name: 'Hall 2',
+          format: 'dolby_atmos',
+          screenWidthMeters: 22.1,
+          screenHeightMeters: 12.3,
+        },
+      },
+      { method: 'PATCH', path: '/admin/halls/62', body: { status: 'active' } },
+    ]);
+    expect(hallIds.get('Maqady Zamalek|Hall 2')).toBe(62);
+  });
+
+  it('creates a hall given by its name alone exactly as before: { name }', async () => {
+    const { api, writes } = hallsApi([]);
+    await run(api, ['Hall 1']);
+    expect(writes[0]!.body).toEqual({ name: 'Hall 1' });
+  });
+
+  it('fills an existing active hall still at the defaults with one PATCH', async () => {
+    const { api, writes } = hallsApi([hallRow({ id: 61, name: 'Hall 2' })]);
+    const { result } = await run(api, [ATMOS]);
+    expect(result).toEqual({ created: 0, kept: 1 });
+    expect(writes).toEqual([
+      {
+        method: 'PATCH',
+        path: '/admin/halls/61',
+        body: { format: 'dolby_atmos', screenWidthMeters: 22.1, screenHeightMeters: 12.3 },
+      },
+    ]);
+  });
+
+  it('fills and activates an existing draft hall in the same PATCH', async () => {
+    const { api, writes } = hallsApi([hallRow({ name: 'Hall 2', status: 'draft' })]);
+    await run(api, [{ name: 'Hall 2', format: 'vip' }]);
+    expect(writes.map((write) => write.body)).toEqual([{ format: 'vip', status: 'active' }]);
+  });
+
+  it('leaves alone a hall an admin already changed, and a name-only hall', async () => {
+    const { api, writes } = hallsApi([
+      hallRow({ name: 'Hall 2', format: 'imax' }),
+      hallRow({ id: 63, name: 'Hall 3', screenWidthMeters: 18, screenHeightMeters: 9 }),
+      hallRow({ id: 64, name: 'Hall 4' }),
+    ]);
+    const { result } = await run(api, [ATMOS, { ...ATMOS, name: 'Hall 3' }, 'Hall 4']);
+    expect(result).toEqual({ created: 0, kept: 3 });
+    expect(writes).toEqual([]);
+  });
+
+  it('sends no PATCH on a re-run for a hall the dataset names as standard without a screen', async () => {
+    const { api, writes } = hallsApi([hallRow({ name: 'Hall 5' })]);
+    const { result } = await run(api, [{ name: 'Hall 5', format: 'standard' }]);
+    expect(result).toEqual({ created: 0, kept: 1 });
+    expect(writes).toEqual([]);
+  });
+
+  it('back-fills only the non-default values: a standard hall gets its screen alone', async () => {
+    const { api, writes } = hallsApi([hallRow({ name: 'Hall 6' })]);
+    await run(api, [
+      { name: 'Hall 6', format: 'standard', screenWidthMeters: 14, screenHeightMeters: 6.2 },
+    ]);
+    expect(writes.map((write) => write.body)).toEqual([
+      { screenWidthMeters: 14, screenHeightMeters: 6.2 },
+    ]);
+  });
+
+  it.each(Object.values(SEED_DATASETS).map((dataset) => [dataset.name, dataset] as const))(
+    'the %s dataset gives only hall formats and screen sizes the admin API accepts',
+    async (_name, dataset) => {
+      for (const seedTheater of dataset.theaters) {
+        for (const entry of seedTheater.halls ?? []) {
+          const { name, ...spec } = seedHallOf(entry);
+          const fields = await invalidHallFields({ name, ...spec });
+          expect({ hall: `${seedTheater.name} ${name}`, fields }).toEqual({
+            hall: `${seedTheater.name} ${name}`,
+            fields: [],
+          });
+        }
+      }
+    },
+  );
+});
+
+/** The fields `POST /admin/theaters/{id}/halls` would refuse in this body. */
+async function invalidHallFields(body: Record<string, unknown>): Promise<string[]> {
+  try {
+    await createValidationPipe().transform(body, {
+      type: 'body',
+      metatype: CreateHallRequest,
+      data: '',
+    });
+    return [];
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    return (error.details as { fields: { field: string }[] }).fields.map((entry) => entry.field);
+  }
+}

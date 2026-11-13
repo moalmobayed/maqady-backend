@@ -2,9 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, NotContains } from 'class-validator';
 import { HasLength, Trim } from '../../theaters/dto/validators';
 import { HALL_NAME_LIMITS } from '../halls.constants';
+import { HallSpecFields } from './hall-fields';
 
-/** `POST /admin/theaters/{id}/halls`: a new hall, created as a draft with a 12 × 16 layout. */
-export class CreateHallRequest {
+/**
+ * `POST /admin/theaters/{id}/halls`: a new hall, created as a draft with a 12 × 16 layout, with
+ * an optional format (`standard` when left out) and screen size.
+ */
+export class CreateHallRequest extends HallSpecFields {
   @ApiProperty({
     type: String,
     nullable: false,

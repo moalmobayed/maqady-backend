@@ -18,7 +18,7 @@ export function pricesOf(row: ShowtimeRow): ZonePrices {
   };
 }
 
-/** A showtime as other units read it, with its hall's name and its "from" price. */
+/** A showtime as other units read it, with its hall's name and format and its "from" price. */
 export function toShowtimeView(row: ShowtimeRow, hall: HallSummary | undefined): ShowtimeView {
   if (!hall) throw new AppError('INTERNAL', 'A showtime references a hall that does not exist.');
   const prices = pricesOf(row);
@@ -28,6 +28,7 @@ export function toShowtimeView(row: ShowtimeRow, hall: HallSummary | undefined):
     theaterId: row.theater_id,
     hallId: row.hall_id,
     hallName: hall.name,
+    hallFormat: hall.format,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     cleaningEndsAt: row.cleaning_ends_at,
