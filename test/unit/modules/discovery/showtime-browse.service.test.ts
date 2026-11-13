@@ -3,6 +3,7 @@ import { money } from '../../../../src/common/money/money';
 import type { CatalogReadService } from '../../../../src/modules/catalog/catalog-read.service';
 import type { MovieRef, MovieSummary } from '../../../../src/modules/catalog/types';
 import { ShowtimeBrowseService } from '../../../../src/modules/discovery/showtime-browse.service';
+import type { HallFormat } from '../../../../src/modules/halls/types';
 import type { ShowtimeReadService } from '../../../../src/modules/showtimes/showtime-read.service';
 import type { ShowtimeView } from '../../../../src/modules/showtimes/types';
 import type { TheaterReadService } from '../../../../src/modules/theaters/theater-read.service';
@@ -14,7 +15,13 @@ const NOW = new Date('2026-10-16T18:00:00+03:00');
 
 function showtime(
   id: number,
-  fields: { movieId?: number; theaterId?: number; cinemaDate?: string; startsAt: string },
+  fields: {
+    movieId?: number;
+    theaterId?: number;
+    cinemaDate?: string;
+    startsAt: string;
+    hallFormat?: HallFormat;
+  },
   runtimeMinutes = 100,
   from = 15000,
 ): ShowtimeView {
@@ -25,6 +32,7 @@ function showtime(
     theaterId: fields.theaterId ?? 1,
     hallId: 40 + id,
     hallName: `Hall ${id}`,
+    hallFormat: fields.hallFormat ?? 'standard',
     startsAt,
     endsAt: new Date(startsAt.getTime() + runtimeMinutes * 60_000),
     cleaningEndsAt: new Date(startsAt.getTime() + (runtimeMinutes + 20) * 60_000),
@@ -204,6 +212,40 @@ describe('ShowtimeBrowseService', () => {
       const view = await service.movieShowtimes(7);
       expect(view.days.every((day) => day.showtimeCount === 0)).toBe(true);
       expect(reads.listScheduled).not.toHaveBeenCalled();
+    });
+
+    it("gives each theater's day its distinct formats in the format order, ended ones left out", async () => {
+      reads.listScheduled.mockResolvedValue([
+        // Ended at 16:40, so it is not listed and its IMAX does not count.
+        showtime(1, { startsAt: '2026-10-16T15:00:00+03:00', hallFormat: 'imax' }),
+        showtime(2, { startsAt: '2026-10-16T19:00:00+03:00', hallFormat: 'vip' }),
+        showtime(3, { startsAt: '2026-10-16T20:00:00+03:00', hallFormat: 'standard' }),
+        showtime(4, { startsAt: '2026-10-16T21:00:00+03:00', hallFormat: 'vip' }),
+        showtime(5, {
+          startsAt: '2026-10-16T21:30:00+03:00',
+          theaterId: 2,
+          hallFormat: 'dolby_atmos',
+        }),
+        showtime(6, {
+          startsAt: '2026-10-17T19:00:00+03:00',
+          cinemaDate: '2026-10-17',
+          hallFormat: '4dx',
+        }),
+      ]);
+      const view = await service.movieShowtimes(7);
+      const formats = (index: number) =>
+        view.days[index]!.theaters.map((group) => [group.theater.name, group.formats]);
+      // Theaters by name: "downtown" (2) before "Zamalek" (1).
+      expect(formats(0)).toEqual([
+        ['downtown', ['dolby_atmos']],
+        ['Zamalek', ['standard', 'vip']],
+      ]);
+      expect(formats(1)).toEqual([['Zamalek', ['4dx']]]);
+      expect(view.days[0]!.theaters[1]!.showtimes.map((row) => row.hallFormat)).toEqual([
+        'vip',
+        'standard',
+        'vip',
+      ]);
     });
   });
 

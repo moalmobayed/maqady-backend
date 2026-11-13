@@ -7,6 +7,8 @@ import { addDays, cinemaDateOf } from '../../common/time/time';
 import type { CalendarDate } from '../../common/time/types';
 import { CatalogReadService } from '../catalog/catalog-read.service';
 import { isPublicStatus } from '../catalog/movie-rules';
+import { HALL_FORMATS } from '../halls/enums';
+import type { HallFormat } from '../halls/types';
 import type { MovieSummary } from '../catalog/types';
 import { ShowtimeReadService } from '../showtimes/showtime-read.service';
 import type { ShowtimeView } from '../showtimes/types';
@@ -47,7 +49,7 @@ export class ShowtimeBrowseService {
 
   /**
    * `GET /movies/{id}/showtimes`: the 7 cinema days from today's, theaters by name within a day,
-   * and the theater picker. A Coming soon movie has none; a movie that isn't public is
+   * each with the formats of its showtimes that day, and the theater picker. A Coming soon movie has none; a movie that isn't public is
    * `NOT_FOUND`.
    */
   async movieShowtimes(movieId: number): Promise<MovieShowtimesView> {
@@ -75,6 +77,7 @@ export class ShowtimeBrowseService {
           .map(([theaterId, showtimes]) => ({
             theater: theaterRef(theaters.get(theaterId)!),
             showtimes,
+            formats: formatsOf(showtimes),
           }))
           .sort((first, second) => compareByNameThenId(first.theater, second.theater)),
       };
@@ -226,6 +229,12 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => number): Map<number
     else groups.set(key, [item]);
   }
   return groups;
+}
+
+/** The distinct hall formats of these showtimes, in `HALL_FORMATS` order ("Standard, VIP"). */
+function formatsOf(showtimes: readonly ShowtimeView[]): HallFormat[] {
+  const present = new Set(showtimes.map((showtime) => showtime.hallFormat));
+  return HALL_FORMATS.filter((format) => present.has(format));
 }
 
 function theaterRef(theater: TheaterDetails): ShowtimeTheaterRef {

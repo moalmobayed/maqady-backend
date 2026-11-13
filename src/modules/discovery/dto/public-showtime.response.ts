@@ -1,5 +1,7 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
 import { MoneyResponse } from '../../../common/money/dto/money-response.dto';
+import { HALL_FORMATS } from '../../halls/enums';
+import type { HallFormat } from '../../halls/types';
 import { ShowtimeHallRefResponse } from '../../showtimes/dto/admin-showtime.response';
 import { ShowtimePricesResponse } from '../../showtimes/dto/showtime-prices.response';
 
@@ -20,8 +22,8 @@ export class ShowtimeTheaterRefResponse {
 }
 
 /**
- * A showtime as a customer's time chip shows it (PRD C3, C5): start and end, hall, the zone
- * prices and the "from" price, and whether it has started.
+ * A showtime as a customer's time chip shows it (PRD C3, C5): start and end, hall and its
+ * projection format, the zone prices and the "from" price, and whether it has started.
  */
 @ApiSchema({ name: 'PublicShowtime' })
 export class PublicShowtimeResponse {
@@ -59,6 +61,16 @@ export class PublicShowtimeResponse {
 
   @ApiProperty({ type: () => ShowtimeHallRefResponse, description: 'The hall.' })
   hall!: ShowtimeHallRefResponse;
+
+  @ApiProperty({
+    enum: HALL_FORMATS,
+    enumName: 'HallFormat',
+    nullable: false,
+    example: 'dolby_atmos',
+    description:
+      'The projection format of its hall, shown on the chip next to the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos, "Atmos" on a chip), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX). A label only: the price is by seat zone.',
+  })
+  format!: HallFormat;
 
   @ApiProperty({
     type: () => ShowtimePricesResponse,

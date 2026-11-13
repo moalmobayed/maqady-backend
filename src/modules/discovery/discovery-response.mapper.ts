@@ -45,6 +45,7 @@ import {
 import { PublicPersonPageResponse, PublicPersonResponse } from './dto/public-person.response';
 import { PublicShowtimeResponse, ShowtimeTheaterRefResponse } from './dto/public-showtime.response';
 import {
+  HallScreenResponse,
   PublicHallResponse,
   PublicTheaterListItemResponse,
   PublicTheaterPageResponse,
@@ -246,6 +247,7 @@ export class DiscoveryResponseMapper {
       endsAt: formatCairoIso(showtime.endsAt),
       cinemaDate: showtime.cinemaDate,
       hall: this.hallRef(showtime),
+      format: showtime.hallFormat,
       prices: toShowtimePricesResponse(showtime.prices),
       fromPrice: toMoney(showtime.fromPrice),
       hasStarted: showtime.hasStarted,
@@ -271,6 +273,7 @@ export class DiscoveryResponseMapper {
             Object.assign(new MovieShowtimeTheaterResponse(), {
               theater: this.showtimeTheater(group.theater),
               showtimes: group.showtimes.map((showtime) => this.publicShowtime(showtime)),
+              formats: [...group.formats],
             }),
           ),
         }),
@@ -304,6 +307,13 @@ export class DiscoveryResponseMapper {
       name: hall.name,
       seatCount: hall.seatCount,
       wheelchairCount: hall.wheelchairCount,
+      format: hall.format,
+      screen: hall.screen
+        ? Object.assign(new HallScreenResponse(), {
+            widthMeters: hall.screen.widthMeters,
+            heightMeters: hall.screen.heightMeters,
+          })
+        : null,
     });
   }
 

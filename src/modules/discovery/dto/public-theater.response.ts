@@ -5,6 +5,9 @@ import { OpenStateResponse } from '../../theaters/dto/open-state.response';
 import { SpecialDateResponse } from '../../theaters/dto/special-date.response';
 import { TheaterPhoneResponse } from '../../theaters/dto/theater-phone.response';
 import { TodayHoursResponse } from '../../theaters/dto/today-hours.response';
+import { HALL_FORMATS } from '../../halls/enums';
+import { SCREEN_METERS_LIMITS } from '../../halls/halls.constants';
+import type { HallFormat } from '../../halls/types';
 import type { Facility } from '../../theaters/types';
 import { FACILITY_ENUM, TheaterCardResponse } from './theater-card.response';
 
@@ -56,7 +59,32 @@ export class PublicTheaterPageResponse {
   total!: number;
 }
 
-/** An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"). */
+/** A hall's screen size, "22.1m x 12.3m" (#29 P4). */
+@ApiSchema({ name: 'HallScreen' })
+export class HallScreenResponse {
+  @ApiProperty({
+    type: Number,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 22.1,
+    description: 'Width in metres, at most 2 decimals: the "22.1m" of "22.1m x 12.3m".',
+  })
+  widthMeters!: number;
+
+  @ApiProperty({
+    type: Number,
+    minimum: SCREEN_METERS_LIMITS.min,
+    maximum: SCREEN_METERS_LIMITS.max,
+    example: 12.3,
+    description: 'Height in metres, at most 2 decimals: the "12.3m".',
+  })
+  heightMeters!: number;
+}
+
+/**
+ * An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"), with
+ * its projection format and screen size (#29 P4).
+ */
 @ApiSchema({ name: 'PublicHall' })
 export class PublicHallResponse {
   @ApiProperty({ type: 'integer', example: 3, description: 'Hall id.' })
@@ -80,6 +108,23 @@ export class PublicHallResponse {
     description: 'Wheelchair spaces among them.',
   })
   wheelchairCount!: number;
+
+  @ApiProperty({
+    enum: HALL_FORMATS,
+    enumName: 'HallFormat',
+    nullable: false,
+    example: 'dolby_atmos',
+    description:
+      'Its projection format, shown beside the hall name: `standard` (Standard), `vip` (VIP), `imax` (IMAX), `dolby_atmos` (Dolby Atmos), `4dx` (4DX), `screenx` (ScreenX), `max` (MAX).',
+  })
+  format!: HallFormat;
+
+  @ApiProperty({
+    type: () => HallScreenResponse,
+    nullable: true,
+    description: 'Its screen size, shown as "22.1m x 12.3m"; null when not known: show none.',
+  })
+  screen!: HallScreenResponse | null;
 }
 
 /** A gallery photo of a theater page. */
