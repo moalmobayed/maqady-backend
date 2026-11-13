@@ -30,6 +30,8 @@ function theaterRow(overrides: Partial<TheaterRow> = {}): TheaterRow {
     parking_info: null,
     email: null,
     show_contacts_public: false,
+    postal_code: null,
+    whatsapp: null,
     cover_image_id: null,
     default_price_front: 15000,
     default_price_middle: 19000,
@@ -54,7 +56,7 @@ describe('TheatersService (collaborators mocked)', () => {
   let theaters: jest.Mocked<
     Pick<
       TheatersRepository,
-      'findByIdForWrite' | 'findByIdForDelete' | 'update' | 'deleteById' | 'findById'
+      'findByIdForWrite' | 'findByIdForDelete' | 'update' | 'deleteById' | 'findById' | 'insert'
     >
   >;
   let photos: jest.Mocked<Pick<TheaterPhotosRepository, 'photosOf'>>;
@@ -72,6 +74,7 @@ describe('TheatersService (collaborators mocked)', () => {
       findById: jest.fn().mockImplementation(() => Promise.resolve(row)),
       update: jest.fn().mockImplementation(() => Promise.resolve(row)),
       deleteById: jest.fn().mockImplementation(() => Promise.resolve()),
+      insert: jest.fn().mockImplementation(() => Promise.resolve(row)),
     };
     photos = { photosOf: jest.fn().mockImplementation(() => Promise.resolve([])) };
     media = { deleteMany: jest.fn().mockImplementation(() => Promise.resolve()) };
@@ -191,6 +194,59 @@ describe('TheatersService (collaborators mocked)', () => {
           ['theater.updated', ['name']],
           ['theater.published', undefined],
         ],
+      );
+    });
+  });
+
+  describe('#29 postal code and WhatsApp number', () => {
+    const input = {
+      name: 'Maqady Zamalek',
+      address: '26 July Street',
+      district: 'Zamalek',
+      city: 'Cairo',
+      latitude: 30.0609,
+      longitude: 31.2197,
+    };
+
+    it('stores both on create', async () => {
+      await service.create(ACTOR, { ...input, postalCode: '11211', whatsapp: '+201001234567' });
+      expect(theaters.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ postal_code: '11211', whatsapp: '+201001234567' }),
+      );
+    });
+
+    it('stores null for both when they are left out', async () => {
+      await service.create(ACTOR, input);
+      expect(theaters.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ postal_code: null, whatsapp: null }),
+      );
+    });
+
+    it('writes both columns on a PATCH and names the fields in the audit row', async () => {
+      await service.update(ACTOR, 1, { postalCode: '11211', whatsapp: '+201001234567' });
+      expect(theaters.update).toHaveBeenCalledWith(1, {
+        postal_code: '11211',
+        whatsapp: '+201001234567',
+        updated_at: NOW,
+      });
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'theater.updated',
+          changedFields: ['postalCode', 'whatsapp'],
+        }),
+      );
+    });
+
+    it('clears them with null, and writes nothing when they are unchanged', async () => {
+      row = theaterRow({ postal_code: '11211', whatsapp: '+201001234567' });
+      await service.update(ACTOR, 1, { postalCode: '11211', whatsapp: '+201001234567' });
+      expect(theaters.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      await service.update(ACTOR, 1, { whatsapp: null });
+      expect(theaters.update).toHaveBeenCalledWith(1, { whatsapp: null, updated_at: NOW });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ changedFields: ['whatsapp'] }),
       );
     });
   });

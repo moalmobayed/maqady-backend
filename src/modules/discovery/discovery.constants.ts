@@ -19,6 +19,9 @@ export const MAX_PEOPLE_FILTER = 20;
 /** The "Parking" filter of the Theaters page: free or valet parking (PRD C4). */
 export const PARKING_FACILITIES: readonly Facility[] = ['free_parking', 'valet_parking'];
 
+/** WhatsApp's click-to-chat link: this, then the E.164 number without its `+` (#29). */
+export const WHATSAPP_URL_BASE = 'https://wa.me/';
+
 /** A genre slug as the catalog seeds them: lower-case words joined by hyphens. */
 export const GENRE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

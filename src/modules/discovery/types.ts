@@ -1,4 +1,5 @@
 import type { Money } from '../../common/money/types';
+import type { Page } from '../../common/pagination/types';
 import type { CalendarDate } from '../../common/time/types';
 import type { StoredImage } from '../media/types';
 import type {
@@ -123,6 +124,8 @@ export interface TheaterCardView {
   readonly district: string;
   readonly city: string;
   readonly address: string;
+  /** 5 digits, shown with the city; null when none is set (#29). */
+  readonly postalCode: string | null;
   readonly latitude: number;
   readonly longitude: number;
   readonly cover: StoredImage | null;
@@ -139,11 +142,21 @@ export interface PublicTheaterView extends TheaterCardView {
   readonly transitInfo: string | null;
   readonly parkingInfo: string | null;
   readonly email: string | null;
+  /** E.164; null when none is set or contacts are hidden (#29). */
+  readonly whatsapp: string | null;
   readonly phones: readonly TheaterPhone[];
   readonly photos: readonly TheaterPhoto[];
   readonly specialDates: readonly SpecialDate[];
   /** The `active` halls, by name; `hallCount` is their number (PRD C5). */
   readonly halls: readonly HallSummary[];
+}
+
+/**
+ * `GET /theaters`: one page of cards, and the active halls of every theater that passed the
+ * filters, whatever the page (#29 "25 HALLS"): the sum of their cards' `hallCount`.
+ */
+export interface TheaterCardPage extends Page<TheaterCardView> {
+  readonly totalHalls: number;
 }
 
 // --- The home page --------------------------------------------------------------------------

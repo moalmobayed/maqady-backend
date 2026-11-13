@@ -57,6 +57,25 @@ describe('Theater schemas and operations in the OpenAPI document', () => {
     },
   );
 
+  it('publishes the #29 postal code and WhatsApp patterns on every theater schema that carries them', () => {
+    const schemas = document.components?.schemas as Record<
+      string,
+      { properties?: Record<string, { pattern?: string }> }
+    >;
+    const patterns = (field: string): Record<string, string | undefined> =>
+      Object.fromEntries(
+        Object.entries(schemas)
+          .filter(([, schema]) => schema.properties?.[field] !== undefined)
+          .map(([name, schema]) => [name, schema.properties![field]!.pattern]),
+      );
+    const whatsapp = patterns('whatsapp');
+    expect(Object.keys(whatsapp).sort()).toEqual(
+      ['CreateTheaterRequest', 'PublicTheater', 'TheaterResponse', 'UpdateTheaterRequest'].sort(),
+    );
+    for (const pattern of Object.values(whatsapp)) expect(pattern).toBe('^\\+[1-9][0-9]{6,14}$');
+    for (const pattern of Object.values(patterns('postalCode'))) expect(pattern).toBe('^[0-9]{5}$');
+  });
+
   it('documents the 16 admin theater operations, with their tag and error codes', () => {
     const operations = Object.entries(document.paths)
       // The theater's halls are U5's routes (`Admin: halls`).

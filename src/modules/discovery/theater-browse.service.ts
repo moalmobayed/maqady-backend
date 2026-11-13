@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../common/errors/app-error';
-import type { Page, PageRequest } from '../../common/pagination/types';
+import type { PageRequest } from '../../common/pagination/types';
 import { Clock } from '../../common/time/clock';
 import { addDays, cinemaDateOf } from '../../common/time/time';
 import { HallReadService } from '../halls/hall-read.service';
@@ -10,14 +10,19 @@ import type { TheaterDetails } from '../theaters/types';
 import { PARKING_FACILITIES, SPECIAL_DATES_AHEAD_DAYS } from './discovery.constants';
 import { compareByNameThenId, pageInMemory } from './in-memory-page';
 import { TheaterHallCountSource } from './theater-hall-count.source';
-import type { PublicTheaterView, TheaterCardView, TheaterListFilter } from './types';
+import type {
+  PublicTheaterView,
+  TheaterCardPage,
+  TheaterCardView,
+  TheaterListFilter,
+} from './types';
 
 /**
  * Theaters as customers browse them (PRD C1, C4, C5), read through U4b's exported services
  * only. Only `active` theaters appear: a draft, a paused or an unknown theater is `NOT_FOUND`.
  * Open states and "today" are judged at the Clock's now by the cinema day. A theater that hides
- * its contacts shows no phone and no email. Every method costs a fixed number of queries,
- * whatever the number of theaters.
+ * its contacts shows no phone, no email and no WhatsApp. Every method costs a fixed number of
+ * queries, whatever the number of theaters.
  */
 @Injectable()
 export class TheaterBrowseService {
@@ -35,15 +40,19 @@ export class TheaterBrowseService {
     return this.cardsOf(theaters, now);
   }
 
-  /** `GET /theaters`: one page of the cards that pass the filters. */
-  async list(filter: TheaterListFilter, page: PageRequest): Promise<Page<TheaterCardView>> {
+  /**
+   * `GET /theaters`: one page of the cards that pass the filters, and `totalHalls`, the sum of
+   * the `hallCount` of every card that passes them, whatever the page (#29).
+   */
+  async list(filter: TheaterListFilter, page: PageRequest): Promise<TheaterCardPage> {
     const cards = (await this.cardsAt(this.clock.now())).filter(
       (card) =>
         (filter.openNow !== true || card.openState.isOpen) &&
         (filter.parking !== true ||
           card.facilities.some((facility) => PARKING_FACILITIES.includes(facility))),
     );
-    return pageInMemory(cards, page);
+    const totalHalls = cards.reduce((sum, card) => sum + card.hallCount, 0);
+    return { ...pageInMemory(cards, page), totalHalls };
   }
 
   /**
@@ -68,6 +77,7 @@ export class TheaterBrowseService {
       transitInfo: theater.transitInfo,
       parkingInfo: theater.parkingInfo,
       email: contacts ? theater.email : null,
+      whatsapp: contacts ? theater.whatsapp : null,
       phones: contacts ? theater.phones : [],
       photos: theater.photos,
       specialDates: specials.get(id) ?? [],
@@ -98,6 +108,7 @@ export class TheaterBrowseService {
       district: theater.district,
       city: theater.city,
       address: theater.address,
+      postalCode: theater.postalCode,
       latitude: theater.latitude,
       longitude: theater.longitude,
       cover: theater.cover,

@@ -9,7 +9,15 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { COORDINATE_DECIMALS, STORED_EMAIL_PATTERN, TEXT_LIMITS } from '../theaters.constants';
+import {
+  COORDINATE_DECIMALS,
+  PHONE_NUMBER_PATTERN,
+  POSTAL_CODE_MESSAGE,
+  POSTAL_CODE_PATTERN,
+  STORED_EMAIL_PATTERN,
+  TEXT_LIMITS,
+  WHATSAPP_MESSAGE,
+} from '../theaters.constants';
 import { HasAtMostDecimals, HasLength, Trim } from './validators';
 
 /** `POST /admin/theaters`: a new theater, created as a draft (PRD A4 "New theater wizard"). */
@@ -151,4 +159,31 @@ export class CreateTheaterRequest {
   @IsOptional()
   @IsBoolean()
   showContactsPublic?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description:
+      'Postal code: 5 digits. Customers see it with the city on the Theaters page cards and the theater page ("Cairo 11211"). Null or omitted: none. Trimmed.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(POSTAL_CODE_PATTERN, { message: POSTAL_CODE_MESSAGE })
+  postalCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    pattern: PHONE_NUMBER_PATTERN.source,
+    example: '+201001234567',
+    description:
+      "Dedicated WhatsApp number, E.164 (`+`, the country code and the number, digits only). The theater page's WhatsApp button and Contact section use it, only while `showContactsPublic` is true. Null or omitted: none.",
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(PHONE_NUMBER_PATTERN, { message: WHATSAPP_MESSAGE })
+  whatsapp?: string | null;
 }

@@ -116,6 +116,70 @@ describe('theater request DTOs (the global ValidationPipe)', () => {
     });
   });
 
+  describe('#29 postalCode and whatsapp', () => {
+    const valid = {
+      name: 'Maqady Zamalek',
+      address: '26 July Street',
+      district: 'Zamalek',
+      city: 'Cairo',
+      latitude: 30.0609,
+      longitude: 31.2197,
+    };
+
+    it('accepts a 5-digit postal code (trimmed) and an E.164 WhatsApp number on create', async () => {
+      const body = (await validate(CreateTheaterRequest, {
+        ...valid,
+        postalCode: ' 11211 ',
+        whatsapp: '+201001234567',
+      })) as CreateTheaterRequest;
+      expect(body.postalCode).toBe('11211');
+      expect(body.whatsapp).toBe('+201001234567');
+      const leadingZero = (await validate(CreateTheaterRequest, {
+        ...valid,
+        postalCode: '01234',
+        whatsapp: null,
+      })) as CreateTheaterRequest;
+      expect(leadingZero.postalCode).toBe('01234');
+      expect(leadingZero.whatsapp).toBeNull();
+    });
+
+    it.each([['1121'], ['112111'], ['11 211'], ['abcde'], [''], ['   '], [11211]])(
+      'refuses the postal code %p',
+      async (postalCode) => {
+        expect(await refusedFields(CreateTheaterRequest, { ...valid, postalCode })).toEqual([
+          'postalCode',
+        ]);
+        expect(await refusedFields(UpdateTheaterRequest, { postalCode })).toEqual(['postalCode']);
+      },
+    );
+
+    it.each([
+      ['01001234567'],
+      ['+01001234567'],
+      ['+20 100 123 4567'],
+      ['+2010'],
+      [''],
+      [201001234567],
+    ])('refuses the WhatsApp number %p', async (whatsapp) => {
+      expect(await refusedFields(CreateTheaterRequest, { ...valid, whatsapp })).toEqual([
+        'whatsapp',
+      ]);
+      expect(await refusedFields(UpdateTheaterRequest, { whatsapp })).toEqual(['whatsapp']);
+    });
+
+    it('lets a PATCH send either alone, or null to clear it', async () => {
+      await expect(validate(UpdateTheaterRequest, { postalCode: '12611' })).resolves.toBeDefined();
+      await expect(
+        validate(UpdateTheaterRequest, { whatsapp: '+201001234567' }),
+      ).resolves.toBeDefined();
+      const cleared = (await validate(UpdateTheaterRequest, {
+        postalCode: null,
+        whatsapp: null,
+      })) as UpdateTheaterRequest;
+      expect(cleared).toMatchObject({ postalCode: null, whatsapp: null });
+    });
+  });
+
   describe('ReplaceHoursRequest', () => {
     it('accepts all seven weekdays, in any order', async () => {
       await expect(
@@ -184,6 +248,29 @@ describe('theater request DTOs (the global ValidationPipe)', () => {
       await expect(
         validate(ReplaceFacilitiesRequest, { facilities: ['cafe_bar', 'kids_room'] }),
       ).resolves.toBeDefined();
+    });
+
+    it('accepts the prayer room (#29), with every other facility', async () => {
+      await expect(
+        validate(ReplaceFacilitiesRequest, { facilities: ['prayer_room'] }),
+      ).resolves.toBeDefined();
+      await expect(
+        validate(ReplaceFacilitiesRequest, {
+          facilities: [
+            'wheelchair_access',
+            'free_parking',
+            'valet_parking',
+            'street_parking',
+            'cafe_bar',
+            'food_court',
+            'kids_room',
+            'prayer_room',
+          ],
+        }),
+      ).resolves.toBeDefined();
+      expect(
+        await refusedFields(ReplaceFacilitiesRequest, { facilities: ['prayer_hall'] }),
+      ).toEqual(['facilities']);
     });
 
     it('refuses duplicates and unknown facilities', async () => {

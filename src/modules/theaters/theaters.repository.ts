@@ -28,6 +28,8 @@ const THEATER_COLUMNS = [
   'parking_info',
   'email',
   'show_contacts_public',
+  'postal_code',
+  'whatsapp',
   'cover_image_id',
   'default_price_front',
   'default_price_middle',

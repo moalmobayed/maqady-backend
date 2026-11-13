@@ -48,6 +48,8 @@ import * as m0170_01 from '../../migrations/0170_01_add_payments_screen_indexes'
 import * as m0180_01 from '../../migrations/0180_01_create_staff_alert_reads';
 import * as m0190_01 from '../../migrations/0190_01_add_search_indexes';
 import * as m0290_11 from '../../migrations/0290_11_add_movies_rating';
+import * as m0290_21 from '../../migrations/0290_21_add_theater_facilities_prayer_room';
+import * as m0290_22 from '../../migrations/0290_22_add_theaters_postal_code_whatsapp';
 
 /**
  * Every migration in `src/migrations/`, in run order. Imported statically so a bundler or file
@@ -104,4 +106,6 @@ export const MIGRATIONS: readonly ListedMigration[] = [
   { name: '0180_01_create_staff_alert_reads', file: m0180_01 },
   { name: '0190_01_add_search_indexes', file: m0190_01 },
   { name: '0290_11_add_movies_rating', file: m0290_11 },
+  { name: '0290_21_add_theater_facilities_prayer_room', file: m0290_21 },
+  { name: '0290_22_add_theaters_postal_code_whatsapp', file: m0290_22 },
 ];

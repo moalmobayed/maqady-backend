@@ -84,6 +84,8 @@ export class TheaterChildren {
       parkingInfo: row.parking_info,
       email: row.email,
       showContactsPublic: row.show_contacts_public,
+      postalCode: row.postal_code,
+      whatsapp: row.whatsapp,
       phones: this.phones.get(row.id) ?? [],
       facilities: FACILITIES.filter((facility) => facilities.has(facility)),
       cover: row.cover_image_id === null ? null : (this.images.get(row.cover_image_id) ?? null),

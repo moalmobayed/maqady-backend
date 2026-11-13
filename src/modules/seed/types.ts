@@ -44,6 +44,10 @@ export interface SeedTheater {
   readonly prices?: SeedPrices;
   /** The halls to create and make active; left out, only `SEED_HALL_NAME`. */
   readonly halls?: readonly string[];
+  /** 5 digits (#29); left out or null, none. Back-filled on a theater that has none. */
+  readonly postalCode?: string | null;
+  /** The WhatsApp number, E.164 (#29); left out or null, none. Back-filled likewise. */
+  readonly whatsapp?: string | null;
 }
 
 /** A theater's default price per zone, in piastres. */
@@ -263,6 +267,8 @@ export interface SeedHallRow {
 export interface SeedAdminTheater {
   readonly id: number;
   readonly status: string;
+  readonly postalCode: string | null;
+  readonly whatsapp: string | null;
   readonly phones: readonly unknown[];
   readonly facilities: readonly unknown[];
   readonly hours: readonly unknown[];

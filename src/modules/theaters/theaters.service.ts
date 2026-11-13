@@ -130,6 +130,8 @@ export class TheatersService {
         parking_info: input.parkingInfo ?? null,
         email: input.email ?? null,
         show_contacts_public: input.showContactsPublic ?? false,
+        postal_code: input.postalCode ?? null,
+        whatsapp: input.whatsapp ?? null,
         created_at: now,
         updated_at: now,
       });
@@ -386,6 +388,8 @@ function fieldChanges(row: TheaterRow, changes: TheaterChanges): TheaterFieldCha
     parkingInfo: 'parking_info',
     email: 'email',
     showContactsPublic: 'show_contacts_public',
+    postalCode: 'postal_code',
+    whatsapp: 'whatsapp',
   } as const;
   for (const [field, column] of Object.entries(columns) as [keyof typeof columns, string][]) {
     const value = changes[field];

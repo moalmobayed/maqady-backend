@@ -128,6 +128,8 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
         parkingInfo: theater.parkingInfo,
         email: theater.email,
         showContactsPublic: theater.showContactsPublic,
+        postalCode: theater.postalCode ?? null,
+        whatsapp: theater.whatsapp ?? null,
       });
       id = (await api.write<SeedCreatedRow>('POST', '/admin/theaters', body)).id;
       created += 1;
@@ -138,7 +140,10 @@ async function seedTheaters(context: SeedContext): Promise<SeedStepResult> {
   return { created, kept: theaters.length - created };
 }
 
-/** Sets whatever of the theater is still missing: hours, phones, facilities, prices, photos. */
+/**
+ * Sets whatever of the theater is still missing: the postal code and WhatsApp number, hours,
+ * phones, facilities, prices, photos.
+ */
 async function completeTheater(
   context: SeedContext,
   id: number,
@@ -147,6 +152,8 @@ async function completeTheater(
   const { api } = context;
   const path = `/admin/theaters/${id}`;
   const current = await api.get<SeedAdminTheater>(path);
+  const missing = missingTheaterFields(current, theater);
+  if (Object.keys(missing).length > 0) await api.write('PATCH', path, missing);
   if (current.hours.length === 0) await api.write('PUT', `${path}/hours`, { days: theater.hours });
   if (current.phones.length === 0 && theater.phones.length > 0) {
     await api.write('PUT', `${path}/phones`, { phones: theater.phones });
@@ -190,6 +197,17 @@ async function completeTheater(
       });
     }
   }
+}
+
+/** The dataset's postal code and WhatsApp number that the stored theater does not have yet. */
+function missingTheaterFields(
+  current: SeedAdminTheater,
+  theater: SeedTheater,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+  if (current.postalCode === null && theater.postalCode) fields.postalCode = theater.postalCode;
+  if (current.whatsapp === null && theater.whatsapp) fields.whatsapp = theater.whatsapp;
+  return fields;
 }
 
 /**

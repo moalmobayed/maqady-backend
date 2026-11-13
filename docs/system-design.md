@@ -222,9 +222,9 @@ Rules:
 
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
-| `theaters` | Theaters | `name CITEXT` UNIQUE (case-insensitive); `status` (`draft`, `active`, `sales_paused`); `address`, `district`, `city`; `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; optional `transit_info`, `parking_info`, `email`; `default_price_front`, `_middle`, `_back INT` plus `currency`, set all together or not at all, and required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` (an `images` row of kind `backdrop`, UNIQUE). Hard-deleted: only a draft goes (U4b, `docs/gh-5-theaters/spec.md`) |
+| `theaters` | Theaters | `name CITEXT` UNIQUE (case-insensitive); `status` (`draft`, `active`, `sales_paused`); `address`, `district`, `city`; `latitude`, `longitude NUMERIC(9,6)` with range CHECKs; optional `transit_info`, `parking_info`, `email`; optional `postal_code VARCHAR(10)` (5 digits, CHECK) and `whatsapp VARCHAR(16)` (E.164, CHECK) (#29, `docs/gh-29-theater-fields/spec.md`); `default_price_front`, `_middle`, `_back INT` plus `currency`, set all together or not at all, and required once the theater leaves `draft` (CHECK); `show_contacts_public`; `cover_image_id` (an `images` row of kind `backdrop`, UNIQUE). Hard-deleted: only a draft goes (U4b, `docs/gh-5-theaters/spec.md`) |
 | `theater_phones` | Labelled phone numbers | `label`, `number` (E.164, CHECK), `sort_order` (0 is the main phone); at most 10 per theater, replaced as a whole |
-| `theater_facilities` | Facilities | PK (`theater_id`, `facility`); `facility` is one of `wheelchair_access`, `free_parking`, `valet_parking`, `street_parking`, `cafe_bar`, `food_court`, `kids_room` |
+| `theater_facilities` | Facilities | PK (`theater_id`, `facility`); `facility` is one of `wheelchair_access`, `free_parking`, `valet_parking`, `street_parking`, `cafe_bar`, `food_court`, `kids_room`, `prayer_room` (#29: the CHECK replaced by migration `0290_21`) |
 | `theater_photos` | Gallery | `image_id` (UNIQUE, kind `gallery`), optional `caption` (the photo's alt text), `sort_order` kept contiguous from 0; at most 20 per theater |
 | `theater_hours` | Weekly hours, by cinema-day weekday | PK (`theater_id`, `weekday`); `is_closed`, or `opens_minute` and `closes_minute` counted from midnight at the start of the cinema date, with CHECK `360 <= opens_minute < closes_minute <= 1800` (06:00 to 06:00 next day) |
 | `theater_special_dates` | Holiday hours | UNIQUE (`theater_id`, `cinema_date`); `label`; hours as above, or closed |
@@ -807,6 +807,11 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - The cover is an image of kind `backdrop`; gallery photos are kind `gallery`. Both upload
     through `POST /admin/theaters/{id}/photos` (`usage`); `DELETE /admin/theaters/{id}/cover`
     removes the cover.
+  - The postal code and the WhatsApp number (#29) are optional fields of the theater, set on
+    create and `PATCH` (null clears). The postal code is public on the cards and the theater
+    page, beside the address (never folded into it); the WhatsApp number and its `wa.me` link
+    are public only while the theater shows its contacts, like its phones and email
+    (`docs/gh-29-theater-fields/spec.md`).
 - **Hall layouts.**
   - A new hall is a `draft` with the standard 12 × 16 layout (rows A–C front, D–H middle, J–M
     back). Status changes: `draft → active`, `draft → retired`, `active → retired`; `retired`
@@ -1260,7 +1265,8 @@ services return); `/movies` takes genre slugs, person ids and `q`, and adds `tab
 `docs/gh-29-movie-facets/spec.md`) `facets`: every genre's count, the cast (actors and voices,
 top 30 with `peopleTotal`) and the show-date options with their cinema dates and counts, over
 every matching movie of the tab, each facet ignoring its own filter;
-`/theaters` takes `openNow` and `parking`; `/movies/{id}/similar` is a bounded `{ items }` of at
+`/theaters` takes `openNow` and `parking`, and adds `totalHalls`, the sum of `hallCount` over
+every theater that matches, whatever the page (#29); `/movies/{id}/similar` is a bounded `{ items }` of at
 most 4. The ticker and `hallCount` come from the `HomeTickerSource` and `TheaterHallCountSource`
 seams, bound by U8b (`docs/gh-9-discovery-showtimes/spec.md`) to the showtimes (per Now showing
 movie, its next scheduled showtime of today's cinema date at an active theater that starts after
@@ -1873,6 +1879,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
 | D-32 | Discovery showtimes: customers see only scheduled showtimes of `active` theaters and Now showing movies; lists group by the stored cinema date, leave out ended showtimes and mark started ones; the ticker and the side panel count only showtimes still to start; "this weekend" is the Friday and Saturday cinema dates (today only on a Saturday); `hallCount` counts active halls; the seed schedules a week through the dry run, so a re-run never conflicts | Builder (U8b, `docs/gh-9-discovery-showtimes/spec.md`) |
 | D-33 | Movie rating score (#29 P2): an admin-entered `rating NUMERIC(3,1)` 0–10 with an optional `rating_source`, a source only with a rating (judged after the write, backed by a CHECK); on `AdminMovie`, `MovieDetails` and the shared `MovieCard` (optional there, additive in the home-page draft); no votes, sorting or filtering; the seed sets it and back-fills an unrated movie | Builder (#29, `docs/gh-29-movie-rating/spec.md`) |
+| D-35 | Theater fields (#29 P3): `prayer_room` appended to the facilities (the CHECK dropped and re-added); optional `postal_code` (5 digits) and `whatsapp` (E.164) on theaters, set by admins; `postalCode` on the shared `TheaterCard` (optional there, additive in the home-page draft) and the theater page; `whatsapp` and a built `whatsappUrl` (`https://wa.me/<digits>`) on the theater page only, behind `showContactsPublic`; `totalHalls` on `GET /theaters` summed from the matching cards' `hallCount`; the seed sets both fields and back-fills a theater that lacks them | Builder (#29, `docs/gh-29-theater-fields/spec.md`) |
 
 ## 19. Kit and process reconciliations
 
