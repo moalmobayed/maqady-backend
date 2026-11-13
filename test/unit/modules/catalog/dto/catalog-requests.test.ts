@@ -99,6 +99,22 @@ describe('catalog request DTOs', () => {
       expect(await invalidFields(UpdateMovieRequest, { rating })).toEqual(['rating']);
     });
 
+    it('says why a score with two decimals is refused', async () => {
+      try {
+        await transformed(UpdateMovieRequest, { rating: 8.45 });
+        throw new Error('expected a refusal');
+      } catch (error) {
+        expect((error as AppError).details).toEqual({
+          fields: [
+            {
+              field: 'rating',
+              messages: ['rating must be a number with at most one decimal place'],
+            },
+          ],
+        });
+      }
+    });
+
     it('trims the source, turns an empty one into null and refuses one over 80 characters', async () => {
       expect(
         await transformed(UpdateMovieRequest, { rating: 8.4, ratingSource: '  elCinema users ' }),

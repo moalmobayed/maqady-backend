@@ -154,7 +154,10 @@ export class MovieDetailsFields {
       'The rating score customers see on the movie page with a star: 0 to 10 with at most one decimal (8.4), typed from an outside source. Null clears it (clear `ratingSource` with it). More decimals, text or a value outside 0 to 10 is `VALIDATION_FAILED`.',
   })
   @IsOptional()
-  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: MOVIE_RATING_DECIMALS })
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false, maxDecimalPlaces: MOVIE_RATING_DECIMALS },
+    { message: 'rating must be a number with at most one decimal place' },
+  )
   @Min(0)
   @Max(MAX_MOVIE_RATING)
   rating?: number | null;
