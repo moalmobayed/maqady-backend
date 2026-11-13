@@ -63,6 +63,7 @@ describe('ShowtimeReadService (integration)', () => {
       theaterId: first.theaterId,
       hallId: first.hallId,
       hallName: expect.any(String),
+      hallFormat: 'standard',
       startsAt: new Date('2026-10-16T13:00:00+03:00'),
       endsAt: new Date('2026-10-16T13:10:00+03:00'),
       cleaningEndsAt: new Date('2026-10-16T13:30:00+03:00'),

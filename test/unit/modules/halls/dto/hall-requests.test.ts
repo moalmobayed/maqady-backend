@@ -136,6 +136,7 @@ describe('hall request DTOs', () => {
       ['a null format', { format: null }, ['format']],
       ['the width alone', { screenWidthMeters: 22.1 }, ['screenHeightMeters']],
       ['the height alone', { screenHeightMeters: 12.3 }, ['screenWidthMeters']],
+      ['a null width alone', { screenWidthMeters: null }, ['screenHeightMeters']],
       [
         'a null height beside a width',
         { screenWidthMeters: 22.1, screenHeightMeters: null },

@@ -1,11 +1,25 @@
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import { buildOpenApiDocument } from '../../../../src/common/swagger/openapi-document';
 import type {
   PublicTheaterPageResponse,
   PublicTheaterResponse,
 } from '../../../../src/modules/discovery/dto/public-theater.response';
 import { expectStatus, idsOf } from '../../../support/catalog';
 import { TestClock } from '../../../support/clock';
-import { countQueries, draftValidator, uploadTheaterPhoto } from '../../../support/discovery';
-import { HALLS, addActiveHall, createHall, setHallStatus } from '../../../support/halls';
+import {
+  countQueries,
+  draftValidator,
+  toJsonSchema,
+  uploadTheaterPhoto,
+} from '../../../support/discovery';
+import {
+  HALLS,
+  addActiveHall,
+  createHall,
+  setHallSpec,
+  setHallStatus,
+} from '../../../support/halls';
 import { mediaDirectory, removeMediaDirectory } from '../../../support/media';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -120,6 +134,11 @@ describe('The public theater reads', () => {
       200,
     );
     await setHallStatus(testApp, admin.authorization, hall.small, 'active');
+    await setHallSpec(testApp, admin.authorization, hall.small, {
+      format: 'dolby_atmos',
+      screenWidthMeters: 22.1,
+      screenHeightMeters: 12.3,
+    });
     await createHall(testApp, admin.authorization, theater.zamalek, 'B draft hall');
     const retired = await createHall(testApp, admin.authorization, theater.zamalek, 'C old hall');
     await setHallStatus(testApp, admin.authorization, retired, 'active');
@@ -273,16 +292,40 @@ describe('The public theater reads', () => {
         hallCount: 2,
         openState: { isOpen: true },
       });
-      // Active halls only, by name: seats count wheelchair spaces, not gaps.
+      // Active halls only, by name: seats count wheelchair spaces, not gaps. Each with its
+      // format and its screen in metres (#29 P4); a hall never given a size has none.
       expect(body.halls).toEqual([
-        { id: hall.small, name: 'A small hall', seatCount: 31, wheelchairCount: 2 },
+        {
+          id: hall.small,
+          name: 'A small hall',
+          seatCount: 31,
+          wheelchairCount: 2,
+          format: 'dolby_atmos',
+          screen: { widthMeters: 22.1, heightMeters: 12.3 },
+        },
         {
           id: expect.any(Number),
           name: expect.stringMatching(/^Hall /),
           seatCount: 192,
           wheelchairCount: 0,
+          format: 'standard',
+          screen: null,
         },
       ]);
+      // The halls' new fields match the generated contract (`PublicHall`, `HallScreen`).
+      const ajv = new Ajv({ allErrors: true, strict: false });
+      addFormats(ajv);
+      const validate = ajv.compile({
+        definitions: toJsonSchema(buildOpenApiDocument(testApp.app).components?.schemas) as Record<
+          string,
+          object
+        >,
+        $ref: '#/definitions/PublicTheater',
+      });
+      expect({ valid: validate(body), errors: validate.errors ?? [] }).toEqual({
+        valid: true,
+        errors: [],
+      });
       expect(body.photos.map((photo: { caption: string | null }) => photo.caption)).toEqual([
         'The lobby',
         null,

@@ -13,6 +13,7 @@ import {
   WORLD_NOW,
   buildShowtimeWorld,
 } from '../../../support/discovery-showtimes';
+import { addActiveHall, setHallSpec } from '../../../support/halls';
 import { scheduleShowtime } from '../../../support/showtimes';
 import { staffSession } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
@@ -50,6 +51,8 @@ describe('The public showtime lists', () => {
     testApp = await createTestApp({ clock });
     admin = await staffSession(testApp, 'admin');
     world = await buildShowtimeWorld(testApp, admin, clock);
+    // Downtown's hall is a VIP hall (#29 P4); Zamalek's stays standard.
+    await setHallSpec(testApp, admin.authorization, world.halls.downtown, { format: 'vip' });
     document = buildOpenApiDocument(testApp.app);
   });
 
@@ -118,6 +121,7 @@ describe('The public showtime lists', () => {
         endsAt: '2026-10-16T18:40:00+03:00',
         cinemaDate: '2026-10-16',
         hall: { id: world.halls.zamalek, name: expect.any(String) },
+        format: 'standard',
         prices: DEFAULT_PRICES,
         fromPrice: WORLD_FROM_PRICES.zamalek,
         hasStarted: true,
@@ -130,9 +134,43 @@ describe('The public showtime lists', () => {
       // Downtown's hall has no front rows, so its "from" price is the middle zone's.
       expect(body.days[0]!.theaters[0]!.showtimes[0]).toMatchObject({
         hall: { id: world.halls.downtown, name: 'Hall 2' },
+        format: 'vip',
         fromPrice: WORLD_FROM_PRICES.downtown,
       });
       expect(validateAgainst('MovieShowtimes', body)).toEqual({ valid: true, errors: [] });
+    });
+
+    it("gives every chip its hall's format, and each theater's day its formats (#29 P4)", async () => {
+      const body = await ok<MovieShowtimesResponse>(`/movies/${world.movies.lighthouse}/showtimes`);
+      const formatOfHall = new Map([
+        [world.halls.zamalek, 'standard'],
+        [world.halls.downtown, 'vip'],
+      ]);
+      const groups = body.days.flatMap((day) =>
+        day.theaters.map((group) => ({ day: day.cinemaDate, group })),
+      );
+      for (const { group } of groups) {
+        for (const chip of group.showtimes) {
+          expect({ chip: chip.id, format: chip.format }).toEqual({
+            chip: chip.id,
+            format: formatOfHall.get(chip.hall.id),
+          });
+        }
+      }
+      expect(groups.map(({ day, group }) => [day, group.theater.id, group.formats])).toEqual([
+        ['2026-10-16', world.theaters.downtown, ['vip']],
+        ['2026-10-16', world.theaters.zamalek, ['standard']],
+        ['2026-10-17', world.theaters.downtown, ['vip']],
+        ['2026-10-22', world.theaters.zamalek, ['standard']],
+      ]);
+
+      const theater = await ok<TheaterShowtimesResponse>(
+        `/theaters/${world.theaters.downtown}/showtimes`,
+      );
+      const chips = theater.days.flatMap((day) => day.movies.flatMap((group) => group.showtimes));
+      expect(chips.length).toBeGreaterThan(0);
+      expect(new Set(chips.map((chip) => chip.format))).toEqual(new Set(['vip']));
+      expect(validateAgainst('TheaterShowtimes', theater)).toEqual({ valid: true, errors: [] });
     });
 
     it('moves with the Clock: after midnight the 00:30 show is still on the 16th, then it ends', async () => {
@@ -293,6 +331,20 @@ describe('The public showtime lists', () => {
           '13:00',
         );
       }
+      // A third format in play: an IMAX hall in Zamalek showing the movie on the 18th.
+      const imaxHall = await addActiveHall(testApp, admin.authorization, world.theaters.zamalek);
+      await setHallSpec(testApp, admin.authorization, imaxHall, {
+        format: 'imax',
+        screenWidthMeters: 26.5,
+        screenHeightMeters: 14,
+      });
+      await scheduleShowtime(
+        testApp,
+        admin,
+        { movieId: world.movies.lighthouse, hallId: imaxHall },
+        '2026-10-18',
+        '18:00',
+      );
       clock.set(WORLD_NOW);
       const movieAfter = await countQueries(testApp, () => get(moviePath));
       const theaterAfter = await countQueries(testApp, () => get(theaterPath));
@@ -308,7 +360,15 @@ describe('The public showtime lists', () => {
       const lighthouse = await ok<MovieShowtimesResponse>(moviePath);
       expect(
         lighthouse.theaters.find((row) => row.id === world.theaters.zamalek)!.showtimeCount,
-      ).toBe(8);
+      ).toBe(9);
+      const sunday = lighthouse.days.find((day) => day.cinemaDate === '2026-10-18')!;
+      expect(sunday.theaters.map((group) => group.formats)).toEqual([['standard', 'imax']]);
+      expect(
+        sunday.theaters[0]!.showtimes.map((chip) => [chip.hall.id === imaxHall, chip.format]),
+      ).toEqual([
+        [false, 'standard'],
+        [true, 'imax'],
+      ]);
     });
   });
 });

@@ -27,7 +27,10 @@ function screenSideProblem(side: ScreenSide, body: object): string | null {
   const other = record[partner];
   if (value === undefined) return `${side} is required with ${partner}`;
   if (value === null) {
-    return other === null ? null : `${side} can be null only when ${partner} is null too`;
+    // A missing partner is reported on the partner alone.
+    return other === null || other === undefined
+      ? null
+      : `${side} can be null only when ${partner} is null too`;
   }
   const { min, max } = SCREEN_METERS_LIMITS;
   if (

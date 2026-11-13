@@ -1,9 +1,10 @@
 import type { AddressInfo } from 'node:net';
 import { SeedApiClient } from '../../../../src/modules/seed/seed-api.client';
 import { SEED_STEPS } from '../../../../src/modules/seed/seed.steps';
-import type { SeedContext, SeedMovie } from '../../../../src/modules/seed/types';
+import type { SeedContext, SeedMovie, SeedTheater } from '../../../../src/modules/seed/types';
 import { createStaffMember } from '../../../support/staff-auth';
 import { createTestApp } from '../../../support/test-app';
+import { theaterBody } from '../../../support/theaters';
 import type { TestApp } from '../../../support/types';
 
 jest.setTimeout(120_000);
@@ -103,5 +104,110 @@ describe('the seed movies step and the rating score (#29), over HTTP with real w
       .select<{ changed_fields: string[] }[]>('changed_fields')
       .where({ action: 'movie.updated' });
     expect(updates.map((row) => row.changed_fields)).toEqual([['rating', 'ratingSource']]);
+  });
+});
+
+describe('the seed halls step and the hall format and screen (#29 P4), over HTTP with real wiring', () => {
+  let testApp: TestApp;
+  let api: SeedApiClient;
+  let theaterId: number;
+  const hallsStep = SEED_STEPS.find((step) => step.name === 'halls')!;
+  const THEATER = 'Maqady Seed Halls';
+
+  const run = (halls: SeedTheater['halls']) => {
+    const theater = { name: THEATER, publish: true, halls } as SeedTheater;
+    const context: SeedContext = {
+      api,
+      dataset: { name: 'test', theaters: [theater], people: [], movies: [], showtimes: [] },
+      today: '2026-11-13',
+      theaterIds: new Map([[THEATER, theaterId]]),
+      hallIds: new Map(),
+      personIds: new Map(),
+      movieIds: new Map(),
+    };
+    return hallsStep.run(context);
+  };
+  const halls = () =>
+    testApp
+      .knex('halls')
+      .select('name', 'status', 'format', 'screen_width_cm', 'screen_height_cm')
+      .orderBy('name');
+
+  beforeAll(async () => {
+    testApp = await createTestApp();
+    await testApp.app.listen(0, '127.0.0.1');
+    const { port } = testApp.app.getHttpServer().address() as AddressInfo;
+    const admin = await createStaffMember(testApp, { role: 'admin' });
+    api = new SeedApiClient(`http://127.0.0.1:${port}/api/v1`);
+    await api.signIn(admin.email, admin.password);
+    theaterId = (
+      await api.write<{ id: number }>('POST', '/admin/theaters', theaterBody({ name: THEATER }))
+    ).id;
+  });
+
+  afterAll(async () => {
+    await testApp.close();
+  });
+
+  it('creates halls with their format and screen, and a name-only hall as a standard one', async () => {
+    const result = await run([
+      { name: 'Hall 1', format: 'dolby_atmos', screenWidthMeters: 22.1, screenHeightMeters: 12.3 },
+      'Hall 2',
+    ]);
+    expect(result).toEqual({ created: 2, kept: 0 });
+    expect(await halls()).toEqual([
+      {
+        name: 'Hall 1',
+        status: 'active',
+        format: 'dolby_atmos',
+        screen_width_cm: 2210,
+        screen_height_cm: 1230,
+      },
+      {
+        name: 'Hall 2',
+        status: 'active',
+        format: 'standard',
+        screen_width_cm: null,
+        screen_height_cm: null,
+      },
+    ]);
+  });
+
+  it('fills a hall seeded before #29, and keeps a hall an admin changed', async () => {
+    // As on staging: both halls exist from an earlier seed at the defaults...
+    await testApp
+      .knex('halls')
+      .update({ format: 'standard', screen_width_cm: null, screen_height_cm: null });
+    // ...and an admin has since made Hall 2 a VIP hall.
+    await testApp.knex('halls').update({ format: 'vip' }).where({ name: 'Hall 2' });
+
+    const result = await run([
+      { name: 'Hall 1', format: 'imax', screenWidthMeters: 26.5, screenHeightMeters: 14 },
+      { name: 'Hall 2', format: '4dx' },
+    ]);
+    expect(result).toEqual({ created: 0, kept: 2 });
+    expect(await halls()).toEqual([
+      {
+        name: 'Hall 1',
+        status: 'active',
+        format: 'imax',
+        screen_width_cm: 2650,
+        screen_height_cm: 1400,
+      },
+      {
+        name: 'Hall 2',
+        status: 'active',
+        format: 'vip',
+        screen_width_cm: null,
+        screen_height_cm: null,
+      },
+    ]);
+    const updates = await testApp
+      .knex('audit_events')
+      .select<{ changed_fields: string[] }[]>('changed_fields')
+      .where({ action: 'hall.updated' });
+    expect(updates.map((row) => row.changed_fields)).toEqual([
+      ['format', 'screenHeightMeters', 'screenWidthMeters'],
+    ]);
   });
 });
