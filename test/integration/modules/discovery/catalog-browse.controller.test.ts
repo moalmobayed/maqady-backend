@@ -215,6 +215,7 @@ describe('The public catalog reads', () => {
           'genres',
           'id',
           'poster',
+          'rating',
           'releaseDate',
           'runtimeMinutes',
           'status',
@@ -383,6 +384,58 @@ describe('The public catalog reads', () => {
         idsOf((await ok<PublicPersonPageResponse>('/people?roleGroup=directors')).items),
       ).toEqual([person.hala]);
       expect((await get('/people?roleGroup=extras')).status).toBe(400);
+    });
+  });
+
+  describe('the rating score (#29)', () => {
+    beforeAll(async () => {
+      expectStatus(
+        await adminWrite(testApp, admin, 'patch', `${API}/admin/movies/${movie.c}`).send({
+          rating: 8.4,
+          ratingSource: 'elCinema users',
+        }),
+        200,
+      );
+      expectStatus(
+        await adminWrite(testApp, admin, 'patch', `${API}/admin/movies/${movie.d}`).send({
+          rating: 6,
+        }),
+        200,
+      );
+    });
+
+    it('GET /movies/{id} returns the score and its source, or nulls', async () => {
+      expect(await ok<MovieDetailsResponse>(`/movies/${movie.c}`)).toMatchObject({
+        rating: 8.4,
+        ratingSource: 'elCinema users',
+      });
+      expect(await ok<MovieDetailsResponse>(`/movies/${movie.d}`)).toMatchObject({
+        rating: 6,
+        ratingSource: null,
+      });
+      expect(await ok<MovieDetailsResponse>(`/movies/${movie.b}`)).toMatchObject({
+        rating: null,
+        ratingSource: null,
+      });
+    });
+
+    it('every card of GET /movies and GET /movies/{id}/similar carries its score', async () => {
+      const ratings = (items: readonly { id: number; rating?: number | null }[]) =>
+        items.map((card) => [card.id, card.rating]);
+      const page = await ok<MovieCardPageResponse>('/movies');
+      expect(ratings(page.items)).toEqual([
+        [movie.b, null],
+        [movie.a, null],
+        [movie.c, 8.4],
+        [movie.d, 6],
+      ]);
+      const comingSoon = await ok<MovieCardPageResponse>('/movies?status=coming_soon');
+      expect(ratings(comingSoon.items)).toEqual([[movie.e, null]]);
+      const similar = await ok<SimilarMoviesResponse>(`/movies/${movie.a}/similar`);
+      expect(ratings(similar.items)).toEqual([
+        [movie.c, 8.4],
+        [movie.b, null],
+      ]);
     });
   });
 });

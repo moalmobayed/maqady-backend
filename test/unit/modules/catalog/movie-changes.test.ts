@@ -64,6 +64,22 @@ describe('diffMovie', () => {
     });
   });
 
+  it('maps the rating score and its source to their columns, leaving an unchanged score out', () => {
+    const rated = { ...movie, rating: 8.4, rating_source: null };
+    expect(diffMovie(rated, { rating: 8.4, ratingSource: 'elCinema users' })).toEqual({
+      columns: { rating_source: 'elCinema users' },
+      changedFields: ['ratingSource'],
+    });
+    expect(diffMovie(rated, { rating: 7.9 })).toEqual({
+      columns: { rating: 7.9 },
+      changedFields: ['rating'],
+    });
+    expect(diffMovie(rated, { rating: null, ratingSource: null })).toEqual({
+      columns: { rating: null },
+      changedFields: ['rating'],
+    });
+  });
+
   it('ignores genres, status and the featured position, which the service judges', () => {
     expect(diffMovie(movie, { genreIds: [1], status: 'archived', featuredPosition: 1 })).toEqual({
       columns: {},

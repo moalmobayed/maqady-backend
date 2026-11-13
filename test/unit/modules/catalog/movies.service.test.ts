@@ -65,6 +65,7 @@ describe('MoviesService', () => {
 
   beforeEach(() => {
     movies = {
+      insert: jest.fn().mockResolvedValue(movieRow({ id: 2, status: 'draft' })),
       findByIdForUpdate: jest.fn().mockResolvedValue(movieRow()),
       findByIdForDelete: jest.fn().mockResolvedValue(movieRow({ poster_image_id: 50 })),
       findByFeaturedPosition: jest.fn().mockResolvedValue(undefined),
@@ -188,6 +189,104 @@ describe('MoviesService', () => {
     it('answers NOT_FOUND for a movie that does not exist', async () => {
       movies.findByIdForUpdate.mockResolvedValue(undefined);
       expect((await rejection(service.update(ACTOR, 1, { title: 'x' }))).code).toBe('NOT_FOUND');
+    });
+  });
+
+  describe('the rating score (#29)', () => {
+    it('stores a new movie with its score and source', async () => {
+      await service.create(ACTOR, {
+        title: 'Rated',
+        rating: 8.4,
+        ratingSource: 'elCinema users',
+      });
+      expect(movies.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Rated', rating: 8.4, rating_source: 'elCinema users' }),
+      );
+    });
+
+    it('stores nulls for a new movie without a score, and a score without a source', async () => {
+      await service.create(ACTOR, { title: 'Unrated' });
+      await service.create(ACTOR, { title: 'Score only', rating: 6 });
+      expect(movies.insert.mock.calls.map(([row]) => [row.rating, row.rating_source])).toEqual([
+        [null, null],
+        [6, null],
+      ]);
+    });
+
+    it('refuses a new movie with a source but no score before inserting anything', async () => {
+      const error = await rejection(
+        service.create(ACTOR, { title: 'Source only', ratingSource: 'elCinema users' }),
+      );
+      expect(error.code).toBe('VALIDATION_FAILED');
+      expect(error.details).toEqual({
+        fields: [
+          {
+            field: 'ratingSource',
+            messages: ['ratingSource needs a rating: set rating too, or send ratingSource: null'],
+          },
+        ],
+      });
+      expect(movies.insert).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('writes a new score and source and records both field names', async () => {
+      await service.update(ACTOR, 1, { rating: 8.4, ratingSource: 'elCinema users' });
+      expect(movies.update).toHaveBeenCalledWith(1, {
+        rating: 8.4,
+        rating_source: 'elCinema users',
+        updated_at: NOW,
+        updated_by_staff_id: ACTOR.id,
+      });
+      expect(audit.record.mock.calls.map(([event]) => [event.action, event.changedFields])).toEqual(
+        [['movie.updated', ['rating', 'ratingSource']]],
+      );
+    });
+
+    it('adds a source to a movie that already has a score', async () => {
+      movies.findByIdForUpdate.mockResolvedValue(movieRow({ rating: 7.5 }));
+      await service.update(ACTOR, 1, { ratingSource: 'elCinema users' });
+      expect(movies.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ rating_source: 'elCinema users' }),
+      );
+    });
+
+    it('refuses a source on a movie without a score, and clearing the score of a movie with a source', async () => {
+      const unrated = await rejection(service.update(ACTOR, 1, { ratingSource: 'elCinema users' }));
+      expect(unrated.code).toBe('VALIDATION_FAILED');
+
+      movies.findByIdForUpdate.mockResolvedValue(
+        movieRow({ rating: 8.4, rating_source: 'elCinema users' }),
+      );
+      const cleared = await rejection(service.update(ACTOR, 1, { rating: null }));
+      expect(cleared.code).toBe('VALIDATION_FAILED');
+      expect((cleared.details as { fields: { field: string }[] }).fields[0]!.field).toBe(
+        'ratingSource',
+      );
+      expect(movies.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('clears the score and its source together', async () => {
+      movies.findByIdForUpdate.mockResolvedValue(
+        movieRow({ rating: 8.4, rating_source: 'elCinema users' }),
+      );
+      await service.update(ACTOR, 1, { rating: null, ratingSource: null });
+      expect(movies.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ rating: null, rating_source: null }),
+      );
+      expect(audit.record.mock.calls[0]![0].changedFields).toEqual(['rating', 'ratingSource']);
+    });
+
+    it('writes nothing for the score the movie already has', async () => {
+      movies.findByIdForUpdate.mockResolvedValue(
+        movieRow({ rating: 8.4, rating_source: 'elCinema users' }),
+      );
+      await service.update(ACTOR, 1, { rating: 8.4, ratingSource: 'elCinema users' });
+      expect(movies.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
