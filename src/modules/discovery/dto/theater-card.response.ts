@@ -3,9 +3,13 @@ import { ImageResponse } from '../../media/dto/image.response';
 import { OpenStateResponse } from '../../theaters/dto/open-state.response';
 import { TheaterPhoneResponse } from '../../theaters/dto/theater-phone.response';
 import { FACILITIES } from '../../theaters/enums';
+import { POSTAL_CODE_PATTERN } from '../../theaters/theaters.constants';
 import type { Facility } from '../../theaters/types';
 
-/** The enum options of a facility (contract `Facility`, published by U4b). */
+/**
+ * The enum options of a facility (contract `Facility`, published by U4b; `prayer_room` added by
+ * #29).
+ */
 export const FACILITY_ENUM = { enum: FACILITIES, enumName: 'Facility' } as const;
 
 /** A theater card (contract `TheaterCard`): "Our cinemas" on the home page. */
@@ -29,6 +33,19 @@ export class TheaterCardResponse {
     description: 'Street address.',
   })
   address!: string;
+
+  // Optional in the schema only: it joined the home-page contract after it was agreed (#29), so
+  // it is additive there. This API always sends it.
+  @ApiProperty({
+    type: String,
+    required: false,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description:
+      'The postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none. Always sent by this API.',
+  })
+  postalCode?: string | null;
 
   @ApiProperty({
     type: () => ImageResponse,

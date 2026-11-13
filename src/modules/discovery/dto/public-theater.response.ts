@@ -5,6 +5,7 @@ import { OpenStateResponse } from '../../theaters/dto/open-state.response';
 import { SpecialDateResponse } from '../../theaters/dto/special-date.response';
 import { TheaterPhoneResponse } from '../../theaters/dto/theater-phone.response';
 import { TodayHoursResponse } from '../../theaters/dto/today-hours.response';
+import { PHONE_NUMBER_PATTERN, POSTAL_CODE_PATTERN } from '../../theaters/theaters.constants';
 import type { Facility } from '../../theaters/types';
 import { FACILITY_ENUM, TheaterCardResponse } from './theater-card.response';
 
@@ -54,6 +55,15 @@ export class PublicTheaterPageResponse {
     description: 'How many theaters match.',
   })
   total!: number;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    example: 25,
+    description:
+      'How many active halls the matching theaters have in all ("25 HALLS" next to `total`): the sum of `hallCount` over every theater that matches `openNow` and `parking`, whatever the page.',
+  })
+  totalHalls!: number;
 }
 
 /** An active hall of a theater page (PRD C5 "Hall 3 · 186 seats · 4 wheelchair spaces"). */
@@ -122,6 +132,16 @@ export class PublicTheaterResponse {
   @ApiProperty({ type: String, example: 'Cairo', description: 'City.' })
   city!: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description:
+      'Postal code, 5 digits, shown with the city ("Cairo 11211"); null when the theater has none.',
+  })
+  postalCode!: string | null;
+
   @ApiProperty({ type: Number, example: 30.0609, description: 'Latitude ("Directions").' })
   latitude!: number;
 
@@ -151,6 +171,26 @@ export class PublicTheaterResponse {
     description: 'Contact email; null when none is set or the theater hides its contacts.',
   })
   email!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    pattern: PHONE_NUMBER_PATTERN.source,
+    example: '+201001234567',
+    description:
+      'The dedicated WhatsApp number (E.164) for the Contact section; null when none is set or the theater hides its contacts.',
+  })
+  whatsapp!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uri',
+    nullable: true,
+    example: 'https://wa.me/201001234567',
+    description:
+      'The link of the WhatsApp button in the header and the Contact section (WhatsApp click-to-chat); null exactly when `whatsapp` is.',
+  })
+  whatsappUrl!: string | null;
 
   @ApiProperty({
     type: () => [TheaterPhoneResponse],

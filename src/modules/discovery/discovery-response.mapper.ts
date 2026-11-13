@@ -70,9 +70,11 @@ import type {
   PublicShowtimeView,
   PublicTheaterView,
   ShowtimeTheaterRef,
+  TheaterCardPage,
   TheaterCardView,
   TheaterShowtimesView,
 } from './types';
+import { whatsAppUrl } from './whatsapp';
 
 /**
  * Turns the discovery read models into response DTOs (exported for U8b's showtime reads). Every
@@ -326,7 +328,7 @@ export class DiscoveryResponseMapper {
     return Object.assign(new TheaterCardResponse(), this.cardFields(card));
   }
 
-  theaterPage(page: Page<TheaterCardView>): PublicTheaterPageResponse {
+  theaterPage(page: TheaterCardPage): PublicTheaterPageResponse {
     return Object.assign(new PublicTheaterPageResponse(), {
       items: page.items.map((card) =>
         Object.assign(new PublicTheaterListItemResponse(), {
@@ -339,6 +341,7 @@ export class DiscoveryResponseMapper {
       ),
       nextCursor: page.nextCursor,
       total: page.total,
+      totalHalls: page.totalHalls,
     });
   }
 
@@ -349,11 +352,14 @@ export class DiscoveryResponseMapper {
       address: view.address,
       district: view.district,
       city: view.city,
+      postalCode: view.postalCode,
       latitude: view.latitude,
       longitude: view.longitude,
       transitInfo: view.transitInfo,
       parkingInfo: view.parkingInfo,
       email: view.email,
+      whatsapp: view.whatsapp,
+      whatsappUrl: view.whatsapp === null ? null : whatsAppUrl(view.whatsapp),
       phones: view.phones.map(toPhoneResponse),
       facilities: [...view.facilities],
       cover: this.image(view.cover, view.name),
@@ -380,6 +386,7 @@ export class DiscoveryResponseMapper {
       district: card.district,
       city: card.city,
       address: card.address,
+      postalCode: card.postalCode,
       cover: this.image(card.cover, card.name),
       openState: toOpenStateResponse(card.openState),
       mainPhone: card.mainPhone ? toPhoneResponse(card.mainPhone) : null,

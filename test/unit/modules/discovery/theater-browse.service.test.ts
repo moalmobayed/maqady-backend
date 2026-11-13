@@ -35,6 +35,8 @@ function theater(
     parkingInfo: null,
     email: `t${id}@maqady.example`,
     showContactsPublic,
+    postalCode: `1121${id}`,
+    whatsapp: `+2010012345${id}0`,
     phones: [
       { label: 'Main line', number: '+20227351100' },
       { label: 'Box office', number: '+20227351101' },
@@ -163,6 +165,56 @@ describe('TheaterBrowseService', () => {
     expect(both.items.map((card) => card.id)).toEqual([3]);
     expect(both.nextCursor).not.toBeNull();
     expect((await service.list({}, page)).total).toBe(3);
+  });
+
+  describe('#29 theater fields', () => {
+    it('sums totalHalls over every matching card, whatever the page size', async () => {
+      // Hall counts are id * 2: downtown (2) 4, Heliopolis (3) 6, Zamalek (1) 2.
+      for (const limit of [1, 2, 20]) {
+        const first = await service.list({}, { after: null, limit });
+        expect(first.totalHalls).toBe(12);
+        expect(first.items.length).toBe(Math.min(limit, 3));
+      }
+      const cards = await service.cardsAt(NOW);
+      expect((await service.list({}, { after: null, limit: 1 })).totalHalls).toBe(
+        cards.reduce((sum, card) => sum + card.hallCount, 0),
+      );
+    });
+
+    it('counts only the halls of the theaters the filters keep', async () => {
+      const page = { after: null, limit: 1 };
+      // Open now: Heliopolis (6) and Zamalek (2); downtown is closed.
+      expect((await service.list({ openNow: true }, page)).totalHalls).toBe(8);
+      // Parking: Heliopolis (free) and Zamalek (valet); street parking does not count.
+      expect((await service.list({ parking: true }, page)).totalHalls).toBe(8);
+      reads.listActive.mockResolvedValue([theater(2, 'downtown', ['street_parking'])]);
+      expect((await service.list({ parking: true }, page)).totalHalls).toBe(0);
+      reads.listActive.mockResolvedValue([]);
+      expect(await service.list({}, page)).toMatchObject({ items: [], total: 0, totalHalls: 0 });
+    });
+
+    it('puts the postal code on every card', async () => {
+      const cards = await service.cardsAt(NOW);
+      expect(cards.map((card) => [card.id, card.postalCode])).toEqual([
+        [2, '11212'],
+        [3, '11213'],
+        [1, '11211'],
+      ]);
+    });
+
+    it('returns the postal code and the WhatsApp number on the theater page', async () => {
+      reads.findActive.mockResolvedValue(theater(1, 'Zamalek'));
+      const view = await service.find(1);
+      expect(view.postalCode).toBe('11211');
+      expect(view.whatsapp).toBe('+201001234510');
+    });
+
+    it('hides the WhatsApp number, not the postal code, when the theater hides its contacts', async () => {
+      reads.findActive.mockResolvedValue(theater(3, 'Heliopolis', [], false));
+      const view = await service.find(3);
+      expect(view.whatsapp).toBeNull();
+      expect(view.postalCode).toBe('11213');
+    });
   });
 
   describe('find', () => {
