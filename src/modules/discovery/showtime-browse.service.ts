@@ -159,21 +159,17 @@ export class ShowtimeBrowseService {
    * The Movies page "show date" options (PRD C2, #29), in `SHOW_DATES` order, seen from the
    * Clock's now: each with its cinema dates and the movies with a scheduled showtime of an active
    * theater on them that starts after now, in id order. Feeds both the `showDate` filter and its
-   * counts. Two queries whatever the number of showtimes: the active theaters, then the distinct
-   * (movie, cinema date) pairs of the range covering every option.
+   * counts. Two queries whatever the number of showtimes: the active theaters' ids, then the
+   * distinct (movie, cinema date) pairs of the range covering every option.
    */
   async showDateOptions(): Promise<readonly ShowDateOption[]> {
     const now = this.clock.now();
     const { options, covering } = showDateRanges(cinemaDateOf(now));
-    const theaters = await this.activeTheaters();
+    const theaterIds = await this.theaters.listActiveIds();
     const pairs =
-      theaters.size === 0
+      theaterIds.length === 0
         ? []
-        : await this.showtimes.movieDatesScheduled({
-            ...covering,
-            theaterIds: [...theaters.keys()],
-            startsAfter: now,
-          });
+        : await this.showtimes.movieDatesScheduled({ ...covering, theaterIds, startsAfter: now });
     return options.map(({ value, range }) => ({
       value,
       cinemaDates: cinemaDatesOf(range),

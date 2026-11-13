@@ -81,6 +81,7 @@ describe('TheaterReadService (integration)', () => {
 
     const active = await reads.listActive();
     expect(active.map((theater) => theater.name)).toEqual(['Maqady Maadi', 'Maqady Zamalek']);
+    expect(await reads.listActiveIds()).toEqual(active.map((theater) => theater.id));
     expect(active[1]).toEqual(
       expect.objectContaining({
         id: zamalek,
@@ -117,6 +118,7 @@ describe('TheaterReadService (integration)', () => {
     }
     expect((await reads.listActive()).length).toBe(10);
     expect(await queriesOf(() => reads.listActive())).toBe(one);
+    expect(await queriesOf(() => reads.listActiveIds())).toBe(1);
   });
 
   it('holds the theater FOR SHARE, so a theater write waits for the lock holder', async () => {

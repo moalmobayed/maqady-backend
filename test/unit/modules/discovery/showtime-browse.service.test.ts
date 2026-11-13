@@ -66,7 +66,9 @@ describe('ShowtimeBrowseService', () => {
   let reads: jest.Mocked<
     Pick<ShowtimeReadService, 'listScheduled' | 'movieDatesScheduled' | 'nextScheduledPerMovie'>
   >;
-  let theaters: jest.Mocked<Pick<TheaterReadService, 'listActive' | 'findActive'>>;
+  let theaters: jest.Mocked<
+    Pick<TheaterReadService, 'listActive' | 'listActiveIds' | 'findActive'>
+  >;
   let catalog: jest.Mocked<Pick<CatalogReadService, 'findMoviesByIds' | 'findPublicMoviesByIds'>>;
   let clock: TestClock;
   let service: ShowtimeBrowseService;
@@ -85,6 +87,7 @@ describe('ShowtimeBrowseService', () => {
           theater(2, 'downtown'),
           theater(3, 'Heliopolis'),
         ]),
+      listActiveIds: jest.fn().mockResolvedValue([1, 2, 3]),
       findActive: jest.fn().mockResolvedValue(theater(1, 'Zamalek')),
     };
     catalog = {
@@ -407,7 +410,7 @@ describe('ShowtimeBrowseService', () => {
     });
 
     it('matches nothing, and asks no showtimes, when no theater is active', async () => {
-      theaters.listActive.mockResolvedValue([]);
+      theaters.listActiveIds.mockResolvedValue([]);
       const options = await service.showDateOptions();
       expect(options.map((option) => option.movieIds)).toEqual([[], [], []]);
       expect(options[0]!.cinemaDates).toEqual(['2026-10-16']);
