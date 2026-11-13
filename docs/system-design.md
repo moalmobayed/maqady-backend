@@ -2,7 +2,7 @@
 title: Maqady backend — system design
 owner: Mohamed Tarek
 status: Approved — 2026-10-20
-last_verified: 2026-10-29
+last_verified: 2026-11-13
 tags: [architecture, system-design, backend]
 ---
 
@@ -209,7 +209,7 @@ Rules:
 | Table | Purpose | Key columns and constraints |
 |---|---|---|
 | `genres` | Fixed genre list, seeded by migration | `name` UNIQUE; `slug` UNIQUE (`sci-fi`), for URLs and the contract's `GenreRef` |
-| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes` 1–600; `release_date DATE`; `synopsis` (≤ 600), `language`, `country`, `production_company`; a public movie has a synopsis, runtime and release date (CHECK); `featured_position` 1–5, UNIQUE where not NULL, and only on a public movie with a hero video (CHECK); `hero_video_id` and `backdrop_photo_id` with composite FKs onto the movie's own video and photo (`(id, movie_id)`); `poster_image_id`; optional `budget_label` and `filming_locations`; `updated_by_staff_id` |
+| `movies` | Movies | `status` (`draft`, `coming_soon`, `now_showing`, `archived`); `age_rating` (`G`, `PG`, `12+`, `16+`, `18+`); `runtime_minutes` 1–600; `release_date DATE`; `synopsis` (≤ 600), `language`, `country`, `production_company`; a public movie has a synopsis, runtime and release date (CHECK); `featured_position` 1–5, UNIQUE where not NULL, and only on a public movie with a hero video (CHECK); `hero_video_id` and `backdrop_photo_id` with composite FKs onto the movie's own video and photo (`(id, movie_id)`); `poster_image_id`; optional `budget_label` and `filming_locations`; optional `rating NUMERIC(3,1)` 0–10 and `rating_source` (≤ 80), a source only with a rating (CHECK; #29, `docs/gh-29-movie-rating/spec.md`); `updated_by_staff_id` |
 | `movie_genres` | Movie ↔ genre, at most 5 in display order | PK (`movie_id`, `genre_id`); `sort_order` 0–4, UNIQUE per movie |
 | `people` | Actors and crew | `full_name`, `birth_date`, `birth_place`, `nationality`, `bio` (at most 400 characters), `photo_image_id`, three `https` social links |
 | `person_roles` | Roles shown on a person, even without credits | PK (`person_id`, `role`); `role` is one of the 7 credit roles |
@@ -845,6 +845,11 @@ Completed, Refunded, Failed and Abandoned bookings can't be edited (`BOOKING_NOT
   - Deletion is refused by blockers other units register with `MovieLifecycleRegistry`: U7
     `has_showtimes`, U10 `has_bookings`.
   - The budget is a free-text label.
+  - The rating score (#29) is typed by an admin from an outside source (0 to 10, one decimal,
+    with an optional source such as "elCinema users"); it is not Maqady's own ratings: no votes,
+    and nothing sorts or filters by it. Customers see it on the movie page and on movie cards.
+    A source needs a score, judged on the movie after the write (`VALIDATION_FAILED` on
+    `ratingSource`), backed by a CHECK (`docs/gh-29-movie-rating/spec.md`).
 - **YouTube.** The API accepts watch, youtu.be, shorts and embed URLs, and stores only the
   11-character video id. Thumbnails and the privacy-enhanced embed URL are derived from the id.
   Titles and optional durations are typed by the admin, so there is no YouTube API key.
@@ -1810,7 +1815,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | G3 Booking before payment, no ids | A hold is a `held` booking with a reference; guest hold code and claim; live map over WebSocket (§7.3, §12) |
 | G4 Refund and cancel policy | Admin cancel always refunds in full, per charge and rail; counter refunds pay out at the counter; customers can't cancel (§7.7) |
 | G5 No admin identity | Staff accounts, two roles, audit on every staff write (§10, §13.5) |
-| G6 Fields without admin input | Optional budget label and filming locations, photo kinds and captions, theater photos; scores and the free tag chip dropped |
+| G6 Fields without admin input | Optional budget label and filming locations, photo kinds and captions, theater photos; the free tag chip dropped; scores dropped, then brought back by #29 as an admin-entered score with its source (no votes) |
 | G7 Hero video source | Every video is YouTube, so any video can be the hero (§9) |
 | G8 Hold and decline behaviour | A decline keeps the hold; the clock decides Failed or Abandoned; processing extends the hold; claims are locked during payment (§7.4, §7.5) |
 | G9 Booking reference | `MQ-` plus 6 random characters from an unambiguous alphabet (§7.9) |
@@ -1864,6 +1869,7 @@ The testing policy in `CLAUDE.md` binds this section.
 | D-30 | Catalog: genres seeded with slugs; movies need a synopsis, runtime, release date and a genre to be public, a poster optional; Now showing never goes back; a taken carousel position is refused; the hero is any of the movie's videos; poster routes and the person-side filmography route added to §11; deletion blockers registered by U7 and U10 | Builder (U6, `docs/gh-7-catalog/spec.md`) |
 | D-31 | Discovery: reads only through the exported catalog and theater services; theater and genre lists page in memory with the shared cursor codec; genre filters by slug (an unknown slug is `VALIDATION_FAILED`); contacts hidden by `showContactsPublic`; reads cached 60 s; the ticker and hall counts behind seams with empty defaults; `GenreWithCount` published as a hand-composed `allOf` (`defineComposedSchema`); the development seed drives the admin API in-process and refuses production, real storage and real email | Builder (U8a, `docs/gh-9-home-and-browse/spec.md`) |
 | D-32 | Discovery showtimes: customers see only scheduled showtimes of `active` theaters and Now showing movies; lists group by the stored cinema date, leave out ended showtimes and mark started ones; the ticker and the side panel count only showtimes still to start; "this weekend" is the Friday and Saturday cinema dates (today only on a Saturday); `hallCount` counts active halls; the seed schedules a week through the dry run, so a re-run never conflicts | Builder (U8b, `docs/gh-9-discovery-showtimes/spec.md`) |
+| D-33 | Movie rating score (#29 P2): an admin-entered `rating NUMERIC(3,1)` 0–10 with an optional `rating_source`, a source only with a rating (judged after the write, backed by a CHECK); on `AdminMovie`, `MovieDetails` and the shared `MovieCard` (optional there, additive in the home-page draft); no votes, sorting or filtering; the seed sets it and back-fills an unrated movie | Builder (#29, `docs/gh-29-movie-rating/spec.md`) |
 
 ## 19. Kit and process reconciliations
 

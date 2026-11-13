@@ -71,7 +71,7 @@ no votes, no reviews, no sorting or filtering by score. PRD v2 is amended in the
 | API: `ratingSource` is text up to 80 characters, trimmed; empty text is null; null clears | The convention of every optional text of the movie editor (`TrimToNull`) |
 | "A source needs a rating" is judged on the movie **as it would be after the write**: on create, `ratingSource` without `rating`; on edit, the sent value or else the stored one for each field. A source left without a rating is `VALIDATION_FAILED` on `ratingSource` ("ratingSource needs a rating"), before anything is written. So `{ "rating": null }` on a movie that has a source is refused; `{ "rating": null, "ratingSource": null }` clears both | One explicit rule, the same as the CHECK, with a field-level error the editor can show. Clearing the score never silently drops the source the admin typed |
 | Audit: `rating` and `ratingSource` join the movie's field-to-column map (`movie-changes.ts`), so a change appears in `movie.updated.changedFields` by its API name, and a change to the same value writes nothing | The existing audit rule (design §13.5: field names, never values) |
-| `MovieCard.rating` added to the shared card, **optional** in the schema (`required: false`), nullable, always sent by this API | `GET /movies` and `/movies/{id}/similar` answer `MovieCard`, the schema `GET /home` shares. Splitting the card in two schemas would be a worse contract than one card with one more field. The home-page draft takes it additively (optional property, changelog note), as the #29 rules allow; the frontend shows the star where its design has one |
+| `MovieCard.rating` added to the shared card, **optional** in the schema (`required: false`), nullable, always sent by this API | `GET /movies` and `/movies/{id}/similar` answer `MovieCard`, the schema `GET /home` shares. Splitting the card in two schemas would be a worse contract than one card with one more field. The home-page draft takes it additively (optional property, changelog note), as the #29 rules allow. PRD C2 and C3 keep "No stars" on cards: the field gives the frontend the score if its design adds one, without another contract change |
 | `MovieDetails.rating` and `MovieDetails.ratingSource` required and nullable | `MovieDetails` is not in the home-page draft; every field of it is always sent |
 | `MovieSummary` (the catalog's card read model) gains `rating`; `MovieDetails` (read model) gains `ratingSource`; `AdminMovie` gains both | One read model per screen, as U6 built them |
 | Seed: `rating` / `ratingSource` sent on create when the dataset has them; on a movie that already exists with `rating: null`, one `PATCH` sets both (with whatever else `completeMovie` changes). A movie that already has a rating is left alone, as the seed leaves every other value an admin may have edited | The seed only adds what is missing (design: idempotent steps). The staging movies seeded before this package get their scores on the next run once P5 fills the dataset |
@@ -139,7 +139,7 @@ the score alone).
 ### `GET /movies`, `GET /movies/{id}/similar`, `GET /theaters/{id}/showtimes`, `GET /home` (public)
 
 `MovieCard` gains optional `rating` (number \| null), always sent: the same score as the
-details page, for cards whose design shows a star.
+details page.
 
 ## Tests
 

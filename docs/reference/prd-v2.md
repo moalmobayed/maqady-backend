@@ -2,7 +2,7 @@
 title: PRD v2.0 — Maqady (copy of the shared doc)
 owner: Mohamed Tarek
 status: Reference
-last_verified: 2026-10-20
+last_verified: 2026-11-13
 tags: [reference, prd, requirements]
 ---
 
@@ -27,7 +27,7 @@ Version 2.0 keeps the goals of PRD v1.0 and all 20 designed screens, but changes
 | Hall formats | 2D, 3D, IMAX, 4DX, Dolby Atmos, VIP recliners | None. Every hall is a standard hall. |
 | Ticket prices | Several conflicting models (by format, by zone, a format × zone grid) | By row zone: Front, Middle, Back. Each theater sets defaults; a showtime can override them. |
 | Seat maps | One 12 × 16 grid for every hall | Each hall has its own grid, up to 15 rows × 20 seats |
-| Movie scores | "Maqady rating" with votes, sort by rating | Removed |
+| Movie scores | "Maqady rating" with votes, sort by rating | Removed. Since #29: an admin-entered score out of 10 from an outside source (for example "elCinema users"), shown on the movie page; no votes, no sorting by score |
 | Videos | Uploads up to 2 GB, or YouTube links | YouTube links only. Photos are still uploaded. |
 | Cancelling | Separate Cancel and Refund; "tickets only" refunds | Cancelling a paid booking always refunds it in full |
 | Staff | One hard-coded admin | Staff accounts with two roles: Admin and Box office |
@@ -115,7 +115,7 @@ v1 delivers all 20 designed screens working on real data, updated by this PRD, p
 
 - Pay at the cinema and unpaid reservations
 - Promo codes, discounts, gift cards and loyalty points
-- Movie ratings, reviews and watchlists
+- Movie ratings, reviews and watchlists (customers rating movies; an admin-entered score from an outside source is in, #29)
 - Video uploads (videos are YouTube links)
 - Saved cards (see Calls open for veto)
 - Social sign-in, phone sign-in, guest checkout without an account
@@ -234,7 +234,7 @@ Every data screen has loading, empty and error states, and every screen works on
 
 ### C3 Movie Details `/movies/:movieId`
 
-- Header: title, genres, runtime, age rating, release date, language. The "Maqady rating" line is removed.
+- Header: title, genres, runtime, age rating, release date, language. The "Maqady rating" line is removed; since #29 the hero shows the admin-entered score with a star (for example 8.4) and its source small under it, when the movie has one.
 - Media viewer: YouTube videos (title, type, optional length) and photos (type Still or Behind the scenes, with caption). Counts of each.
 - Synopsis. Tag chips are the movie's genres only.
 - Credits: Director, Writers, Stars, and the full cast and crew grid. Each name opens Movies filtered by that person.
@@ -350,6 +350,7 @@ The dashboard requires a staff sign-in, and each screen is limited to the roles 
 - Details tab adds optional Budget and Filming locations, and drops "Original title (Arabic)".
 - Media tab: poster upload (2:3); backdrop picked from the photos; videos are YouTube links only, each with title, type and optional length; photos upload as JPG or PNG up to 10 MB, each with type (Still or Behind the scenes) and caption. The "Upload from computer" video tab is removed.
 - Cast & crew roles: Actor, Voice, Director, Writer, Producer, Cinematographer, Composer. Actor and Voice take a character name.
+- Details tab (#29): an optional rating score, 0 to 10 with one decimal, and its source (for example "elCinema users"); a source needs a score.
 - Publishing: status, "Feature in the home carousel" with its position (1 to 5), and the hero trailer. The "Tickets on sale from" and "Hide after" dates are removed.
 - Header shows the real "Last edited by" staff member and time.
 - Delete is allowed only for a movie that never had a booking; otherwise archive.
