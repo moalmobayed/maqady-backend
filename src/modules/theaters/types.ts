@@ -29,6 +29,10 @@ export interface TheaterRow {
   readonly parking_info: string | null;
   readonly email: string | null;
   readonly show_contacts_public: boolean;
+  /** 5 digits, or null (#29). */
+  readonly postal_code: string | null;
+  /** E.164, or null (#29). */
+  readonly whatsapp: string | null;
   readonly cover_image_id: number | null;
   readonly default_price_front: number | null;
   readonly default_price_middle: number | null;
@@ -51,6 +55,8 @@ export interface NewTheaterRow {
   readonly parking_info: string | null;
   readonly email: string | null;
   readonly show_contacts_public: boolean;
+  readonly postal_code: string | null;
+  readonly whatsapp: string | null;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
@@ -68,6 +74,8 @@ export interface TheaterRowUpdate {
   readonly parking_info?: string | null;
   readonly email?: string | null;
   readonly show_contacts_public?: boolean;
+  readonly postal_code?: string | null;
+  readonly whatsapp?: string | null;
   readonly cover_image_id?: number | null;
   readonly default_price_front?: number;
   readonly default_price_middle?: number;
@@ -272,6 +280,10 @@ export interface TheaterDetails extends TheaterSummary {
   readonly parkingInfo: string | null;
   readonly email: string | null;
   readonly showContactsPublic: boolean;
+  /** 5 digits, shown with the city ("Cairo 11211"); null when none is set (#29). */
+  readonly postalCode: string | null;
+  /** The dedicated WhatsApp number, E.164; null when none is set (#29). Hidden like phones. */
+  readonly whatsapp: string | null;
   /** In order; the first is the main phone. */
   readonly phones: readonly TheaterPhone[];
   /** In `FACILITIES` order. */
@@ -346,6 +358,8 @@ export interface CreateTheaterInput {
   readonly parkingInfo?: string | null;
   readonly email?: string | null;
   readonly showContactsPublic?: boolean;
+  readonly postalCode?: string | null;
+  readonly whatsapp?: string | null;
 }
 
 /** `PATCH /admin/theaters/{id}`, as validated: any field, and the status. */
@@ -360,6 +374,8 @@ export interface TheaterChanges {
   readonly parkingInfo?: string | null;
   readonly email?: string | null;
   readonly showContactsPublic?: boolean;
+  readonly postalCode?: string | null;
+  readonly whatsapp?: string | null;
   readonly status?: TheaterStatus;
 }
 

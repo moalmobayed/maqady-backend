@@ -10,6 +10,16 @@ export const MAX_GALLERY_PHOTOS = 20;
 export const PHONE_NUMBER_PATTERN = /^\+[1-9][0-9]{6,14}$/;
 
 /**
+ * An Egyptian postal code: 5 digits (#29, `chk_theaters_postal_code` of migration `0290_22`),
+ * such as `11211`.
+ */
+export const POSTAL_CODE_PATTERN = /^[0-9]{5}$/;
+
+export const POSTAL_CODE_MESSAGE = 'postalCode must be 5 digits, such as 11211';
+
+export const WHATSAPP_MESSAGE = 'whatsapp must be in E.164 format, such as +201001234567';
+
+/**
  * What `chk_theaters_email` (migration `0055_01`) stores: no space and exactly one `@`. `IsEmail`
  * alone also accepts a quoted local part such as `"front desk"@example.com`, which the CHECK
  * refuses, so the request DTOs apply both.

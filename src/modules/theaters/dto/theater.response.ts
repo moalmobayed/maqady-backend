@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ImageResponse } from '../../media/dto/image.response';
 import { FACILITIES, THEATER_STATUSES } from '../enums';
+import { POSTAL_CODE_PATTERN } from '../theaters.constants';
 import type { Facility, TheaterStatus } from '../types';
 import { DayHoursResponse } from './day-hours.response';
 import { OpenStateResponse } from './open-state.response';
@@ -72,6 +73,24 @@ export class TheaterResponse {
     description: 'True when phones and email are shown on the website.',
   })
   showContactsPublic!: boolean;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    pattern: POSTAL_CODE_PATTERN.source,
+    example: '11211',
+    description: 'Postal code (5 digits), shown with the city ("Cairo 11211"); null when none.',
+  })
+  postalCode!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '+201001234567',
+    description:
+      'Dedicated WhatsApp number, E.164; null when none. Customers see it only while `showContactsPublic` is true.',
+  })
+  whatsapp!: string | null;
 
   @ApiProperty({
     type: () => [TheaterPhoneResponse],
