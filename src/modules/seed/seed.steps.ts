@@ -303,6 +303,7 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
         productionCompany: movie.productionCompany,
         budgetLabel: movie.budgetLabel,
         filmingLocations: movie.filmingLocations,
+        ...ratingOf(movie),
         genreIds: movie.genres.map((slug) => {
           const genreId = genres.get(slug);
           if (genreId === undefined) throw new Error(`Seed: no genre "${slug}"`);
@@ -318,7 +319,19 @@ async function seedMovies(context: SeedContext): Promise<SeedStepResult> {
   return { created, kept: movies.length - created };
 }
 
-/** Sets whatever of the movie is still missing: poster, photos, videos, credits, status. */
+/** The dataset's score and its source, as the admin movie routes take them; none when left out. */
+function ratingOf(movie: SeedMovie): Record<string, unknown> {
+  if (movie.rating === undefined) return {};
+  return {
+    rating: movie.rating,
+    ...(movie.ratingSource === undefined ? {} : { ratingSource: movie.ratingSource }),
+  };
+}
+
+/**
+ * Sets whatever of the movie is still missing: poster, photos, videos, credits, the score (on a
+ * movie seeded before it had one), status.
+ */
 async function completeMovie(context: SeedContext, id: number, movie: SeedMovie): Promise<void> {
   const { api } = context;
   const path = `/admin/movies/${id}`;
@@ -378,6 +391,7 @@ async function completeMovie(context: SeedContext, id: number, movie: SeedMovie)
   if (current.backdropPhotoId === null && backdrop) changes.backdropPhotoId = backdrop.id;
   const hero = current.videos.find((video) => video.youtubeId === movie.videos[0]?.youtubeId);
   if (current.heroVideoId === null && hero) changes.heroVideoId = hero.id;
+  if (current.rating === null) Object.assign(changes, ratingOf(movie));
   if (movie.status !== 'draft' && current.status !== movie.status) changes.status = movie.status;
   if (Object.keys(changes).length > 0) await api.write('PATCH', path, changes);
 }
