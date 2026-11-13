@@ -11,6 +11,7 @@ import {
 import { downloadedImage, placeholderImage } from './seed-images';
 import type {
   SeedAdminMovie,
+  SeedFeaturedRow,
   SeedAdminPhoto,
   SeedAdminTheater,
   SeedApi,
@@ -489,14 +490,23 @@ async function completeMovie(context: SeedContext, id: number, movie: SeedMovie)
   if (Object.keys(changes).length > 0) await api.write('PATCH', path, changes);
 }
 
+/**
+ * Puts the dataset's movies on the home carousel. A position another movie already holds (an
+ * admin's choice, or another dataset seeded first, as egypt-2026 on staging, #29) is left to
+ * that movie and counted as already there, so the run goes on to the showtimes.
+ */
 async function seedFeatured(context: SeedContext): Promise<SeedStepResult> {
   let created = 0;
   let kept = 0;
+  const taken = new Set(
+    (await listAll<SeedFeaturedRow>(context.api, '/admin/movies')).map(
+      (row) => row.featuredPosition,
+    ),
+  );
   for (const movie of context.dataset.movies) {
     const id = context.movieIds.get(movie.title);
     if (id === undefined || movie.featuredPosition === null) continue;
-    const current = await context.api.get<SeedAdminMovie>(`/admin/movies/${id}`);
-    if (current.featuredPosition === movie.featuredPosition) {
+    if (taken.has(movie.featuredPosition)) {
       kept += 1;
       continue;
     }
