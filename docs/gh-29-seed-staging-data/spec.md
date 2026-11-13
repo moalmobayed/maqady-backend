@@ -79,13 +79,16 @@ Invented example data so every new field has a value to render:
 
 - `SeedTheater.galleryCaptions` becomes `gallery: readonly SeedGalleryPhoto[]`, each a
   `caption` and an optional `url` (left out, a generated picture, as before). The `theaters`
-  step uploads them on a theater whose gallery is empty, as before.
+  step uploads them on a theater whose gallery is empty, as before, and finishes a gallery a run
+  stopped part way: one whose captions are the dataset's first ones, in order, gets the rest
+  (`missingGallery`). A gallery an admin changed is left alone. (Added after manual QA: a
+  rate-limited download had left City Stars with two of its four photos for good.)
 - Facilities back-fill: a theater whose stored facilities are exactly the dataset's minus the
   facilities #29 added (`prayer_room`, `SEED_BACKFILL_FACILITIES`) gets the dataset's list. A
   theater whose facilities an admin changed otherwise is left alone, like the other back-fills.
-- `downloadedImage` retries a picture that answers `429` or `5xx` (up to
-  `SEED_IMAGE_ATTEMPTS`, waiting `Retry-After` capped at 30 s, else 5 s per attempt):
-  Wikimedia rate-limits bursts of thumbnail requests.
+- `downloadedImage` retries a picture that answers `429` or `5xx` (6 attempts,
+  `SEED_IMAGE_ATTEMPTS`), waiting the longer of `Retry-After` and 5 s per attempt, capped at 30 s:
+  Wikimedia rate-limits bursts of thumbnail requests from one address.
 - The postal code, WhatsApp, rating and hall back-fills of P2 to P4 are unchanged; this package
   supplies their values.
 
@@ -143,10 +146,12 @@ added:
   Egypt has a prayer room; gallery photos come from Wikimedia standard thumbnails and credit a
   free licence; no WhatsApp; at most one MAX hall at Almaza.
 - `test/unit/modules/seed/seed.steps.test.ts`: gallery photos with a URL are downloaded (and
-  without, generated); the facilities back-fill adds `prayer_room` to a theater seeded before
-  #29 and leaves one an admin changed.
-- `test/unit/modules/seed/seed-images.test.ts`: a `429` then `200` succeeds after one retry,
-  honouring `Retry-After`; a persistent `429` fails naming the URL; a `404` is not retried.
+  without, generated) at the gallery size; a gallery stopped part way gets the rest, one an
+  admin changed gets nothing; the facilities back-fill adds `prayer_room` to a theater seeded
+  before #29 and leaves facilities an admin changed.
+- `test/unit/modules/seed/seed-images.test.ts`: a `429` then `200` succeeds after one wait of the
+  `Retry-After`; waits grow and are capped, and after 6 failures the error names the URL; a
+  `404` is not retried.
 - Existing seed integration tests (both datasets' shapes, the remote seed) stay green.
 
 ## Acceptance
