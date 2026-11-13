@@ -331,4 +331,136 @@ describe('The public theater reads', () => {
       }
     });
   });
+  describe('#29 theater fields', () => {
+    const patch = (id: number, body: object) =>
+      testApp
+        .http()
+        .patch(`${API}/admin/theaters/${id}`)
+        .set('Authorization', admin.authorization)
+        .send(body);
+
+    beforeAll(async () => {
+      expectStatus(
+        await patch(theater.zamalek, { postalCode: '11211', whatsapp: '+201001234567' }),
+        200,
+      );
+      expectStatus(
+        await patch(theater.hidden, { postalCode: '11757', whatsapp: '+201005550000' }),
+        200,
+      );
+      expectStatus(
+        await put(`${theater.hidden}/facilities`, { facilities: ['prayer_room', 'kids_room'] }),
+        200,
+      );
+    });
+
+    /** Every page of `GET /theaters` with this query, one theater per page. */
+    const everyPage = async (query: string): Promise<PublicTheaterPageResponse[]> => {
+      const pages: PublicTheaterPageResponse[] = [];
+      let cursor: string | null = null;
+      do {
+        const suffix: string = cursor === null ? '' : `&cursor=${cursor}`;
+        const page: PublicTheaterPageResponse = await ok<PublicTheaterPageResponse>(
+          `/theaters?limit=1${query}${suffix}`,
+        );
+        pages.push(page);
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+      return pages;
+    };
+
+    it('puts the postal code on every card and the prayer room in the facilities', async () => {
+      const { items } = await ok<PublicTheaterPageResponse>('/theaters');
+      expect(items.map((item) => [item.id, item.postalCode])).toEqual([
+        [theater.evening, null],
+        [theater.heliopolis, null],
+        [theater.hidden, '11757'],
+        [theater.zamalek, '11211'],
+      ]);
+      const hidden = items[2]!;
+      // The facility order of the list, prayer room last; the postal code even with contacts hidden.
+      expect(hidden.facilities).toEqual(['kids_room', 'prayer_room']);
+      expect(hidden.mainPhone).toBeNull();
+      const {
+        latitude: _lat,
+        longitude: _lng,
+        today: _today,
+        weeklyHours: _weekly,
+        ...card
+      } = hidden;
+      const validate = draftValidator('TheaterCard');
+      expect(validate(card)).toBe(true);
+      // The card never carries the WhatsApp number: it is on the theater page only.
+      expect(Object.keys(hidden)).not.toContain('whatsapp');
+    });
+
+    it('returns totalHalls, the active halls of every matching theater, the same on every page', async () => {
+      const pages = await everyPage('');
+      expect(pages).toHaveLength(4);
+      const cards = pages.flatMap((page) => page.items);
+      // Zamalek 2 (its draft and retired halls left out), the three others 1 each; the paused
+      // theater's hall is not counted.
+      expect(cards.map((card) => card.hallCount)).toEqual([1, 1, 1, 2]);
+      const sum = cards.reduce((total, card) => total + card.hallCount, 0);
+      expect(sum).toBe(5);
+      expect(pages.map((page) => page.totalHalls)).toEqual([5, 5, 5, 5]);
+      expect(pages.map((page) => page.total)).toEqual([4, 4, 4, 4]);
+      expect((await ok<PublicTheaterPageResponse>('/theaters')).totalHalls).toBe(5);
+    });
+
+    it('follows the filters: parking, and openNow at the Clock', async () => {
+      const parking = await everyPage('&parking=true');
+      expect(parking.flatMap((page) => idsOf(page.items))).toEqual([
+        theater.heliopolis,
+        theater.zamalek,
+      ]);
+      expect(parking.map((page) => page.totalHalls)).toEqual([3, 3]);
+      // 00:45 on Saturday: only the hidden-contacts theater (1) and Zamalek (2) are open.
+      clock.set(new Date('2026-10-16T21:45:00Z'));
+      const late = await everyPage('&openNow=true');
+      expect(late.map((page) => page.totalHalls)).toEqual([3, 3]);
+      clock.set(new Date('2026-10-16T22:15:00Z'));
+      expect(await ok<PublicTheaterPageResponse>('/theaters?openNow=true')).toMatchObject({
+        items: [],
+        total: 0,
+        totalHalls: 0,
+      });
+    });
+
+    it('returns the postal code, the WhatsApp number and its wa.me link on the theater page', async () => {
+      const body = await ok<PublicTheaterResponse>(`/theaters/${theater.zamalek}`);
+      expect(body).toMatchObject({
+        city: 'Cairo',
+        postalCode: '11211',
+        whatsapp: '+201001234567',
+        whatsappUrl: 'https://wa.me/201001234567',
+      });
+      const none = await ok<PublicTheaterResponse>(`/theaters/${theater.heliopolis}`);
+      expect(none).toMatchObject({ postalCode: null, whatsapp: null, whatsappUrl: null });
+    });
+
+    it('hides the WhatsApp number and its link, not the postal code, when contacts are hidden', async () => {
+      const body = await ok<PublicTheaterResponse>(`/theaters/${theater.hidden}`);
+      expect(body).toMatchObject({
+        postalCode: '11757',
+        whatsapp: null,
+        whatsappUrl: null,
+        email: null,
+        phones: [],
+        facilities: ['kids_room', 'prayer_room'],
+      });
+      const raw = JSON.stringify(body);
+      expect(raw).not.toContain('201005550000');
+    });
+
+    it('puts the postal code and the prayer room on the home page cards, as the draft allows', async () => {
+      const home = await ok<{ cinemas: { id: number; postalCode: string | null }[] }>('/home');
+      const hidden = home.cinemas.find((card) => card.id === theater.hidden);
+      expect(hidden).toMatchObject({
+        postalCode: '11757',
+        facilities: ['kids_room', 'prayer_room'],
+      });
+      expect(draftValidator('HomeResponse')(home)).toBe(true);
+    });
+  });
 });

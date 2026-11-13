@@ -22,6 +22,13 @@ jest.setTimeout(60_000);
 
 const NOW = new Date('2026-10-16T12:00:00+03:00'); // a Friday, cinema date 2026-10-16
 
+/** The fields a `VALIDATION_FAILED` answer names. */
+function fieldsOf(response: Response): string[] {
+  const { fields } = (response.body as { error: { details: { fields: { field: string }[] } } })
+    .error.details;
+  return fields.map(({ field }) => field);
+}
+
 function expectError(response: Response, status: number, code: string): void {
   expect({ status: response.status, code: response.body?.error?.code }).toEqual({ status, code });
 }
@@ -409,6 +416,140 @@ describe('Admin theaters (integration)', () => {
       for (const value of ['+201009876543', 'maqady.example', 'Nile Corniche']) {
         expect(stored).not.toContain(value);
       }
+    });
+  });
+
+  describe('#29 theater fields', () => {
+    const put = (id: number, body: object) =>
+      testApp
+        .http()
+        .put(`${THEATERS}/${id}/facilities`)
+        .set('Authorization', admin.authorization)
+        .send(body);
+
+    it('stores the prayer room in the facility order, and still refuses an unknown facility', async () => {
+      const id = await createTheater(testApp, admin.authorization);
+      const stored = await put(id, { facilities: ['prayer_room', 'cafe_bar', 'kids_room'] });
+      expect(stored.status).toBe(200);
+      expect(stored.body.facilities).toEqual(['cafe_bar', 'kids_room', 'prayer_room']);
+      const read = await testApp
+        .http()
+        .get(`${THEATERS}/${id}`)
+        .set('Authorization', admin.authorization);
+      expect(read.body.facilities).toEqual(['cafe_bar', 'kids_room', 'prayer_room']);
+
+      const refused = await put(id, { facilities: ['prayer_room', 'imax'] });
+      expectError(refused, 400, 'VALIDATION_FAILED');
+      expect(fieldsOf(refused)).toEqual(['facilities']);
+      const rows = await testApp
+        .knex('theater_facilities')
+        .where({ theater_id: id })
+        .orderBy('facility')
+        .pluck('facility');
+      expect(rows).toEqual(['cafe_bar', 'kids_room', 'prayer_room']);
+    });
+
+    it('lets the database take prayer_room and refuse a facility outside the list', async () => {
+      const id = await createTheater(testApp, admin.authorization);
+      await testApp.knex('theater_facilities').insert({ theater_id: id, facility: 'prayer_room' });
+      await expect(
+        testApp.knex('theater_facilities').insert({ theater_id: id, facility: 'imax' }),
+      ).rejects.toThrow(/chk_theater_facilities_facility/);
+    });
+
+    it('creates a theater with a postal code and a WhatsApp number, and reads them back', async () => {
+      const created = await testApp
+        .http()
+        .post(THEATERS)
+        .set('Authorization', admin.authorization)
+        .set('Idempotency-Key', randomUUID())
+        .send(theaterBody({ postalCode: ' 11211 ', whatsapp: '+201001234567' }));
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject({ postalCode: '11211', whatsapp: '+201001234567' });
+      const id = (created.body as { id: number }).id;
+      const read = await testApp
+        .http()
+        .get(`${THEATERS}/${id}`)
+        .set('Authorization', admin.authorization);
+      // The admin always sees both, whatever showContactsPublic.
+      expect(read.body).toMatchObject({
+        showContactsPublic: false,
+        postalCode: '11211',
+        whatsapp: '+201001234567',
+      });
+      const row = await testApp
+        .knex('theaters')
+        .where({ id })
+        .first<{ postal_code: string; whatsapp: string }>('postal_code', 'whatsapp');
+      expect(row).toEqual({ postal_code: '11211', whatsapp: '+201001234567' });
+
+      const without = await createTheater(testApp, admin.authorization, { name: 'Maqady Maadi' });
+      const plain = await testApp
+        .http()
+        .get(`${THEATERS}/${without}`)
+        .set('Authorization', admin.authorization);
+      expect(plain.body).toMatchObject({ postalCode: null, whatsapp: null });
+    });
+
+    it('changes and clears them with PATCH, naming only the fields in the audit row', async () => {
+      const id = await createTheater(testApp, admin.authorization);
+      const set = await patch(id, { postalCode: '12611', whatsapp: '+201001234567' });
+      expect(set.status).toBe(200);
+      expect(set.body).toMatchObject({ postalCode: '12611', whatsapp: '+201001234567' });
+      const cleared = await patch(id, { postalCode: null });
+      expect(cleared.body).toMatchObject({ postalCode: null, whatsapp: '+201001234567' });
+
+      const rows = await auditRows(id);
+      expect(rows.map((row) => [row.action, row.changed_fields])).toEqual([
+        ['theater.created', []],
+        ['theater.updated', ['postalCode', 'whatsapp']],
+        ['theater.updated', ['postalCode']],
+      ]);
+      const stored = JSON.stringify(
+        await testApp.knex('audit_events').select('metadata', 'changed_fields'),
+      );
+      for (const value of ['12611', '201001234567']) expect(stored).not.toContain(value);
+    });
+
+    it('refuses a malformed postal code or WhatsApp number with VALIDATION_FAILED and changes nothing', async () => {
+      const id = await createTheater(testApp, admin.authorization);
+      await patch(id, { postalCode: '11211', whatsapp: '+201001234567' });
+      for (const [body, field] of [
+        [{ postalCode: '1121' }, 'postalCode'],
+        [{ postalCode: '11 211' }, 'postalCode'],
+        [{ postalCode: 11211 }, 'postalCode'],
+        [{ whatsapp: '01001234567' }, 'whatsapp'],
+        [{ whatsapp: '+0100123' }, 'whatsapp'],
+      ] as const) {
+        const refused = await patch(id, body);
+        expectError(refused, 400, 'VALIDATION_FAILED');
+        expect(fieldsOf(refused)).toEqual([field]);
+      }
+      const create = await testApp
+        .http()
+        .post(THEATERS)
+        .set('Authorization', admin.authorization)
+        .set('Idempotency-Key', randomUUID())
+        .send(theaterBody({ name: 'Maqady Giza', postalCode: '123456' }));
+      expectError(create, 400, 'VALIDATION_FAILED');
+      const row = await testApp
+        .knex('theaters')
+        .where({ id })
+        .first<{ postal_code: string; whatsapp: string }>('postal_code', 'whatsapp');
+      expect(row).toEqual({ postal_code: '11211', whatsapp: '+201001234567' });
+      expect(await testApp.knex('theaters').count<{ count: number }[]>({ count: 'id' })).toEqual([
+        { count: 1 },
+      ]);
+    });
+
+    it('has the database refuse a postal code or WhatsApp number the API would refuse', async () => {
+      const id = await createTheater(testApp, admin.authorization);
+      await expect(
+        testApp.knex('theaters').where({ id }).update({ postal_code: '1121' }),
+      ).rejects.toThrow(/chk_theaters_postal_code/);
+      await expect(
+        testApp.knex('theaters').where({ id }).update({ whatsapp: '01001234567' }),
+      ).rejects.toThrow(/chk_theaters_whatsapp/);
     });
   });
 
